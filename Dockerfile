@@ -29,4 +29,6 @@ RUN tar -xvf /tmp/dremio.tar.gz --strip 1 -C /dremio && \
 
 COPY ./entrypoint.sh /entrypoint.sh
 
+RUN chmod +x /entrypoint.sh
+
 ENTRYPOINT ["/entrypoint.sh"]
