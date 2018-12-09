@@ -12,7 +12,7 @@ RUN git clone -b "patch" https://github.com/ZeoX06/dremio-oss.git dremio
 
 WORKDIR /dremio
 
-RUN mvn clean install -e -DskipTests
+RUN mvn clean install -e -DskipTests=true -Dlicense.skip=true
 
 
 FROM ubuntu:18.04
