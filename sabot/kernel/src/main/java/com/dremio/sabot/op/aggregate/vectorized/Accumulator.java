@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,9 @@
  */
 package com.dremio.sabot.op.aggregate.vectorized;
 
-import io.netty.buffer.ArrowBuf;
 import org.apache.arrow.vector.FieldVector;
 
-import com.dremio.sabot.op.common.ht2.ResizeListener;
+import io.netty.buffer.ArrowBuf;
 
 /**
  * Interface for implementing a measure. Maintains an array of workspace and/or
@@ -37,21 +36,7 @@ public interface Accumulator extends AutoCloseable {
    *
    * this function works on a per-partition basis.
    */
-  void accumulate(long offsetAddr, int count);
-
-  /**
-   * Accumulate the data that is specified at the provided offset vector. The
-   * offset vector describes which local mapping each of the <count> records
-   * should be addressed.
-   *
-   * @param offsetAddr starting address of buffer containing partition and
-   *                   hash table information along with record index
-   * @param count number of records in the partition.
-   *
-   *
-   * this function is used by old (non spilling vectorized hash agg operator).
-   */
-  void accumulateNoSpill(long offsetAddr, int count);
+  void accumulate(long offsetAddr, int count, int bitsInChunk, int chunkOffsetMask);
 
   /**
    * Output the data for the provided the batch index to the output vectors.
@@ -82,13 +67,11 @@ public interface Accumulator extends AutoCloseable {
    */
   FieldVector getInput();
 
-  /**
-   * Get the total memory needed by buffers of this accumulator
-   * @return composite buffer size accounting for both validity and data buffers
-   */
-  int getTotalBufferSize();
+  int getValidityBufferSize();
 
-  void addBatch(final ArrowBuf buffer);
+  int getDataBufferSize();
+
+  void addBatch(final ArrowBuf dataBuffer, final ArrowBuf validityBuffer);
 
   void resetToMinimumSize() throws Exception;
 

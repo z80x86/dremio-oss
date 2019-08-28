@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,7 +89,8 @@ describe('DefaultWizardFooter', () => {
     it('should set submitting on submitState button and disable the other button', () => {
       const wrapper = shallow(<DefaultWizardFooter {...commonProps} submitting/>);
       expect(getApplyProps(wrapper).submitting).to.be.false;
-      expect(getApplyProps(wrapper).disabled).to.be.true;
+      // do not block apply button even a preview is in progress
+      expect(getApplyProps(wrapper).disabled).to.be.false;
       expect(getPreviewProps(wrapper).submitting).to.be.false;
       expect(getPreviewProps(wrapper).disabled).to.be.true;
 
@@ -101,7 +102,8 @@ describe('DefaultWizardFooter', () => {
 
       wrapper.setState({submitType: 'preview'});
       expect(getApplyProps(wrapper).submitting).to.be.false;
-      expect(getApplyProps(wrapper).disabled).to.be.true;
+      // do not block apply button even a preview is in progress
+      expect(getApplyProps(wrapper).disabled).to.be.false;
       expect(getPreviewProps(wrapper).submitting).to.be.true;
       expect(getPreviewProps(wrapper).disabled).to.be.false;
     });

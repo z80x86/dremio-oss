@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.dremio.dac.api;
 
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -63,10 +64,8 @@ public class CatalogResource {
   }
 
   @GET
-  public ResponseList<CatalogItem> listTopLevelCatalog() {
-    ResponseList<CatalogItem> catalogItems = new ResponseList<>(catalogServiceHelper.getTopLevelCatalogItems());
-
-    return catalogItems;
+  public ResponseList<? extends CatalogItem> listTopLevelCatalog(@QueryParam("include") final List<String> include) {
+    return new ResponseList<>(catalogServiceHelper.getTopLevelCatalogItems(include));
   }
 
   @GET
@@ -109,7 +108,7 @@ public class CatalogResource {
       return catalogServiceHelper.updateCatalogItem(entity, id);
     } catch (IllegalArgumentException e) {
       throw new NotFoundException(e.getMessage());
-    } catch (ExecutionSetupException e) {
+    } catch (ExecutionSetupException | IOException e) {
       throw new InternalServerErrorException(e);
     } catch (UnsupportedOperationException e) {
       throw new BadRequestException(e.getMessage());

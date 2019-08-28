@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import java.util.Map.Entry;
 
 import org.apache.calcite.schema.Schema.TableType;
 
-import com.dremio.datastore.IndexedStore;
 import com.dremio.datastore.IndexedStore.FindByCondition;
 import com.dremio.datastore.SearchTypes.SearchQuery;
 import com.dremio.service.listing.DatasetListingService;

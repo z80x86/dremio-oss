@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,13 @@
  */
 import { PureComponent } from 'react';
 import PropTypes from 'prop-types';
+import { connect } from 'react-redux';
 import MonacoEditor from 'react-monaco-editor';
 import Immutable from 'immutable';
 import * as SQLLanguage from 'monaco-editor/dev/vs/basic-languages/src/sql';
 
 import {RESERVED_WORDS} from 'utils/pathUtils';
+import { runDatasetSql, previewDatasetSql } from 'actions/explore/dataset/run';
 import { SQLAutoCompleteProvider } from './SQLAutoCompleteProvider';
 import './SQLEditor.less';
 
@@ -30,7 +32,7 @@ const language = 'dremio-sql';
 
 const staticPropTypes = {
   height: PropTypes.number.isRequired, // pass-thru
-  defaultValue: PropTypes.string, // pass-thru
+  defaultValue: PropTypes.string, // pass-thru; do not update it via onChange, otherwise monaco will throw error.
   onChange: PropTypes.func,
   errors: PropTypes.instanceOf(Immutable.List),
   readOnly: PropTypes.bool,
@@ -38,7 +40,9 @@ const staticPropTypes = {
   maxHeight: PropTypes.number, // is only applicable for fitHeightToContent case
   contextMenu: PropTypes.bool,
   autoCompleteEnabled: PropTypes.bool,
-  sqlContext: PropTypes.instanceOf(Immutable.List)
+  sqlContext: PropTypes.instanceOf(Immutable.List),
+  runDatasetSql: PropTypes.func,
+  previewDatasetSql: PropTypes.func
 };
 
 const checkHeightAndFitHeightToContentFlags = (props, propName, componentName) => {
@@ -47,11 +51,11 @@ const checkHeightAndFitHeightToContentFlags = (props, propName, componentName) =
       return new Error('Height must not be provided if fitHeightToContent property set to true');
     }
   } else {
-    return PropTypes.checkPropTypes(staticPropTypes, props, propName, componentName); // reuse stnadard prop types check
+    return PropTypes.checkPropTypes(staticPropTypes, props, propName, componentName); // reuse standard prop types check
   }
 };
 
-export default class SQLEditor extends PureComponent {
+export class SQLEditor extends PureComponent {
   static propTypes = {
     ...staticPropTypes,
     height: checkHeightAndFitHeightToContentFlags // pass-thru
@@ -269,6 +273,7 @@ export default class SQLEditor extends PureComponent {
 
       // todo:
       // limit operators to /[*+\-<>!=&|/~]/
+      tokenProvider.tokenizer.comments.push([/\/\/+.*/, 'comment']);
 
       monaco.languages.register({ id: language });
       monaco.languages.setMonarchTokensProvider(language, tokenProvider);
@@ -294,7 +299,37 @@ export default class SQLEditor extends PureComponent {
     if (this._focusOnMount) {
       this.focus();
     }
-  }
+    this.addKeyboardShortcuts(editor);
+  };
+
+  onKbdPreview = (editor) => {
+    this.props.previewDatasetSql();
+  };
+
+  onKbdRun = (editor) => {
+    this.props.runDatasetSql();
+  };
+
+  addKeyboardShortcuts = (editor) => {
+    const monaco = this.monaco;
+    editor.addAction({
+      id: 'keys-preview',
+      label: 'Preview',
+      keybindings: [ monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter ], // eslint-disable-line no-bitwise
+      precondition: null,
+      keybindingContext: null,
+      run: this.onKbdPreview
+    });
+    editor.addAction({
+      id: 'keys-run',
+      label: 'Run',
+      keybindings: [ monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter ], // eslint-disable-line no-bitwise
+      precondition: null,
+      keybindingContext: null,
+      run: this.onKbdRun
+    });
+
+  };
 
   insertSnippet() {
     SnippetController.get(this.monacoEditorComponent.editor).insert(...arguments);
@@ -309,29 +344,39 @@ export default class SQLEditor extends PureComponent {
       fitHeightToContent, // here to not pass it in monaco editor, as it does not support it
        ...monacoProps} = this.props;
 
-    return <MonacoEditor
-      {...monacoProps}
-      onChange={this.handleChange}
-      editorDidMount={this.editorDidMount}
-      ref={(ref) => this.monacoEditorComponent = ref}
-      width='100%'
-      language={this.state.language}
-      theme='vs'
-      options={{
-        wordWrap: 'on',
-        lineNumbersMinChars: 3,
-        scrollBeyondLastLine: false,
-        scrollbar: {vertical: 'visible', useShadows: false},
-        automaticLayout: true,
-        lineDecorationsWidth: 12,
-        minimap: {
-          enabled: false
-        },
-        suggestLineHeight: 25,
-        readOnly,
-        contextmenu: contextMenu // a case is important here
-      }}
-      requireConfig={{url: '/vs/loader.js', paths: {vs: '/vs'}}}
-    />;
+    return (
+      // div wrapper is required for FF and IE. Without it a editor has uncontrolled grow on jobs page.
+      <div>
+        <MonacoEditor
+          {...monacoProps}
+          onChange={this.handleChange}
+          editorDidMount={this.editorDidMount}
+          ref={(ref) => this.monacoEditorComponent = ref}
+          width='100%'
+          language={this.state.language}
+          theme='vs'
+          options={{
+            wordWrap: 'on',
+            lineNumbersMinChars: 3,
+            scrollBeyondLastLine: false,
+            scrollbar: {vertical: 'visible', useShadows: false},
+            automaticLayout: true,
+            lineDecorationsWidth: 12,
+            minimap: {
+              enabled: false
+            },
+            suggestLineHeight: 25,
+            readOnly,
+            contextmenu: contextMenu // a case is important here
+          }}
+          requireConfig={{url: '/vs/loader.js', paths: {vs: '/vs'}}}
+        />
+      </div>
+    );
   }
 }
+
+export default connect(null, {
+  runDatasetSql,
+  previewDatasetSql
+}, null, {forwardRef: true})(SQLEditor);

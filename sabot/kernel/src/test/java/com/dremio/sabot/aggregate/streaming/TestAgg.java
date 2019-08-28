@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,9 @@ public class TestAgg extends BaseTestOperator {
         tr("what", 1l, 10l, 0l)
         );
 
-    StreamingAggregate agg = new StreamingAggregate(null,
+    StreamingAggregate agg = new StreamingAggregate(
+        PROPS,
+        null,
         Collections.singletonList(n("gb", "grouping")),
         Arrays.asList(
             n("count(val)", "cnt"),
@@ -85,7 +87,9 @@ public class TestAgg extends BaseTestOperator {
         tr("what", NULL_VARCHAR, 1l, 10l, 0l)
         );
 
-    StreamingAggregate agg = new StreamingAggregate(null,
+    StreamingAggregate agg = new StreamingAggregate(
+        PROPS,
+        null,
         Arrays.asList(
             n("gb1"),
             n("gb2")

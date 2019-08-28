@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,12 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.types.pojo.Field;
-import org.apache.arrow.vector.types.pojo.Schema;
-import org.apache.arrow.vector.util.CallBack;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.complex.FieldIdUtil2;
+import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.arrow.vector.util.CallBack;
 
 import com.dremio.common.expression.CompleteType;
 import com.dremio.common.expression.SchemaPath;
@@ -404,15 +404,6 @@ public class VectorContainer implements Iterable<VectorWrapper<?>>, VectorAccess
     }
     setRecordCount(records);
     return records;
-  }
-
-  public boolean allocateNewSafe() {
-    for (VectorWrapper<?> w : wrappers) {
-      if (!w.getValueVector().allocateNewSafe()) {
-        return false;
-      }
-    }
-    return true;
   }
 
   public static List<FieldVector[]> getHyperFieldVectors(VectorAccessible a){

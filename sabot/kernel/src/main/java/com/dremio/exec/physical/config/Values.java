@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,36 +20,37 @@ import java.util.Iterator;
 import java.util.List;
 
 import com.dremio.common.JSONOptions;
-import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.common.expression.SchemaPath;
-import com.dremio.exec.expr.fn.FunctionLookupContext;
 import com.dremio.exec.physical.base.AbstractBase;
 import com.dremio.exec.physical.base.GroupScan;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.PhysicalVisitor;
 import com.dremio.exec.physical.base.SubScan;
-import com.dremio.exec.proto.beans.CoreOperatorType;
+import com.dremio.exec.proto.UserBitShared.CoreOperatorType;
 import com.dremio.exec.record.BatchSchema;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
+@JsonTypeName("values")
 public class Values extends AbstractBase implements SubScan {
-
-  @SuppressWarnings("unused")
-  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(Values.class);
 
   private final JSONOptions content;
   private final BatchSchema schema;
 
   @JsonCreator
   public Values(
-      @JsonProperty("content") JSONOptions content,
-      @JsonProperty("schema") BatchSchema schema){
+      @JsonProperty("props") OpProps props,
+      @JsonProperty("fullSchema") BatchSchema schema,
+      @JsonProperty("content") JSONOptions content
+      ) {
+    super(props);
+    this.schema = schema; //Preconditions.checkNotNull(schema);
     this.content = content;
-    this.schema = Preconditions.checkNotNull(schema);
   }
 
   public JSONOptions getContent(){
@@ -62,9 +63,9 @@ public class Values extends AbstractBase implements SubScan {
   }
 
   @Override
-  public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) throws ExecutionSetupException {
+  public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) {
     assert children.isEmpty();
-    return new Values(content, schema);
+    return new Values(props, schema, content);
   }
 
   @Override
@@ -80,7 +81,9 @@ public class Values extends AbstractBase implements SubScan {
   @JsonIgnore
   @Override
   public List<List<String>> getReferencedTables() {
-    return ImmutableList.of(Collections.singletonList("values"));
+    final List<String> values = Collections.singletonList("values");
+    Preconditions.checkNotNull(values, String.format("Null values."));
+    return ImmutableList.of(values);
   }
 
   @Override
@@ -89,11 +92,7 @@ public class Values extends AbstractBase implements SubScan {
   }
 
   @Override
-  protected BatchSchema constructSchema(FunctionLookupContext context) {
-    return schema;
-  }
-
-  public BatchSchema getSchema(){
+  public BatchSchema getFullSchema() {
     return schema;
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,18 +23,6 @@ import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
  * Provider to {@code com.dremio.exec.proto.CoordinationProtos.NodeEndpoint}
  */
 public interface ServiceSet {
-  /**
-   * Handle returned by {@code ServiceSet} to unregister itself
-   */
-  public interface RegistrationHandle extends AutoCloseable {
-    /**
-     * Unregister the handle
-     *
-     * Close the handle, causing the coordinator to unregister the node
-     */
-    @Override
-    void close();
-  }
 
   /**
    * Register an endpoint for the given service
@@ -74,5 +62,5 @@ public interface ServiceSet {
    * @param listener
    * @throws NullPointerException if listener is {@code null}
    */
-  public void removeNodeStatusListener(NodeStatusListener listener);
+  void removeNodeStatusListener(NodeStatusListener listener);
 }

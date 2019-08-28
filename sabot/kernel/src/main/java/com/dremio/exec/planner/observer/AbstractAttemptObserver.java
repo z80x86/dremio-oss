@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,20 +23,21 @@ import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlNode;
 
+import com.dremio.common.utils.protos.QueryWritableBatch;
 import com.dremio.exec.catalog.DremioTable;
 import com.dremio.exec.planner.PlannerPhase;
+import com.dremio.exec.planner.acceleration.DremioMaterialization;
 import com.dremio.exec.planner.acceleration.substitution.SubstitutionInfo;
 import com.dremio.exec.planner.fragment.PlanningSet;
 import com.dremio.exec.planner.physical.Prel;
-import com.dremio.exec.planner.sql.DremioRelOptMaterialization;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
+import com.dremio.exec.proto.UserBitShared.FragmentRpcSizeStats;
 import com.dremio.exec.proto.UserBitShared.QueryProfile;
 import com.dremio.exec.rpc.RpcOutcomeListener;
 import com.dremio.exec.work.QueryWorkUnit;
 import com.dremio.exec.work.foreman.ExecutionPlan;
 import com.dremio.exec.work.protector.UserRequest;
 import com.dremio.exec.work.protector.UserResult;
-import com.dremio.common.utils.protos.QueryWritableBatch;
 import com.dremio.resource.ResourceSchedulingDecisionInfo;
 
 public abstract class AbstractAttemptObserver implements AttemptObserver {
@@ -89,7 +90,7 @@ public abstract class AbstractAttemptObserver implements AttemptObserver {
   }
 
   @Override
-  public void planSubstituted(DremioRelOptMaterialization materialization,
+  public void planSubstituted(DremioMaterialization materialization,
                               List<RelNode> substitutions,
                               RelNode target,
                               long millisTaken) {
@@ -136,11 +137,19 @@ public abstract class AbstractAttemptObserver implements AttemptObserver {
   }
 
   @Override
+  public void commandPoolWait(long waitInMillis) {
+  }
+
+  @Override
   public void execStarted(QueryProfile profile) {
   }
 
   @Override
   public void planJsonPlan(String text) {
+  }
+
+  @Override
+  public void executorsSelected(long millisTaken, int idealNumFragments, int idealNumNodes, int numExecutors, String detailsText) {
   }
 
   @Override
@@ -152,11 +161,16 @@ public abstract class AbstractAttemptObserver implements AttemptObserver {
   }
 
   @Override
-  public void intermediateFragmentScheduling(long millisTaken) {
+  public void fragmentsStarted(long millisTaken, FragmentRpcSizeStats stats) {
   }
 
   @Override
-  public void leafFragmentScheduling(long millisTaken) {
+  public void fragmentsActivated(long millisTaken) {
+  }
+
+  @Override
+  public void activateFragmentFailed(Exception ex) {
+
   }
 
   @Override

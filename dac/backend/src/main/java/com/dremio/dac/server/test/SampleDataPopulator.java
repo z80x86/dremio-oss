@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -237,11 +237,11 @@ public class SampleDataPopulator implements AutoCloseable {
   }
 
   @VisibleForTesting
-  public VirtualDatasetUI updateDS(DatasetPath datasetPath, Long savedVersion, From from)
+  public VirtualDatasetUI updateDS(DatasetPath datasetPath, String savedTag, From from)
     throws NamespaceException, DatasetNotFoundException {
     Stopwatch sw = Stopwatch.createStarted();
     VirtualDatasetUI ds = newDataset(datasetPath, newVersion(), from, datasetPath.toParentPathList());
-    ds.setSavedVersion(savedVersion);
+    ds.setSavedTag(savedTag);
     datasetService.putVersion(ds);
     long t = sw.elapsed(MILLISECONDS);
     if ( t > 100) {

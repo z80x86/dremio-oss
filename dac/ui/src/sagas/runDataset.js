@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,16 @@
  * limitations under the License.
  */
 import { take, race, put, call, select, takeEvery } from 'redux-saga/effects';
+import invariant from 'invariant';
 
-import { updateViewState } from 'actions/resources';
-
-import { loadNextRows } from 'actions/explore/dataset/data';
+import { loadNextRows, EXPLORE_PAGE_EXIT } from 'actions/explore/dataset/data';
 import { updateHistoryWithJobState } from 'actions/explore/history';
 
-import socket, { WS_MESSAGE_JOB_PROGRESS } from 'utils/socket';
-import { addNotification } from 'actions/notification';
-
-import Immutable from 'immutable';
-
-import {
-  RESUME_RUN_DATASET
-} from 'actions/explore/dataset/run';
-
-const LOCATION_CHANGE = '@@router/LOCATION_CHANGE';
-export const getLocation = state => state.routing.locationBeforeTransitions;
-export const getEntities = state => state.resources.entities;
+import socket, { WS_MESSAGE_JOB_PROGRESS, WS_CONNECTION_OPEN } from 'utils/socket';
+import { getExplorePageLocationChangePredicate } from '@app/sagas/utils';
+import { getTableDataRaw, getCurrentRouteParams } from '@app/selectors/explore';
+import { log } from '@app/utils/logger';
+import { LOGOUT_USER_SUCCESS } from '@app/actions/account';
 
 const getJobDoneActionFilter = (jobId) => (action) =>
   action.type === WS_MESSAGE_JOB_PROGRESS && action.payload.id.id === jobId && action.payload.update.isComplete;
@@ -39,58 +31,124 @@ const getJobDoneActionFilter = (jobId) => (action) =>
 const getJobProgressActionFilter = (jobId) => (action) =>
   action.type === WS_MESSAGE_JOB_PROGRESS && action.payload.id.id === jobId && !action.payload.update.isComplete;
 
-export default function* watchRunDataset() {
-  yield [
-    takeEvery(RESUME_RUN_DATASET, handleResumeRunDataset)
-  ];
+/**
+ * Load data for a dataset, if data is missing in redux store. Or forces data load if {@see forceReload}
+ * set to true
+ * @param {string!} datasetVersion - a dataset version
+ * @param {string!} jobId - a job id for which data would be requested
+ * @param {boolean!} forceReload
+ * @param {string!} paginationUrl - put is a last parameter is there is plan to get rid of server
+ * generated links
+ * @yields {void} An exception may be thrown.
+ * @throws DataLoadError
+ */
+export function* handleResumeRunDataset(datasetVersion, jobId, forceReload, paginationUrl) {
+  invariant(datasetVersion, 'dataset version must be provided');
+  invariant(jobId, 'jobId must be provided');
+  invariant(paginationUrl, 'paginationUrl must be provided');
+
+  // we always load data with column information inside, but rows may be missed in case if
+  // we load data asynchronously
+  const tableData = yield select(getTableDataRaw, datasetVersion);
+  const rows = tableData ? tableData.get('rows') : null;
+
+  // if forceReload = true and data exists, we should not clear data here. As it would be replaced
+  // by response in '/reducers/resources/entityReducers/table.js' reducer.
+  if (forceReload || !rows) {
+    yield call(waitForRunToComplete, datasetVersion, paginationUrl, jobId);
+  }
 }
 
+export class DataLoadError {
+  constructor(response) {
+    this.name = 'DataLoadError';
+    this.response = response;
+  }
+}
 
-export function* handleResumeRunDataset({ datasetId }) {
-  const entities = yield select(getEntities);
-  const tableData = entities.getIn(['tableData', datasetId]);
-  const location = yield select(getLocation);
-  const { jobId } = location.query;
-  if (jobId && !tableData) {
-    const datasetUI = entities.getIn(['datasetUI', datasetId]);
-    const fullDataset = entities.getIn(['fullDataset', datasetId]);
-    if (fullDataset.get('paginationUrl')) {
-      yield call(waitForRunToComplete, datasetUI, fullDataset.get('paginationUrl'), jobId);
+//export for tests
+/**
+ * Registers a listener for a job progress and triggers data load when job is completed
+ * @param {string} datasetVersion
+ * @param {string} paginationUrl
+ * @param {string} jobId
+ * @yields {void}
+ * @throws DataLoadError in case if data request returns an error
+ */
+export function* waitForRunToComplete(datasetVersion, paginationUrl, jobId) {
+  try {
+    log('Check if socket is opened:', socket.isOpen);
+    if (!socket.isOpen) {
+      const raceResult = yield race({
+        // When explore page is refreshed, we register 'pageChangeListener'
+        // (see oss/dac/ui/src/sagas/performLoadDataset.js), which may call this saga
+        // earlier, than application is booted ('APP_INIT' action) and socket is opened.
+        // We must wait for WS_CONNECTION_OPEN before 'socket.startListenToJobProgress'
+        socketOpen: take(WS_CONNECTION_OPEN),
+        stop: take(LOGOUT_USER_SUCCESS)
+      });
+
+      log('wait for socket open result:', raceResult);
+      if (raceResult.stop) {
+        // if a user is logged out before socket is opened, terminate current saga
+        return;
+      }
     }
+
+    yield call([socket, socket.startListenToJobProgress],
+      jobId,
+      // force listen request to force a response from server.
+      // There's no other way right now to know if job is already completed.
+      true
+    );
+    console.warn(`=+=+= socket listener registered for job id ${jobId}`);
+
+    const { jobDone } = yield race({
+      jobProgress: call(watchUpdateHistoryOnJobProgress, datasetVersion, jobId),
+      jobDone: take(getJobDoneActionFilter(jobId)),
+      locationChange: call(explorePageChanged)
+    });
+
+    if (jobDone) {
+      const promise = yield put(loadNextRows(datasetVersion, paginationUrl, 0));
+      const response = yield promise;
+
+      if (!response || response.error) {
+        console.warn(`=+=+= socket returned error for job id ${jobId}`);
+        throw new DataLoadError(response);
+      }
+
+      console.warn(`=+=+= socket returned payload for job id ${jobId}`);
+      yield put(updateHistoryWithJobState(datasetVersion, jobDone.payload.update.state));
+    }
+  } finally {
+    yield call([socket, socket.stopListenToJobProgress], jobId);
   }
 }
 
 
-export function* waitForRunToComplete(dataset, paginationUrl, jobId) {
-  const viewStateId = 'run-' + jobId;
-  yield call([socket, socket.startListenToJobProgress],
-    jobId,
-    // force listen request to force a response from server.
-    // There's no other way right now to know if job is already completed.
-    true
-  );
-  yield put(updateViewState(viewStateId, { isInProgress: true }));
-
-  if (!socket.isOpen) yield put(addNotification(Immutable.Map({code: 'WS_CLOSED'}), 'error'));
-
-  const { jobDone } = yield race({
-    jobProgress: call(watchUpdateHistoryOnJobProgress, dataset, jobId),
-    jobDone: take(getJobDoneActionFilter(jobId)),
-    locationChange: take(LOCATION_CHANGE)
-  });
-
-  if (jobDone) {
-    const promise = yield put(loadNextRows(dataset.get('datasetVersion'), paginationUrl, 0, viewStateId));
-    yield promise;
-    yield put(updateHistoryWithJobState(dataset, jobDone.payload.update.state));
-  }
-
-  yield call([socket, socket.stopListenToJobProgress], jobId);
+/**
+ * Returns a redux action that treated as explore page url change. The action could be one of the following cases:
+ * 1) Navigation out of explore page has happen
+ * 2) Current dataset or version of a dataset is changed
+ * Note: navigation between data/wiki/graph tabs is not treated as page change
+ * @yields {object} an redux action
+ */
+export function* explorePageChanged() {
+  const prevRouteParams = yield select(getCurrentRouteParams);
+  return yield take([getExplorePageLocationChangePredicate(prevRouteParams), EXPLORE_PAGE_EXIT]);
 }
 
-export function* watchUpdateHistoryOnJobProgress(dataset, jobId) {
+
+/**
+ * Endless job that monitors job progress iwth id {@see jobId} and updates job state in redux
+ * store for particular {@see datasetVersion}
+ * @param {string} datasetVersion
+ * @param {string} jobId
+ */
+export function* watchUpdateHistoryOnJobProgress(datasetVersion, jobId) {
   function *updateHistoryOnJobProgress(action) {
-    yield put(updateHistoryWithJobState(dataset, action.payload.update.state));
+    yield put(updateHistoryWithJobState(datasetVersion, action.payload.update.state));
   }
 
   yield takeEvery(getJobProgressActionFilter(jobId), updateHistoryOnJobProgress);

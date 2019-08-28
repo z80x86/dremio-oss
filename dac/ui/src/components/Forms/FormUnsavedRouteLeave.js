@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ import { Component } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 import { showUnsavedChangesConfirmDialog } from 'actions/confirmation';
+import { isUnauthorisedReason } from 'store/authMiddleware';
 import { withRouter } from 'react-router';
 
 /**
@@ -26,20 +27,17 @@ import { withRouter } from 'react-router';
  * Note: normally you have to use default export, this function exists mostly for unit tests, since
  * default export is the same component but connected with redux
  *
- * @param  {React.Component} FormController
+ * @param  {React.Component} WrappedFormController
  * @return {React.Component} wrapped component
  */
-export function wrapUnsavedChangesWithForm(FormController) {
-  const Wrapped = withRouter(FormController);
-  return class extends Component {
-    static contextTypes = {
-      router: PropTypes.object.isRequired
-    };
-
+export function wrapUnsavedChangesWithWrappedForm(WrappedFormController) {
+  return class UnsavedChangesWithForm extends Component {
     static propTypes = {
-      route: PropTypes.object.isRequired,
+      route: PropTypes.object,
+      routes: PropTypes.array.isRequired,
+      router: PropTypes.object,
       showUnsavedChangesConfirmDialog: PropTypes.func
-    }
+    };
 
     state = {
       isFormDirty: false,
@@ -57,29 +55,34 @@ export function wrapUnsavedChangesWithForm(FormController) {
      * }
      * @type {Object}
      */
-    childDirtyStates = {}
+    childDirtyStates = {};
 
     componentDidMount() {
-      this.context.router.setRouteLeaveHook(this.props.route, this.routeWillLeave);
+      const { route, routes, router } = this.props;
+      router.setRouteLeaveHook(route || this.getLastRoute(routes), this.routeWillLeave);
     }
 
     leaveConfirmed(nextLocation) {
-      this.setState({ignoreUnsavedChanges: true}, () => this.context.router.push(nextLocation));
+      this.setState({ignoreUnsavedChanges: true}, () => this.props.router.push(nextLocation));
     }
 
+    getLastRoute = (routes) => {
+      return routes && routes[routes.length - 1];
+    };
+
     routeWillLeave = (nextLocation) => {
-      if (this.state.isFormDirty && !this.state.ignoreUnsavedChanges) {
+      if (this.state.isFormDirty && !isUnauthorisedReason(nextLocation) && !this.state.ignoreUnsavedChanges) {
         this.props.showUnsavedChangesConfirmDialog({
           confirm: () => this.leaveConfirmed(nextLocation)
         });
         return false;
       }
       return true;
-    }
+    };
 
     updateFormDirtyState = (isFormDirty) => {
       this.setState({isFormDirty});
-    }
+    };
 
     hasDirtyChild() {
       return Object.values(this.childDirtyStates).some(dirty => dirty);
@@ -114,15 +117,21 @@ export function wrapUnsavedChangesWithForm(FormController) {
     setChildDirtyState = (formId) => (dirty) => {
       this.childDirtyStates[formId] = dirty;
       this.updateFormDirtyState(this.hasDirtyChild());
-    }
+    };
 
     render() {
-      return <Wrapped {...this.props}
-        updateFormDirtyState={this.updateFormDirtyState}
-        setChildDirtyState={this.setChildDirtyState}
-       />;
+      return <WrappedFormController {...this.props}
+                      updateFormDirtyState={this.updateFormDirtyState}
+                      setChildDirtyState={this.setChildDirtyState}
+      />;
     }
   };
+}
+
+
+export function wrapUnsavedChangesWithForm(FormController) {
+  const Wrapped = withRouter(FormController);
+  return withRouter(wrapUnsavedChangesWithWrappedForm(Wrapped));
 }
 
 export default function FormUnsavedRouteLeave(FormController) {

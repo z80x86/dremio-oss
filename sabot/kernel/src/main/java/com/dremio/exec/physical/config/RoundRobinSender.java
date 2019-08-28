@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package com.dremio.exec.physical.config;
 
 import java.util.List;
 
-import com.dremio.exec.expr.fn.FunctionLookupContext;
-import com.dremio.exec.physical.MinorFragmentEndpoint;
 import com.dremio.exec.physical.base.AbstractSender;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.PhysicalVisitor;
+import com.dremio.exec.proto.CoordExecRPC.MinorFragmentIndexEndpoint;
 import com.dremio.exec.proto.UserBitShared.CoreOperatorType;
 import com.dremio.exec.record.BatchSchema;
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -32,23 +32,33 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
 @JsonTypeName("round-robin-sender")
 public class RoundRobinSender extends AbstractSender {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(RoundRobinSender.class);
+  private final List<MinorFragmentIndexEndpoint> destinations;
 
   @JsonCreator
-  public RoundRobinSender(@JsonProperty("receiver-major-fragment") int oppositeMajorFragmentId,
-                          @JsonProperty("child") PhysicalOperator child,
-                          @JsonProperty("destinations") List<MinorFragmentEndpoint> destinations,
-                          @JsonProperty("schema") BatchSchema schema) {
-    super(oppositeMajorFragmentId, child, destinations, schema);
+  public RoundRobinSender(
+      @JsonProperty("props") OpProps props,
+      @JsonProperty("schema") BatchSchema schema,
+      @JsonProperty("child") PhysicalOperator child,
+      @JsonProperty("receiverMajorFragmentId") int receiverMajorFragmentId,
+      @JsonProperty("destinations") List<MinorFragmentIndexEndpoint> destinations
+      ) {
+    super(props, schema, child, receiverMajorFragmentId);
+    this.destinations = destinations;
   }
 
   @Override
   protected PhysicalOperator getNewWithChild(PhysicalOperator child) {
-    return new RoundRobinSender(oppositeMajorFragmentId, child, destinations, schema);
+    return new RoundRobinSender(props, schema, child, receiverMajorFragmentId, destinations);
   }
 
   @Override
   public <T, X, E extends Throwable> T accept(PhysicalVisitor<T, X, E> physicalVisitor, X value) throws E {
     return physicalVisitor.visitRoundRobinSender(this, value);
+  }
+
+  @Override
+  public List<MinorFragmentIndexEndpoint> getDestinations() {
+    return destinations;
   }
 
   @Override

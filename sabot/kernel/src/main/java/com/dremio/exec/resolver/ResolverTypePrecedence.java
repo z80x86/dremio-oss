@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,8 +55,8 @@ public class ResolverTypePrecedence {
     precMap.put(MinorType.UINT4, i += 2);
     precMap.put(MinorType.BIGINT, i += 2);
     precMap.put(MinorType.UINT8, i += 2);
-    precMap.put(MinorType.FLOAT4, i += 2);
     precMap.put(MinorType.DECIMAL, i += 2);
+    precMap.put(MinorType.FLOAT4, i += 2);
     precMap.put(MinorType.FLOAT8, i += 2);
     precMap.put(MinorType.DATE, i += 2);
     precMap.put(MinorType.TIMESTAMP, i += 2);
@@ -67,6 +67,7 @@ public class ResolverTypePrecedence {
     precMap.put(MinorType.FIXEDSIZEBINARY, i += 2);
     PRECEDENCE_MAP = ImmutableMap.copyOf(precMap);
     MAX_IMPLICIT_CAST_COST = i;
+
 
     /* Currently implicit cast follows the precedence rules.
      * It may be useful to perform an implicit cast in

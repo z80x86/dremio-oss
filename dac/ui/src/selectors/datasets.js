@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,8 @@
  */
 import { createSelector } from 'reselect';
 import Immutable from 'immutable';
-import { getEntityType } from '@app/utils/pathUtils';
 
 import { HOME_SPACE_NAME, RECENT_SPACE_NAME } from 'constants/Constants';
-
-import { getSortedSources, getSortedSpaces, denormalizeFile } from 'selectors/resources';
-import { getUserName } from 'selectors/account';
-import { getHomeForCurrentUser } from 'selectors/home';
 
 function _getResourceName(resourceName) {
   if (resourceName === 'home' || !resourceName) {
@@ -37,26 +32,6 @@ function _getPageType(pageType) {
     return 'space';
   }
   return pageType;
-}
-
-function _getResource(state, props) {
-  const hash = {
-    source: state.resources.entities.get('source'),
-    space: state.resources.entities.get('space'),
-    home: state.resources.entities.get('space'),
-    recent: state.resources.entities.get('space')
-  };
-  return hash[props.pageType] || hash.home;
-}
-
-function _getDatasetConfigs(state, props) {
-  const resource = _getResource(state, props);
-  return resource.get('datasetConfigs') || Immutable.Map();
-}
-
-function _getAllDatasets(state, props) {
-  const resource = _getResource(state, props);
-  return resource.get('datasets') || Immutable.Map();
 }
 
 function _getDataListToShow(state, props, name) {
@@ -106,12 +81,6 @@ function getResourceProgressState(state, props) {
   const physicalDatasetsSize = resource.get('physicalDatasets') && resource.get('physicalDatasets').size;
   return resource.get('isInProgress') && !filesSize &&
     !folderssSize && !datasetsSize && !physicalDatasetsSize;
-}
-
-function _getHome(state) {
-  const home = getHomeForCurrentUser(state);
-
-  return home.set('entityType', 'home').set('name', 'Home');
 }
 
 // function _getRecentSpace(spaces) {
@@ -168,15 +137,6 @@ function _getTreeNodeFromEntity(state, entity) {
   return createTreeNode(entity);
 }
 
-export function getDatasetsTree(state, currentPath) {
-  const spaces = getSortedSpaces(state).map(space =>
-    _getTreeNodeFromEntity(state, space, currentPath).set('entityType', 'space'));
-  const sources = getSortedSources(state).map(source =>
-    _getTreeNodeFromEntity(state, source, currentPath).set('entityType', 'source'));
-  const home = _getTreeNodeFromEntity(state, _getHome(state), currentPath);
-  return Immutable.List([home]).concat(spaces, sources);
-}
-
 const _getSummaryDataset = (state, fullPath) => {
   return state.resources.entities.getIn(['summaryDataset', fullPath]) || Immutable.Map();
 };
@@ -215,57 +175,3 @@ export const isSpaceContentInProgress = createSelector(
     return isInProgress;
   }
 );
-
-export const getDatasetConfigs = createSelector(
-  [ _getDatasetConfigs ],
-  configs => {
-    return configs;
-  }
-);
-
-export const getAllDatasets = createSelector(
-  [ _getAllDatasets ],
-  configs => {
-    return configs;
-  }
-);
-
-export const getHomePageEntity = (state, urlPath) => {
-  const { entities } = state.resources;
-  const entityType = getEntityType(urlPath);
-  const userName = getUserName(state);
-  const finalUrlPath = urlPath === '/' ? `/home/%40${encodeURIComponent(userName)}` : urlPath;
-  const entity = entities.get(entityType).find(e => e.getIn(['links', 'self']) === finalUrlPath); // todo: safe for all types?
-  if (!entity) {
-    return;
-  }
-  return entity;
-};
-
-// todo: why is this called getHomeContents - seems to do way more than "home"?
-// todo: simplify this
-// The only remaining places this is used are in AddFileModal, and AddFolderModal,
-// which are not actually using it to get "HomeContents".
-// They are just using it to get the parent entity (folder/space/source/home).
-export function getHomeContents(state, urlPath) {
-  const entity = getHomePageEntity(state, urlPath);
-
-  if (!entity) {
-    return;
-  }
-
-  return entity.set('contents', denormalizeHomeContents(state, entity.get('contents')));
-}
-
-function denormalizeHomeContents(state, contents) {
-  if (!contents) {
-    return Immutable.Map();
-  }
-  const {entities} = state.resources;
-  return Immutable.Map({
-    datasets: contents.get('datasets').map(key => entities.getIn(['dataset', key])),
-    files: contents.get('files').map(key => denormalizeFile(state, key)),
-    folders: contents.get('folders').map(key => entities.getIn(['folder', key])),
-    physicalDatasets: contents.get('physicalDatasets').map(key => entities.getIn(['physicalDataset', key]))
-  });
-}

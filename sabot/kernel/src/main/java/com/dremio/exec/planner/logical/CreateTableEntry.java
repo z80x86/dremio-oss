@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.dremio.exec.planner.logical;
 
 import java.io.IOException;
 
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.Writer;
 import com.dremio.exec.physical.base.WriterOptions;
@@ -38,7 +39,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 })
 public interface CreateTableEntry {
 
-  Writer getWriter(PhysicalOperator child) throws IOException;
+  Writer getWriter(OpProps props, PhysicalOperator child) throws IOException;
 
   WriterOptions getOptions();
 

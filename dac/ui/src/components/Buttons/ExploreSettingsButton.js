@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,13 @@
  */
 import { Component } from 'react';
 import Immutable from 'immutable';
-import ReactDOM from 'react-dom';
 import Radium from 'radium';
 import PropTypes from 'prop-types';
 import { injectIntl } from 'react-intl';
 import FontIcon from 'components/Icon/FontIcon';
 import SimpleButton from 'components/Buttons/SimpleButton';
-import { Overlay } from 'react-overlays';
-import Tooltip from 'components/Tooltip';
+import { Tooltip } from '@app/components/Tooltip';
 import HoverTrigger from 'components/HoverTrigger';
-import { bodyWhite } from 'uiTheme/radium/typography';
-import { NAVY } from 'uiTheme/radium/colors';
 
 @injectIntl
 @Radium
@@ -73,7 +69,8 @@ export default class ExploreSettingsButton extends Component {
         modal: 'DatasetSettingsModal',
         datasetUrl: dataset.getIn(['apiLinks', 'namespaceEntity']),
         datasetType: dataset.get('datasetType'),
-        query: { then: 'query' }
+        query: { then: 'query' },
+        isHomePage: false
       }
     });
   };
@@ -91,20 +88,16 @@ export default class ExploreSettingsButton extends Component {
           style={styles.button}
           onClick={this.handleOnClick}
           buttonStyle='secondary'>
-          <FontIcon type='Settings' theme={styles.icon}/>
+          <FontIcon type='Settings' tooltip={la('Settings')} theme={styles.icon}/>
         </SimpleButton>
-        <Overlay
-          show={this.state.isOpenOverlay}
-          container={document && document.body}
-          target={() => ReactDOM.findDOMNode(this.refs.settingsButton)}
-          placement={side}>
-          <Tooltip
-            type='status'
-            placement={side}
-            tooltipInnerStyle={styles.overlay}
-            content={intl.formatMessage({ id: 'Dataset.ChangeSettingsTooltip' })}
-          />
-        </Overlay>
+        <Tooltip
+          container={document.body}
+          target={() => this.state.isOpenOverlay ? this.refs.settingsButton : null}
+          placement={side}
+          tooltipInnerStyle={styles.overlay}
+        >
+          {intl.formatMessage({ id: 'Dataset.ChangeSettingsTooltip' })}
+        </Tooltip>
       </HoverTrigger>
     );
   }
@@ -125,12 +118,6 @@ const styles = {
     }
   },
   overlay: {
-    backgroundColor: NAVY,
-    padding: 10,
-    width: 300,
-    textAlign: 'left',
-    borderRadius: 5,
-    ...bodyWhite,
-    marginLeft: -10
+    width: 300
   }
 };

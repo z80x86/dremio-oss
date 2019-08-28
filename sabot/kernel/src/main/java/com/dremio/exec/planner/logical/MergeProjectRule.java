@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -95,6 +95,7 @@ public class MergeProjectRule extends RelOptRule {
     final RelNode input = bottomProject.getInput();
     if (RexUtil.isIdentity(newProjects, input.getRowType()) && uniqueFlattens == 0) {
       call.transformTo(input);
+      return;
     }
 
     // replace the two projects with a combined projection

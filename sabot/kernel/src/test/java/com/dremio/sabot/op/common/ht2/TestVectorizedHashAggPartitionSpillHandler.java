@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 
 package com.dremio.sabot.op.common.ht2;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -36,42 +36,42 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.SimpleBigIntVector;
+import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.junit.Test;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import com.dremio.common.AutoCloseables;
-import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartition;
-import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggDiskPartition;
-import com.dremio.sabot.op.aggregate.vectorized.SumAccumulators;
+import com.dremio.common.config.SabotConfig;
+import com.dremio.exec.proto.ExecProtos;
+import com.dremio.exec.record.VectorContainer;
+import com.dremio.exec.work.AttemptId;
 import com.dremio.sabot.op.aggregate.vectorized.AccumulatorSet;
-import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator;
-import com.dremio.sabot.op.aggregate.vectorized.MaxAccumulators;
-import com.dremio.sabot.op.aggregate.vectorized.MinAccumulators;
 import com.dremio.sabot.op.aggregate.vectorized.CountColumnAccumulator;
 import com.dremio.sabot.op.aggregate.vectorized.CountOneAccumulator;
+import com.dremio.sabot.op.aggregate.vectorized.MaxAccumulators;
+import com.dremio.sabot.op.aggregate.vectorized.MinAccumulators;
 import com.dremio.sabot.op.aggregate.vectorized.PartitionToLoadSpilledData;
+import com.dremio.sabot.op.aggregate.vectorized.SumAccumulators;
+import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggDiskPartition;
+import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator;
+import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartition;
 import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartitionSpillHandler;
 import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartitionSpillHandler.SpilledPartitionIterator;
 import com.dremio.service.spill.SpillDirectory;
 import com.dremio.service.spill.SpillService;
-import com.google.common.io.Files;
-import com.dremio.common.config.SabotConfig;
-import com.dremio.exec.proto.ExecProtos;
-import com.dremio.exec.work.AttemptId;
 import com.dremio.test.DremioTest;
 import com.google.common.collect.Lists;
-import com.dremio.exec.record.VectorContainer;
+import com.google.common.io.Files;
 import com.koloboke.collect.hash.HashConfig;
 
 import io.netty.buffer.ArrowBuf;
 import io.netty.util.internal.PlatformDependent;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
 
 /**
  * Tests for {@link VectorizedHashAggPartitionSpillHandler}
@@ -103,13 +103,14 @@ public class TestVectorizedHashAggPartitionSpillHandler {
     testPartitionSpillHandlerHelper();
     postSpillAccumulatorVectorFields.clear();
 
-    /* try with HT batch size as arbitrary non power of 2 */
-    MAX_VALUES_PER_BATCH = 940;
+    /* try with HT batch size as non power of 2 */
+    MAX_VALUES_PER_BATCH = 990;
     testPartitionSpillHandlerHelper();
     postSpillAccumulatorVectorFields.clear();
 
-    MAX_VALUES_PER_BATCH = 1017;
+    MAX_VALUES_PER_BATCH = 976;
     testPartitionSpillHandlerHelper();
+    postSpillAccumulatorVectorFields.clear();
   }
 
   private void testPartitionSpillHandlerHelper() throws Exception {
@@ -258,7 +259,9 @@ public class TestVectorizedHashAggPartitionSpillHandler {
         }
 
         /* accumulate */
-        partitions[i].getAccumulator().accumulate(offsets.memoryAddress(), records);
+        partitions[i].getAccumulator().accumulate(offsets.memoryAddress(), records,
+                                                  partitions[0].getHashTable().getBitsInChunk(),
+                                                  partitions[0].getHashTable().getChunkOffsetMask());
 
         /* check hashtable */
         assertArrayEquals(expectedOrdinals, actualOrdinals);
@@ -287,13 +290,18 @@ public class TestVectorizedHashAggPartitionSpillHandler {
 
     /* mock 4 partitions */
     final int numPartitions = 4;
+    final ArrowBuf combined = allocator.buffer(numPartitions * VectorizedHashAggOperator.PARTITIONINDEX_HTORDINAL_WIDTH * MAX_VALUES_PER_BATCH);
     final VectorizedHashAggPartition partitions[] = new VectorizedHashAggPartition[numPartitions];
     for(int i = 0; i < numPartitions; i++) {
       final AccumulatorSet accumulator = createAccumulator(accumulatorInput, allocator, (i == 0));
       LBlockHashTable sourceHashTable = new LBlockHashTable(HashConfig.getDefault(), pivot, allocator, 16000, 10, true, accumulator, MAX_VALUES_PER_BATCH);
-      VectorizedHashAggPartition hashAggPartition = new VectorizedHashAggPartition(accumulator, sourceHashTable, pivot.getBlockWidth(), "P" + String.valueOf(i));
+      final ArrowBuf buffer = combined.slice(i * VectorizedHashAggOperator.PARTITIONINDEX_HTORDINAL_WIDTH * MAX_VALUES_PER_BATCH,
+        VectorizedHashAggOperator.PARTITIONINDEX_HTORDINAL_WIDTH * MAX_VALUES_PER_BATCH);
+      VectorizedHashAggPartition hashAggPartition = new VectorizedHashAggPartition(accumulator,
+        sourceHashTable, pivot.getBlockWidth(), "P" + String.valueOf(i), buffer, false);
       partitions[i] = hashAggPartition;
     }
+    combined.close();
 
     /* we have just initialized partitions and everything should be in memory */
     verifyStateOfInMemoryPartitions(partitions);
@@ -328,7 +336,7 @@ public class TestVectorizedHashAggPartitionSpillHandler {
         }).when(spillService).getSpillSubdir(any(String.class));
 
         partitionSpillHandler = new VectorizedHashAggPartitionSpillHandler(partitions,
-          fragmentHandle, null, sabotConfig, 1, partitionToLoadSpilledData, spillService, true);
+          fragmentHandle, null, sabotConfig, 1, partitionToLoadSpilledData, spillService, true, null);
 
         /* insert incoming into partitions */
         insertAndAccumulateForAllPartitions(allocator, records, pivot, partitions, expectedOrdinals);

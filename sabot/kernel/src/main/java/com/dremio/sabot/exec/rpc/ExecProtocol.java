@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,15 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.apache.arrow.memory.BufferAllocator;
 
 import com.dremio.common.config.SabotConfig;
+import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.exception.FragmentSetupException;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
 import com.dremio.exec.proto.ExecRPC.FinishedReceiver;
 import com.dremio.exec.proto.ExecRPC.FragmentRecordBatch;
 import com.dremio.exec.proto.ExecRPC.FragmentStreamComplete;
+import com.dremio.exec.proto.ExecRPC.OOBMessage;
 import com.dremio.exec.proto.ExecRPC.RpcType;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
-import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.rpc.Acks;
 import com.dremio.exec.rpc.Response;
 import com.dremio.exec.rpc.ResponseSender;
@@ -37,20 +38,24 @@ import com.dremio.exec.rpc.RpcConfig;
 import com.dremio.exec.rpc.RpcConstants;
 import com.dremio.exec.rpc.RpcException;
 import com.dremio.sabot.exec.FragmentExecutors;
+import com.dremio.sabot.exec.fragment.OutOfBandMessage;
 import com.dremio.sabot.rpc.Protocols;
 import com.dremio.services.fabric.api.FabricProtocol;
 import com.dremio.services.fabric.api.PhysicalConnection;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.MessageLite;
 
-import io.netty.buffer.ArrowBuf;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.NettyArrowBuf;
 
 /**
  * Protocol between executors
  */
 public class ExecProtocol implements FabricProtocol {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ExecProtocol.class);
+
+  public static final Response OK = new Response(RpcType.ACK, Acks.OK);
+  public static final Response FAIL = new Response(RpcType.ACK, Acks.FAIL);
 
   private final FragmentExecutors fragmentsManager;
   private final BufferAllocator allocator;
@@ -73,20 +78,31 @@ public class ExecProtocol implements FabricProtocol {
     case RpcType.REQ_STREAM_COMPLETE_VALUE: {
       final FragmentStreamComplete completion = RpcBus.get(pBody, FragmentStreamComplete.PARSER);
       handleFragmentStreamCompletion(completion);
-      sender.send(ExecToExecConfig.OK);
+      sender.send(OK);
       return;
     }
 
     case RpcType.REQ_RECEIVER_FINISHED_VALUE: {
       final FinishedReceiver completion = RpcBus.get(pBody, FinishedReceiver.PARSER);
       handleReceiverFinished(completion);
-      sender.send(ExecToExecConfig.OK);
+      sender.send(OK);
+      return;
+    }
+
+    case RpcType.REQ_OOB_MESSAGE_VALUE: {
+      final OOBMessage oobMessage = RpcBus.get(pBody, OOBMessage.PARSER);
+      handleOobMessage(oobMessage);
+      sender.send(OK);
       return;
     }
 
     default:
       throw new UnsupportedOperationException();
     }
+  }
+
+  private void handleOobMessage(final OOBMessage message) {
+    fragmentsManager.handle(new OutOfBandMessage(message));
   }
 
   private void handleReceiverFinished(final FinishedReceiver finishedReceiver) throws RpcException {
@@ -110,7 +126,8 @@ public class ExecProtocol implements FabricProtocol {
 
     try {
 
-      final IncomingDataBatch batch = new IncomingDataBatch(fragmentBatch, (ArrowBuf) body, ack);
+      final IncomingDataBatch batch = new IncomingDataBatch(fragmentBatch, ((NettyArrowBuf) body)
+        .arrowBuf(), ack);
       final int targetCount = fragmentBatch.getReceivingMinorFragmentIdCount();
 
       // randomize who gets first transfer (and thus ownership) so memory usage
@@ -196,6 +213,7 @@ public class ExecProtocol implements FabricProtocol {
         .add(RpcType.REQ_RECORD_BATCH, FragmentRecordBatch.class, RpcType.ACK, Ack.class)
         .add(RpcType.REQ_STREAM_COMPLETE, FragmentStreamComplete.class, RpcType.ACK, Ack.class)
         .add(RpcType.REQ_RECEIVER_FINISHED, FinishedReceiver.class, RpcType.ACK, Ack.class)
+        .add(RpcType.REQ_OOB_MESSAGE, OOBMessage.class, RpcType.ACK, Ack.class)
         .build();
   }
 

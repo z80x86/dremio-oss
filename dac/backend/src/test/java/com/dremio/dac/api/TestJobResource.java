@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.dremio.dac.api;
+
+import static org.junit.Assert.assertEquals;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -36,6 +38,7 @@ import com.dremio.service.jobs.JobsService;
 import com.dremio.service.jobs.NoOpJobStatusListener;
 import com.dremio.service.jobs.SqlQuery;
 import com.dremio.service.users.SystemUser;
+import com.google.common.util.concurrent.Futures;
 
 /**
  * Jobs API tests
@@ -57,11 +60,10 @@ public class TestJobResource extends BaseTestServer {
 
     SqlQuery query = new SqlQuery("select * from sys.version", Collections.emptyList(), SystemUser.SYSTEM_USERNAME);
 
-    Job job = jobs.submitJob(JobRequest.newBuilder()
-      .setSqlQuery(query)
-      .setQueryType(QueryType.REST)
-      .build(), NoOpJobStatusListener.INSTANCE);
-
+    Job job = Futures.getUnchecked(
+      jobs.submitJob(
+        JobRequest.newBuilder().setSqlQuery(query).setQueryType(QueryType.REST).build(), NoOpJobStatusListener.INSTANCE)
+    );
 
     String id = job.getJobId().getId();
 
@@ -87,10 +89,14 @@ public class TestJobResource extends BaseTestServer {
 
     SqlQuery query = new SqlQuery("select * from sys.version", Collections.emptyList(), SystemUser.SYSTEM_USERNAME);
 
-    Job job = jobs.submitJob(JobRequest.newBuilder()
-      .setSqlQuery(query)
-      .setQueryType(QueryType.REST)
-      .build(), NoOpJobStatusListener.INSTANCE);
+    final Job job = Futures.getUnchecked(
+      jobs.submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(query)
+          .setQueryType(QueryType.REST)
+          .build(),
+        NoOpJobStatusListener.INSTANCE)
+    );
 
     String id = job.getJobId().getId();
 
@@ -104,6 +110,7 @@ public class TestJobResource extends BaseTestServer {
 
       if (jobState == JobState.CANCELED) {
         expectStatus(Response.Status.BAD_REQUEST, getBuilder(getPublicAPI(3).path(JOB_PATH).path(id).path("results").queryParam("limit", 1000)).buildGet());
+        assertEquals("Query cancelled by user 'dremio'", status.getCancellationReason());
         break;
       } else if (jobState == JobState.COMPLETED) {
         // the job could complete before the cancel request, so make sure the test doesn't fail in that case.

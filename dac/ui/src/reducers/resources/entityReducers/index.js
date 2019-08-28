@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ export folder from './folder';
 export table from './table';
 export explore from './explore';
 export tree from './tree';
-export dataset from './dataset';
 export historyItem from './historyItem';
 export provision from './provision';
 export lru from './lru';

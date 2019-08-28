@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 package com.dremio.sabot;
+
+import java.util.Collection;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.arrow.memory.AllocationListener;
 import org.apache.arrow.memory.AllocationReservation;
@@ -38,7 +41,6 @@ import com.dremio.sabot.op.sort.external.Sv4HyperContainer;
 
 import io.netty.buffer.ArrowBuf;
 import io.netty.buffer.ByteBufAllocator;
-import java.util.concurrent.TimeUnit;
 
 public class TestCopiers extends BaseTestOperator {
   static final int targetBatchSize = 1023;
@@ -196,6 +198,16 @@ public class TestCopiers extends BaseTestOperator {
     }
 
     @Override
+    public BufferAllocator getParentAllocator() {
+      return actual.getParentAllocator();
+    }
+
+    @Override
+    public Collection<BufferAllocator> getChildAllocators() {
+      return actual.getChildAllocators();
+    }
+
+    @Override
     public AllocationReservation newReservation() {
       return actual.newReservation();
     }
@@ -221,8 +233,6 @@ public class TestCopiers extends BaseTestOperator {
     }
 
     @Override
-    public void assertOpen() {
-      actual.assertOpen();
-    }
+    public void assertOpen() { actual.assertOpen(); }
   }
 }

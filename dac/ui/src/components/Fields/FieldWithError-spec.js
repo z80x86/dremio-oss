@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,8 @@ describe('FieldWithError', () => {
 
   it('should not render error if there is none', () => {
     const wrapper = shallow(<FieldWithError><input/></FieldWithError>);
-    expect(wrapper.find('Overlay').first().props().show).to.equal(false);
+    wrapper.instance().refs = { target: {} }; // simulate refs
+    expect(wrapper.find('Tooltip').prop('target')()).to.be.null;
   });
 
   it('should render error when there is one', () => {
@@ -40,7 +41,9 @@ describe('FieldWithError', () => {
       error: 'error'
     };
     const wrapper = shallow(<FieldWithError {...props}><input/></FieldWithError>);
-    expect(wrapper.find('Overlay').first().props().show).to.equal(true);
+    const refObj = {};
+    wrapper.instance().refs = { target: refObj }; // simulate refs
+    expect(wrapper.find('Tooltip').prop('target')()).to.equal(refObj);
   });
 
   it('should throw when there is no child', () => {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.arrow.vector.types.FloatingPointPrecision;
+import org.apache.arrow.vector.types.pojo.ArrowType;
+
 import com.dremio.common.expression.CompleteType;
 import com.dremio.common.expression.CompleteTypeInLogicalExpression;
 import com.dremio.common.expression.LogicalExpression;
@@ -29,7 +32,7 @@ import com.dremio.common.types.TypeProtos.DataMode;
 import com.dremio.common.types.TypeProtos.MinorType;
 import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
 import com.dremio.exec.expr.fn.AbstractFunctionHolder;
-import com.dremio.exec.expr.fn.BaseFunctionHolder;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
@@ -536,8 +539,11 @@ public class TypeCastRules {
   }
 
   /*
-   * Function checks if casting is allowed from the 'from' -> 'to' minor type. If its allowed
-   * we also check if the precedence map allows such a cast and return true if both cases are satisfied
+   * Function checks if casting is allowed from the 'from' -> 'to' minor type.
+   * If its allowed we also check if the precedence map allows such a cast and return true if
+   * both cases are satisfied.
+   * In some cases it might return a common higher type for e.g. for float, decimal we return
+   * double.
    */
   public static MinorType getLeastRestrictiveType(List<MinorType> types) {
     assert types.size() >= 2;
@@ -545,7 +551,10 @@ public class TypeCastRules {
     if (result == MinorType.UNION) {
       return result;
     }
-    int resultPrec = ResolverTypePrecedence.PRECEDENCE_MAP.get(result);
+
+    ImmutableMap<MinorType, Integer> precedenceMap = ResolverTypePrecedence.PRECEDENCE_MAP;
+
+    int resultPrec = precedenceMap.get(result);
 
     for (int i = 1; i < types.size(); i++) {
       MinorType next = types.get(i);
@@ -557,7 +566,14 @@ public class TypeCastRules {
         continue;
       }
 
-      int nextPrec = ResolverTypePrecedence.PRECEDENCE_MAP.get(next);
+      // Force float -> decimal to convert both to double.
+      if ((result == MinorType.FLOAT4 && next == MinorType.DECIMAL) ||
+          (result == MinorType.DECIMAL && next == MinorType.FLOAT4)) {
+        result = MinorType.FLOAT8;
+        continue;
+      }
+
+      int nextPrec = precedenceMap.get(next);
 
       if (isCastable(next, result) && resultPrec >= nextPrec) {
         // result is the least restrictive between the two args; nothing to do continue
@@ -609,6 +625,8 @@ public class TypeCastRules {
       }
     }
 
+    ImmutableMap<MinorType, Integer> precedenceMap = ResolverTypePrecedence.PRECEDENCE_MAP;
+
     final int numOfArgs = holder.getParamCount();
     for (int i = 0; i < numOfArgs; i++) {
       final CompleteType argType = argumentTypes.get(i);
@@ -624,13 +642,21 @@ public class TypeCastRules {
 //        else
 //          return -1;
       }
+      if (argType.isDecimal()) {
+        if (parmType.getType().getTypeID() == ArrowType.ArrowTypeID.FloatingPoint
+          && ((ArrowType.FloatingPoint) parmType.getType()).getPrecision() ==
+          FloatingPointPrecision.SINGLE) {
+          // do not allow decimals to be cast to float;
+          return -1;
+        }
+      }
 
       if (!TypeCastRules.isCastableWithNullHandling(argType, parmType, holder.getNullHandling())) {
         return -1;
       }
 
-      Integer parmVal = ResolverTypePrecedence.PRECEDENCE_MAP.get(parmType.toMinorType());
-      Integer argVal = ResolverTypePrecedence.PRECEDENCE_MAP.get(argType.toMinorType());
+      Integer parmVal = precedenceMap.get(parmType.toMinorType());
+      Integer argVal = precedenceMap.get(argType.toMinorType());
 
       if (parmVal == null) {
         throw new RuntimeException(String.format(

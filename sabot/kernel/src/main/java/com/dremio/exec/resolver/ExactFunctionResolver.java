@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
  */
 package com.dremio.exec.resolver;
 
+import java.util.List;
+
 import com.dremio.common.expression.CompleteType;
 import com.dremio.common.expression.FunctionCall;
 import com.dremio.common.expression.LogicalExpression;
-import com.dremio.exec.expr.fn.BaseFunctionHolder;
+import com.dremio.exec.expr.fn.AbstractFunctionHolder;
 import com.google.common.collect.Lists;
-
-import java.util.List;
 
 public class ExactFunctionResolver implements FunctionResolver {
 
@@ -32,11 +32,11 @@ public class ExactFunctionResolver implements FunctionResolver {
    * cast
    */
   @Override
-  public BaseFunctionHolder getBestMatch(List<BaseFunctionHolder> methods, FunctionCall call) {
+  public AbstractFunctionHolder getBestMatch(List<AbstractFunctionHolder> methods, FunctionCall call) {
 
     int currcost;
 
-    for (BaseFunctionHolder h : methods) {
+    for (AbstractFunctionHolder h : methods) {
       final List<CompleteType> argumentTypes = Lists.newArrayList();
       for (LogicalExpression expression : call.args) {
         argumentTypes.add(expression.getCompleteType());

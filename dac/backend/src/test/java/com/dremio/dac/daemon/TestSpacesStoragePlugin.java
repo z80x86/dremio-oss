@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.Before;
@@ -133,14 +133,14 @@ public class TestSpacesStoragePlugin extends BaseTestServer {
 
   public static void cleanup(DACDaemon dremioDaemon) throws Exception {
     final NamespaceService namespaceService = newNamespaceService();
-    namespaceService.deleteSpace(new SpacePath("testA").toNamespaceKey(), namespaceService.getSpace(new SpacePath("testA").toNamespaceKey()).getVersion());
-    namespaceService.deleteSpace(new SpacePath("testB").toNamespaceKey(), namespaceService.getSpace(new SpacePath("testB").toNamespaceKey()).getVersion());
+    namespaceService.deleteSpace(new SpacePath("testA").toNamespaceKey(), namespaceService.getSpace(new SpacePath("testA").toNamespaceKey()).getTag());
+    namespaceService.deleteSpace(new SpacePath("testB").toNamespaceKey(), namespaceService.getSpace(new SpacePath("testB").toNamespaceKey()).getTag());
   }
 
   private JobData runExternalQuery(String sql) {
-    return new JobUI(jobsService.submitJob(JobRequest.newBuilder()
-        .setSqlQuery(new SqlQuery(sql, Arrays.asList("@" + DEFAULT_USER_NAME), DEFAULT_USER_NAME))
-        .build(), NoOpJobStatusListener.INSTANCE)).getData();
+    return JobUI.getJobData(jobsService.submitJob(JobRequest.newBuilder()
+        .setSqlQuery(new SqlQuery(sql, Collections.singletonList("@" + DEFAULT_USER_NAME), DEFAULT_USER_NAME))
+        .build(), NoOpJobStatusListener.INSTANCE));
   }
 
   private JobsService jobsService;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -138,6 +138,34 @@ public class TypeHelper extends BasicTypeHelper {
     if (v instanceof ${minor.class}Vector) {
         new Nullable${minor.class}VectorHelper((${minor.class}Vector) v).load(metadata, buffer);
         return;
+    }
+    </#if>
+    </#list>
+    </#list>
+    throw new UnsupportedOperationException(String.format("no loader for vector %s", v));
+  }
+
+  public static void loadFromValidityAndDataBuffers(ValueVector v, SerializedField metadata, ArrowBuf dataBuffer, ArrowBuf validityBuffer) {
+    if (v instanceof ZeroVector) {
+      throw new UnsupportedOperationException(String.format("this loader is not supported for vector %s", v));
+    } else if (v instanceof UnionVector) {
+      throw new UnsupportedOperationException(String.format("this loader is not supported for vector %s", v));
+    } else if (v instanceof ListVector) {
+      throw new UnsupportedOperationException(String.format("this loader is not supported for vector %s", v));
+    } else if (v instanceof StructVector) {
+      throw new UnsupportedOperationException(String.format("this loader is not supported for vector %s", v));
+    } else if (v instanceof NonNullableStructVector) {
+      throw new UnsupportedOperationException(String.format("this loader is not supported for vector %s", v));
+    } else
+    <#list vv.types as type>
+    <#list type.minor as minor>
+    <#assign typeMapping = TypeMappings[minor.class]!{}>
+      <#assign supported = typeMapping.supported!true>
+      <#assign dremioMinorType = typeMapping.minor_type!minor.class?upper_case>
+      <#if supported>
+    if (v instanceof ${minor.class}Vector) {
+      new Nullable${minor.class}VectorHelper((${minor.class}Vector) v).loadFromValidityAndDataBuffers(metadata, dataBuffer, validityBuffer);
+      return;
     }
     </#if>
     </#list>

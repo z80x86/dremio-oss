@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.expression.CompleteType;
+import com.dremio.exec.ExecConstants;
 import com.dremio.exec.ops.QueryContext;
 import com.dremio.exec.planner.physical.Prel;
 import com.dremio.exec.planner.physical.ProjectPrel;
@@ -157,7 +158,7 @@ public class ConvertFromJsonConverter extends BasePrelVisitor<Prel, Void, Runtim
       }});
 
     final RelDataType bottomType = factory.createStructType(bottomProjectType, topRel.getRowType().getFieldNames());
-    final ProjectPrel newBottomProject = new ProjectPrel(topRel.getCluster(), topRel.getTraitSet(), inputRel, bottomExprs, bottomType);
+    final ProjectPrel newBottomProject = ProjectPrel.create(topRel.getCluster(), topRel.getTraitSet(), inputRel, bottomExprs, bottomType);
 
     return new ConvertFromJsonPrel(topRel.getCluster(), topRel.getTraitSet(), topRel.getRowType(), newBottomProject, conversions);
   }
@@ -218,7 +219,9 @@ public class ConvertFromJsonConverter extends BasePrelVisitor<Prel, Void, Runtim
 
         ){
       data.writeBytes(bytes);
-      JsonReader jsonReader = new JsonReader(bufferManager.getManagedBuffer(), false, false, false);
+      final int sizeLimit = Math.toIntExact(context.getOptions().getOption(ExecConstants.LIMIT_FIELD_SIZE_BYTES));
+      JsonReader jsonReader = new JsonReader(bufferManager.getManagedBuffer(), sizeLimit,
+        context.getOptions().getOption(ExecConstants.JSON_READER_ALL_TEXT_MODE_VALIDATOR), false, false);
       jsonReader.setSource(bytes);
 
         ComplexWriter writer = new ComplexWriterImpl("dummy", vc);

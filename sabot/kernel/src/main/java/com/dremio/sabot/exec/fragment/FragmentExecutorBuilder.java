@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,30 +31,30 @@ import com.dremio.common.config.SabotConfig;
 import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.scanner.persistence.ScanResult;
+import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.compile.CodeCompiler;
+import com.dremio.exec.expr.fn.DecimalFunctionImplementationRegistry;
 import com.dremio.exec.expr.fn.FunctionImplementationRegistry;
 import com.dremio.exec.planner.PhysicalPlanReader;
-import com.dremio.exec.proto.CoordExecRPC.PlanFragment;
+import com.dremio.exec.planner.fragment.CachedFragmentReader;
+import com.dremio.exec.planner.fragment.PlanFragmentFull;
+import com.dremio.exec.proto.CoordExecRPC.PlanFragmentMajor;
 import com.dremio.exec.proto.CoordExecRPC.SchedulingInfo;
-import com.dremio.exec.proto.CoordExecRPC.SharedData;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
-import com.dremio.common.utils.protos.QueryIdHelper;
-import com.dremio.exec.record.NamespaceUpdater;
 import com.dremio.exec.server.NodeDebugContextProvider;
 import com.dremio.exec.server.options.FragmentOptionManager;
-import com.dremio.options.OptionList;
-import com.dremio.options.OptionManager;
-import com.dremio.options.OptionValue;
 import com.dremio.exec.server.options.SystemOptionManager;
 import com.dremio.exec.store.CatalogService;
 import com.dremio.exec.testing.ExecutionControls;
+import com.dremio.options.OptionList;
+import com.dremio.options.OptionManager;
+import com.dremio.options.OptionValue;
 import com.dremio.sabot.driver.OperatorCreatorRegistry;
-import com.dremio.sabot.driver.SchemaChangeListener;
 import com.dremio.sabot.exec.EventProvider;
 import com.dremio.sabot.exec.ExecToCoordTunnelCreator;
+import com.dremio.sabot.exec.FragmentTicket;
 import com.dremio.sabot.exec.FragmentWorkManager.ExecConnectionCreator;
 import com.dremio.sabot.exec.QueriesClerk;
-import com.dremio.sabot.exec.QueriesClerk.FragmentTicket;
 import com.dremio.sabot.exec.QueryStarter;
 import com.dremio.sabot.exec.QueryTicket;
 import com.dremio.sabot.exec.context.ContextInformation;
@@ -78,6 +78,7 @@ public class FragmentExecutorBuilder {
 
   static final String PIPELINE_RES_GRP = "pipeline";
   static final String WORK_QUEUE_RES_GRP = "work-queue";
+  static final String OOB_QUEUE = "oob-queue";
 
   private final QueriesClerk clerk;
   private final SabotConfig config;
@@ -90,9 +91,9 @@ public class FragmentExecutorBuilder {
 
   private final OperatorCreatorRegistry opCreator;
   private final FunctionImplementationRegistry funcRegistry;
+  private final DecimalFunctionImplementationRegistry decimalFuncRegistry;
   private final CodeCompiler compiler;
   private final PhysicalPlanReader planReader;
-  private final SchemaChangeListener schemaUpdater;
   private final Set<ClusterCoordinator.Role> roles;
   private final CatalogService sources;
   private final ContextInformationFactory contextInformationFactory;
@@ -113,6 +114,7 @@ public class FragmentExecutorBuilder {
       CatalogService sources,
       ContextInformationFactory contextInformationFactory,
       FunctionImplementationRegistry functions,
+      DecimalFunctionImplementationRegistry decimalFunctions,
       NodeDebugContextProvider nodeDebugContextProvider,
       SpillService spillService,
       Set<ClusterCoordinator.Role> roles) {
@@ -127,8 +129,8 @@ public class FragmentExecutorBuilder {
     this.planReader = planReader;
     this.opCreator = new OperatorCreatorRegistry(scanResult);
     this.funcRegistry = functions;
+    this.decimalFuncRegistry = decimalFunctions;
     this.compiler = new CodeCompiler(config, optionManager);
-    this.schemaUpdater = new NamespaceUpdater(namespace);
     this.roles = roles;
     this.sources = sources;
     this.contextInformationFactory = contextInformationFactory;
@@ -136,36 +138,33 @@ public class FragmentExecutorBuilder {
     this.spillService = spillService;
   }
 
+  public PhysicalPlanReader getPlanReader() {
+    return planReader;
+  }
+
+  public QueriesClerk getClerk() { return clerk; }
+
   /**
    * Obtains a query ticket, then starts the query with this query ticket
    *
    * The query might be built and started in the calling thread, *or*, it might be built and started by a worker thread
    */
-  public void buildAndStartQuery(final PlanFragment firstFragment, final SchedulingInfo schedulingInfo,
+  public void buildAndStartQuery(PlanFragmentFull firstFragment,final SchedulingInfo schedulingInfo,
                                  final QueryStarter queryStarter) {
     clerk.buildAndStartQuery(firstFragment, schedulingInfo, queryStarter);
   }
 
   public FragmentExecutor build(final QueryTicket queryTicket,
-                                final PlanFragment fragment,
+                                final PlanFragmentFull fragment,
                                 final EventProvider eventProvider,
                                 final SchedulingInfo schedulingInfo,
-                                final List<SharedData> sharedData) throws Exception {
+                                final CachedFragmentReader cachedReader) throws Exception {
 
     final AutoCloseableList services = new AutoCloseableList();
+    final PlanFragmentMajor major = fragment.getMajor();
 
     try(RollbackCloseable commit = new RollbackCloseable(services)){
-      final OptionList list;
-      if (!fragment.hasOptionsJson() || fragment.getOptionsJson().isEmpty()) {
-        list = new OptionList();
-      } else {
-        try {
-          list = planReader.readOptionList(fragment.getOptionsJson(), fragment.getFragmentCodec());
-        } catch (final Exception e) {
-          throw new ExecutionSetupException("Failure while reading plan options.", e);
-        }
-      }
-
+      final OptionList list = cachedReader.readOptions(fragment);
       final FragmentHandle handle = fragment.getHandle();
       final FragmentTicket ticket = services.protect(clerk.newFragmentTicket(queryTicket, fragment, schedulingInfo));
       logger.debug("Getting initial memory allocation of {}", fragment.getMemInitial());
@@ -186,7 +185,7 @@ public class FragmentExecutorBuilder {
         throw new ExecutionSetupException("Failure while getting memory allocator for fragment.", e);
       }
 
-      final FragmentStats stats = new FragmentStats(allocator, fragment.getAssignment());
+      final FragmentStats stats = new FragmentStats(allocator, handle, fragment.getAssignment());
       final SharedResourceManager sharedResources = SharedResourceManager.newBuilder()
         .addGroup(PIPELINE_RES_GRP)
         .addGroup(WORK_QUEUE_RES_GRP)
@@ -205,7 +204,13 @@ public class FragmentExecutorBuilder {
       final ExecutionControls controls = new ExecutionControls(fragmentOptions, fragment.getAssignment());
 
       final ContextInformation contextInfo =
-          contextInformationFactory.newContextFactory(fragment.getCredentials(), fragment.getContext());
+          contextInformationFactory.newContextFactory(major.getCredentials(), major.getContext());
+
+      // create rpc connections
+      final ExecToCoordTunnel coordTunnel = execToCoord.getTunnel(major.getForeman());
+      final DeferredException exception = new DeferredException();
+      final StatusHandler handler = new StatusHandler(exception);
+      final TunnelProvider tunnelProvider = new TunnelProviderImpl(flushable.getAccountor(), coordTunnel, dataCreator, handler, sharedResources.getGroup(PIPELINE_RES_GRP));
 
       final OperatorContextCreator creator = new OperatorContextCreator(
           stats,
@@ -215,33 +220,32 @@ public class FragmentExecutorBuilder {
           handle,
           controls,
           funcRegistry,
+          decimalFuncRegistry,
           namespace,
           fragmentOptions,
           executorService,
           spillService,
           contextInfo,
-          nodeDebugContextProvider);
+          nodeDebugContextProvider,
+          tunnelProvider,
+          major.getAllAssignmentList(),
+          cachedReader.getPlanFragmentsIndex().getEndpointsIndex());
 
-      final ExecToCoordTunnel coordTunnel = execToCoord.getTunnel(fragment.getForeman());
       final FragmentStatusReporter statusReporter = new FragmentStatusReporter(fragment.getHandle(), stats, coordTunnel, allocator);
-      final DeferredException exception = new DeferredException();
-      final StatusHandler handler = new StatusHandler(exception);
-      final TunnelProvider tunnelProvider = new TunnelProviderImpl(flushable.getAccountor(), coordTunnel, dataCreator, handler, sharedResources.getGroup(PIPELINE_RES_GRP));
-
       final FragmentExecutor executor = new FragmentExecutor(
           statusReporter,
           config,
+          controls,
           fragment,
           coord,
-          planReader,
+          cachedReader,
           sharedResources,
           opCreator,
           allocator,
-          schemaUpdater,
           contextInfo,
           creator,
-          sharedData,
           funcRegistry,
+          decimalFuncRegistry,
           tunnelProvider,
           flushable,
           fragmentOptions,

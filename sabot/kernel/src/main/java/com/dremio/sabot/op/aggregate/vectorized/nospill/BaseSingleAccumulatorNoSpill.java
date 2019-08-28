@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,13 @@
  */
 package com.dremio.sabot.op.aggregate.vectorized.nospill;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.FixedWidthVector;
+import org.apache.arrow.vector.util.DecimalUtility;
 import org.apache.arrow.vector.util.TransferPair;
 
 import com.dremio.common.AutoCloseables;
@@ -78,9 +81,7 @@ abstract class BaseSingleAccumulatorNoSpill implements AccumulatorNoSpill {
     final long[] oldBitAddresses = this.bitAddresses;
     final long[] oldValueAddresses = this.valueAddresses;
 
-    final int newCapBatches = (int) Math.ceil( newCapacity / (LBlockHashTableNoSpill.MAX_VALUES_PER_BATCH * 1.0d) );
-    final int doublingCapBatches = oldBatches * 2;
-    final int newBatches = Math.max(newCapBatches, doublingCapBatches);
+    final int newBatches = (int) Math.ceil( newCapacity / (LBlockHashTableNoSpill.MAX_VALUES_PER_BATCH * 1.0d) );
     initArrs(newBatches);
 
     System.arraycopy(oldAccumulators, 0, this.accumulators, 0, oldBatches);
@@ -160,6 +161,16 @@ abstract class BaseSingleAccumulatorNoSpill implements AccumulatorNoSpill {
     }
   }
 
+  public static void writeWordwise(ArrowBuf buffer, int length, BigDecimal value) {
+    if (length == 0) {
+      return;
+    }
+    int numberOfDecimals = length >>>4;
+    IntStream.range(0, numberOfDecimals).forEach( (index) -> {
+      DecimalUtility.writeBigDecimalToArrowBuf(value, buffer, index);
+    });
+  }
+
   public static void fillInts(long addr, int length, int value) {
     if (length == 0) {
       return;
@@ -213,4 +224,11 @@ abstract class BaseSingleAccumulatorNoSpill implements AccumulatorNoSpill {
     writeWordwise(values.memoryAddress(), values.capacity(), OFF);
   }
 
+  public static void setNullAndValue(FieldVector vector, BigDecimal value){
+    List<ArrowBuf> buffers = vector.getFieldBuffers();
+    ArrowBuf bits = buffers.get(0);
+    writeWordwise(bits.memoryAddress(), bits.capacity(), OFF);
+    ArrowBuf values = buffers.get(1);
+    writeWordwise(values, values.capacity(), value);
+  }
 }

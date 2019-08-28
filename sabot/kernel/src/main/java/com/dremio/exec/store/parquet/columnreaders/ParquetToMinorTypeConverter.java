@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,8 @@ import org.apache.parquet.schema.PrimitiveType;
 import com.dremio.common.types.TypeProtos;
 import com.dremio.common.types.TypeProtos.MinorType;
 import com.dremio.common.util.CoreDecimalUtility;
-import com.dremio.options.OptionManager;
 import com.dremio.exec.store.parquet.ParquetReaderUtility;
+import com.dremio.options.OptionManager;
 
 public class ParquetToMinorTypeConverter {
 

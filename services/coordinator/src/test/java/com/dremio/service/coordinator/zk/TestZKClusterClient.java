@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ import com.dremio.common.config.SabotConfig;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.service.coordinator.ClusterCoordinator;
 import com.dremio.service.coordinator.ElectionListener;
-import com.dremio.service.coordinator.ServiceSet.RegistrationHandle;
+import com.dremio.service.coordinator.ElectionRegistrationHandle;
 import com.dremio.test.DremioTest;
 import com.typesafe.config.ConfigValueFactory;
 
@@ -144,7 +144,7 @@ public class TestZKClusterClient extends DremioTest {
         String.format("%s/dremio/test/test-cluster-id", zooKeeperServer.getConnectString()))
     ) {
       client.start();
-      RegistrationHandle node1 = client.joinElection("test-election", new ElectionListener() {
+      ElectionRegistrationHandle node1 = client.joinElection("test-election", new ElectionListener() {
 
         @Override
         public void onElected() {
@@ -161,7 +161,7 @@ public class TestZKClusterClient extends DremioTest {
         }
       });
 
-      RegistrationHandle node2 = client.joinElection("test-election", new ElectionListener() {
+      ElectionRegistrationHandle node2 = client.joinElection("test-election", new ElectionListener() {
         @Override
         public void onElected() {
           join2.set(true);
@@ -204,7 +204,7 @@ public class TestZKClusterClient extends DremioTest {
         String.format("%s/dremio/test/test-cluster-id", zooKeeperServer.getConnectString()))
     ) {
       client.start();
-      RegistrationHandle node1 = client.joinElection("test-election", new ElectionListener() {
+      ElectionRegistrationHandle node1 = client.joinElection("test-election", new ElectionListener() {
 
         @Override
         public void onElected() {
@@ -240,7 +240,7 @@ public class TestZKClusterClient extends DremioTest {
         String.format("%s/dremio/test/test-cluster-id", zooKeeperServer.getConnectString()))
         ) {
       client.start();
-      RegistrationHandle node1 = client.joinElection("test-election", new ZKElectionListener() {
+      ElectionRegistrationHandle node1 = client.joinElection("test-election", new ZKElectionListener() {
 
         @Override
         public void onElected() {

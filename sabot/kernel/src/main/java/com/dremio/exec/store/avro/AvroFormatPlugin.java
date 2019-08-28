@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package com.dremio.exec.store.avro;
 import java.io.IOException;
 import java.util.List;
 
+import org.apache.hadoop.fs.FileStatus;
+
 import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.expression.SchemaPath;
@@ -30,7 +32,7 @@ import com.dremio.exec.store.dfs.FileSystemWrapper;
 import com.dremio.exec.store.dfs.easy.EasyFormatPlugin;
 import com.dremio.exec.store.dfs.easy.EasyWriter;
 import com.dremio.sabot.exec.context.OperatorContext;
-import com.dremio.service.namespace.file.proto.EasyDatasetSplitXAttr;
+import com.dremio.sabot.exec.store.easy.proto.EasyProtobuf.EasyDatasetSplitXAttr;
 import com.google.common.collect.Lists;
 
 /**
@@ -74,6 +76,12 @@ public class AvroFormatPlugin extends EasyFormatPlugin<AvroFormatConfig> {
   @Override
   public int getWriterOperatorType() {
     throw new UnsupportedOperationException("unimplemented");
+  }
+
+  @Override
+  public RecordReader getRecordReader(OperatorContext context, FileSystemWrapper dfs, FileStatus status)
+      throws ExecutionSetupException {
+    return null;
   }
 
 

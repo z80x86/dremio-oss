@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import org.slf4j.LoggerFactory;
 import com.dremio.exec.exception.SchemaChangeException;
 import com.dremio.exec.expr.TypeHelper;
 import com.dremio.exec.record.VectorContainer;
-import com.dremio.exec.server.SabotContext;
 import com.dremio.sabot.exec.context.BufferManagerImpl;
 import com.dremio.sabot.op.scan.OutputMutator;
 import com.google.common.collect.Maps;

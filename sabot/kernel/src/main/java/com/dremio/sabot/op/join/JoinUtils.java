@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.dremio.sabot.op.join;
 
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -27,6 +28,7 @@ import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rex.RexNode;
 
 import com.dremio.common.exceptions.UserException;
+import com.dremio.common.expression.CompleteType;
 import com.dremio.common.expression.LogicalExpression;
 import com.dremio.common.logical.data.JoinCondition;
 import com.dremio.common.types.TypeProtos.MinorType;
@@ -34,6 +36,7 @@ import com.dremio.exec.expr.ClassProducer;
 import com.dremio.exec.planner.logical.AggregateRel;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.resolver.TypeCastRules;
+import com.dremio.options.OptionManager;
 import com.dremio.sabot.op.common.hashtable.Comparator;
 
 
@@ -44,6 +47,26 @@ public class JoinUtils {
     EQUALITY,  // equality join
     INEQUALITY,  // inequality join: <>, <, >
     CARTESIAN   // no join condition
+  }
+
+  // Given a Join RelNode, swap its left condition with right condition
+  public static RexNode getSwappedCondition(RelNode relNode) {
+    Join joinRel = (Join) relNode;
+    int numFieldLeft = joinRel.getLeft().getRowType().getFieldCount();
+    int numFieldRight = joinRel.getRight().getRowType().getFieldCount();
+
+    int[] adjustments = new int[numFieldLeft + numFieldRight];
+    Arrays.fill(adjustments, 0, numFieldLeft, numFieldRight);
+    Arrays.fill(adjustments, numFieldLeft, numFieldLeft + numFieldRight, -numFieldLeft);
+
+    return joinRel.getCondition().accept(
+      new RelOptUtil.RexInputConverter(
+        joinRel.getCluster().getRexBuilder(),
+        joinRel.getCluster().getTypeFactory().createJoinType(joinRel.getLeft().getRowType(), joinRel.getRight().getRowType()).getFieldList(),
+        joinRel.getCluster().getTypeFactory().createJoinType(joinRel.getRight().getRowType(), joinRel.getLeft().getRowType()).getFieldList(),
+        adjustments
+      )
+    );
   }
 
   // Check the comparator is supported in join condition. Note that a similar check is also
@@ -145,11 +168,12 @@ public class JoinUtils {
    * @param leftBatch left input record batch
    * @param rightExpressions array of expressions from right input into the join
    * @param rightBatch right input record batch
-   * @param context fragment context
+   * @param producer class producer
+   * @param optionManager option manager to any specific options
    */
   public static void addLeastRestrictiveCasts(LogicalExpression[] leftExpressions, VectorAccessible leftBatch,
                                               LogicalExpression[] rightExpressions, VectorAccessible rightBatch,
-                                              ClassProducer producer) {
+                                              ClassProducer producer, OptionManager optionManager) {
     assert rightExpressions.length == leftExpressions.length;
 
     for (int i = 0; i < rightExpressions.length; i++) {
@@ -179,6 +203,13 @@ public class JoinUtils {
           throw new RuntimeException(String.format("Join conditions cannot be compared failing left " +
                   "expression:" + " %s failing right expression: %s", leftExpression.getCompleteType().toString(),
               rightExpression.getCompleteType().toString()));
+        } else if (result != rightType && result != leftType) {
+          // cast both to common type.
+          CompleteType resultType = CompleteType.fromMinorType(result);
+          LogicalExpression castExpr = producer.addImplicitCast(rightExpression, resultType);
+          rightExpressions[i] = producer.materialize(castExpr, rightBatch);
+          LogicalExpression castExprLeft = producer.addImplicitCast(leftExpression, resultType);
+          leftExpressions[i] = producer.materialize(castExprLeft, leftBatch);
         } else if (result != rightType) {
           // Add a cast expression on top of the right expression
           LogicalExpression castExpr = producer.addImplicitCast(rightExpression, leftExpression.getCompleteType());
@@ -224,23 +255,6 @@ public class JoinUtils {
       }
     }
     return false;
-  }
-
-  public static JoinCategory getJoinCategory(RelNode left, RelNode right, RexNode condition,
-      List<Integer> leftKeys, List<Integer> rightKeys, List<Boolean> filterNulls) {
-    if (condition.isAlwaysTrue()) {
-      return JoinCategory.CARTESIAN;
-    }
-    leftKeys.clear();
-    rightKeys.clear();
-    filterNulls.clear();
-    RexNode remaining = RelOptUtil.splitJoinCondition(left, right, condition, leftKeys, rightKeys, filterNulls);
-
-    if (!remaining.isAlwaysTrue() || (leftKeys.size() == 0 || rightKeys.size() == 0) ) {
-      // for practical purposes these cases could be treated as inequality
-      return JoinCategory.INEQUALITY;
-    }
-    return JoinCategory.EQUALITY;
   }
 
 }

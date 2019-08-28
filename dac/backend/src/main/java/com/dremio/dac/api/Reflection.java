@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ public class Reflection {
     id = goal.getId().getId();
     name = goal.getName();
     type = goal.getType();
-    tag = String.valueOf(goal.getVersion());
+    tag = goal.getTag();
     createdAt = goal.getCreatedAt();
     updatedAt = goal.getModifiedAt();
     datasetId = goal.getDatasetId();
@@ -282,7 +282,7 @@ public class Reflection {
     goal.setName(name);
 
     if (tag != null) {
-      goal.setVersion(Long.valueOf(tag));
+      goal.setTag(tag);
     }
     goal.setCreatedAt(createdAt);
     goal.setModifiedAt(updatedAt);

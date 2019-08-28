@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import Radium from 'radium';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 import { FormattedMessage, injectIntl } from 'react-intl';
+import { getExploreState } from '@app/selectors/explore';
 
 import { showConfirmationDialog } from 'actions/confirmation';
 import { resetNewQuery } from 'actions/explore/view';
@@ -63,11 +64,11 @@ export class NewQueryButton extends Component {
 
   handleClick = (e) => {
     const { location, currentSql, intl } = this.props;
-    if (e.metaKey) { // DX-10607 pass to default link behaviour, when cmd is pressed on click
+    if (e.metaKey || e.ctrlKey) { // DX-10607, DX-11299 pass to default link behaviour, when cmd/ctrl is pressed on click
       return;
     }
     if (location.pathname === '/new_query') {
-      if (currentSql !== undefined && currentSql.trim()) {
+      if (currentSql && currentSql.trim()) {
         this.props.showConfirmationDialog({
           title: intl.formatMessage({id: 'Common.UnsavedWarning'}),
           text: [
@@ -102,9 +103,10 @@ export class NewQueryButton extends Component {
 }
 
 function mapStateToProps(state, ownProps) {
+  const explorePage = getExploreState(state); //todo explore page state should not be here
   return {
     location: getLocation(state),
-    currentSql: state.explore.view.get('currentSql')
+    currentSql: explorePage ? explorePage.view.currentSql : null
   };
 }
 

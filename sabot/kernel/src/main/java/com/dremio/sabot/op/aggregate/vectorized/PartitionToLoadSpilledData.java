@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@ package com.dremio.sabot.op.aggregate.vectorized;
 
 import java.util.List;
 
-import com.dremio.common.util.Numbers;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BaseFixedWidthVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.types.pojo.Field;
 
 import com.dremio.common.AutoCloseables;
+import com.dremio.common.util.Numbers;
 import com.dremio.exec.expr.TypeHelper;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.FluentIterable;
@@ -146,6 +146,7 @@ public class PartitionToLoadSpilledData implements AutoCloseable {
      Preconditions.checkArgument(vector instanceof BaseFixedWidthVector, "Error: detected invalid accumulator vector type");
      rollbackCloseable.add(vector);
      ((BaseFixedWidthVector) vector).allocateNew(valueCount);
+
      Preconditions.checkArgument(vector.getValueCapacity() >= valueCount, "Error: failed to correctly pre-allocate accumulator vector in extra partition");
      postSpillAccumulatorVectors[count] = vector;
      count++;

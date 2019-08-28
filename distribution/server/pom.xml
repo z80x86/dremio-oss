@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (C) 2017-2018 Dremio Corporation
+    Copyright (C) 2017-2019 Dremio Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
   <parent>
     <groupId>com.dremio.distribution</groupId>
     <artifactId>dremio-distribution-parent</artifactId>
-    <version>3.0.5-201812021947440442-9a23f45</version>
+    <version>3.3.2-201908142136370993-d60145d</version>
   </parent>
 
   <artifactId>dremio-distribution</artifactId>
@@ -68,20 +68,20 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.dremio.plugin</groupId>
+      <groupId>com.dremio.plugins</groupId>
       <artifactId>dremio-elasticsearch-plugin</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.dremio.plugin</groupId>
+      <groupId>com.dremio.plugins</groupId>
       <artifactId>dremio-mongo-plugin</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.dremio.plugin</groupId>
+      <groupId>com.dremio.plugins</groupId>
       <artifactId>dremio-pdfs-plugin</artifactId>
       <version>${project.version}</version>
-    </dependency>
+    </dependency>  
     <dependency>
       <groupId>com.dremio</groupId>
       <artifactId>dremio-protocol</artifactId>
@@ -165,11 +165,11 @@
     </dependency>
 
     <dependency>
-      <groupId>com.dremio.plugin</groupId>
+      <groupId>com.dremio.plugins</groupId>
       <artifactId>dremio-hive-plugin</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.dremio.plugin</groupId>
+      <groupId>com.dremio.plugins</groupId>
       <artifactId>dremio-hbase-plugin</artifactId>
       <exclusions>
         <exclusion>
@@ -180,7 +180,7 @@
     </dependency>
 
     <dependency>
-      <groupId>com.dremio.plugin</groupId>
+      <groupId>com.dremio.plugins</groupId>
       <artifactId>dremio-jdbc-plugin</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -331,7 +331,6 @@
                     </mapping>
                     <mapping>
                       <directory>/opt/dremio/jars</directory>
-                      <directoryIncluded>false</directoryIncluded>
                       <sources>
                         <source>
                           <location>${dremio.distribution.directory}/jars</location>
@@ -340,7 +339,6 @@
                     </mapping>
                     <mapping>
                       <directory>/opt/dremio/lib</directory>
-                      <directoryIncluded>false</directoryIncluded>
                       <sources>
                         <source>
                           <location>${dremio.distribution.directory}/lib</location>
@@ -349,7 +347,6 @@
                     </mapping>
                     <mapping>
                       <directory>/opt/dremio/licenses/dremio-${dremio.rpm.version}</directory>
-                      <directoryIncluded>false</directoryIncluded>
                       <sources>
                         <source>
                           <location>${dremio.distribution.directory}/licenses</location>
@@ -358,7 +355,6 @@
                     </mapping>
                     <mapping>
                       <directory>/opt/dremio/share/dremio</directory>
-                      <directoryIncluded>false</directoryIncluded>
                       <sources>
                         <source>
                           <location>${dremio.distribution.directory}/share</location>
@@ -367,10 +363,12 @@
                     </mapping>
                     <mapping>
                       <directory>/etc/dremio</directory>
-                      <directoryIncluded>false</directoryIncluded>
                       <sources>
                         <source>
                           <location>${dremio.distribution.directory}/conf/logback.xml</location>
+                        </source>
+                        <source>
+                          <location>${dremio.distribution.directory}/conf/logback-admin.xml</location>
                         </source>
                         <source>
                           <location>${dremio.distribution.directory}/conf/logback-access.xml</location>
@@ -399,41 +397,41 @@
                       <directory>/var/lib/dremio</directory>
                       <username>dremio</username>
                       <groupname>dremio</groupname>
-                      <filemode>755</filemode>
+                      <dirmode>755</dirmode>
                     </mapping>
                     <mapping>
                       <directory>/var/run/dremio</directory>
                       <username>dremio</username>
                       <groupname>dremio</groupname>
-                      <filemode>755</filemode>
+                      <dirmode>755</dirmode>
                     </mapping>
                     <mapping>
                       <directory>/var/log/dremio</directory>
                       <username>dremio</username>
                       <groupname>dremio</groupname>
-                      <filemode>755</filemode>
+                      <dirmode>755</dirmode>
                     </mapping>
                     <mapping>
                       <directory>/etc/init.d</directory>
-                      <filemode>555</filemode>
+                      <directoryIncluded>false</directoryIncluded>
+                      <filemode>755</filemode>
                       <sources>
                         <source>
                           <location>${dremio.distribution.resources.directory}/share/dremio.rc</location>
                           <destination>dremio</destination>
                         </source>
                       </sources>
-                      <directoryIncluded>false</directoryIncluded>
                     </mapping>
                     <mapping>
                       <directory>%{_tmpfilesdir}</directory>
-                      <filemode>555</filemode>
+                      <directoryIncluded>false</directoryIncluded>
+                      <filemode>644</filemode>
                       <sources>
                         <source>
                           <location>${dremio.distribution.resources.directory}/rpm/misc/dremio.tmpfiles.conf</location>
                           <destination>dremio.conf</destination>
                         </source>
                       </sources>
-                      <directoryIncluded>false</directoryIncluded>
                     </mapping>
                   </mappings>
                   <preinstallScriptlet>
@@ -478,6 +476,31 @@ exit 0
           <groupId>org.json</groupId>
           <artifactId>json</artifactId>
           <version>${org.json.version}</version>
+        </dependency>
+      </dependencies>
+    </profile>
+    <profile>
+      <id>notmapr</id>
+      <activation>
+        <property>
+          <name>!mapr</name>
+        </property>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>com.dremio.plugins</groupId>
+          <artifactId>dremio-adls-plugin</artifactId>
+          <version>${project.version}</version>
+        </dependency>
+        <dependency>
+          <groupId>com.dremio.plugins</groupId>
+          <artifactId>dremio-azure-storage-plugin</artifactId>
+          <version>${project.version}</version>
+        </dependency>  
+        <dependency>
+          <groupId>com.dremio.plugins</groupId>
+          <artifactId>dremio-s3-plugin</artifactId>
+          <version>${project.version}</version>
         </dependency>
       </dependencies>
     </profile>

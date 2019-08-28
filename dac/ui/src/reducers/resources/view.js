@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 import Immutable from 'immutable';
+import { get } from 'lodash';
 import uuid from 'uuid';
 
-import { RequestError, ApiError, InternalError } from 'redux-api-middleware';
 import { RESET_VIEW_STATE, UPDATE_VIEW_STATE, DISMISS_VIEW_STATE_ERROR } from 'actions/resources';
 import { CANCEL_TRANSFORM } from 'actions/explore/dataset/transform';
 import { RESET_NEW_QUERY } from 'actions/explore/view';
+import { CLEAR_ENTITIES } from 'actions/resources/entities';
+import { ApiMiddlewareErrors } from '@app/utils/apiUtils/apiUtils';
 
 export const NO_INTERNET_MESSAGE = 'Could not connect to the Dremio server.'; // todo: loc
 
@@ -33,42 +35,38 @@ function isStartAction(action) {
 }
 
 function isAutoPeekError(action) {
-  return action.error && action.meta.submitType === 'autoPeek';
+  return action.error && get(action, 'meta.submitType') === 'autoPeek';
 }
 
 export function getErrorMessage(action) {
+  const error = action.meta && action.meta.errorMessage;
   // allow overriding the error message in action creator.
-  if (action.meta && action.meta.errorMessage) {
-    return { errorMessage: action.meta.errorMessage };
+  if (error) {
+    return typeof error === 'string' ? { errorMessage: error } : error;
   }
 
   const {payload} = action;
-  if (payload) {
-    if (payload instanceof RequestError) {
+  if (payload instanceof Error) {
+    switch (payload.name) {
+    case ApiMiddlewareErrors.RequestError:
       return { errorMessage: NO_INTERNET_MESSAGE };
-    }
-    if (payload instanceof ApiError) {
+    case ApiMiddlewareErrors.ApiError:
       if (payload.response && payload.response.errorMessage) {
         return payload.response;
       }
       return { errorMessage: payload.message };
-    }
-    if (payload instanceof InternalError) {
-      console.error('InternalError', action);
+    case ApiMiddlewareErrors.InternalError:
       return { errorMessage: `${payload.name}: ${payload.message}.` };
+    default:
+      // return unknown error below
     }
   }
   return { errorMessage: 'Unknown error: ' + payload };
 }
 
 export function getErrorDetails(action) {
-  const {payload} = action;
-  if (payload) {
-    if (payload instanceof ApiError) {
-      if (payload.response && payload.response.details) {
-        return payload.response.details;
-      }
-    }
+  if (get(action, 'payload.name') === ApiMiddlewareErrors.ApiError) {
+    return get(action, 'payload.response.details');
   }
 }
 
@@ -83,57 +81,52 @@ function invalidateViewIds(state, action) {
   );
 }
 
+export const getDefaultViewConfig = viewId => ({
+  viewId, isInProgress: false, isFailed: false, isWarning: false, invalidated: false, error: null
+});
+
 function getInitialViewState(viewId) {
-  return Immutable.Map({
-    viewId, isInProgress: false, isFailed: false, isWarning: false, invalidated: false, error: null
-  });
+  return Immutable.Map(getDefaultViewConfig(viewId));
 }
 
-function updateLoadingViewId(state, action) {
-  const {viewId, invalidateViewIds: viewIds} = action.meta;
-  if (!viewId) {
-    return state;
-  }
+export const getViewStateFromAction = (action) => {
+
   // todo: these duck-type sniffers are quite brittle
   // e.g. they used to think a DELETE "success" with a viewId was a "start"
   // Fixed by making sure isSuccessAction checks first and crudFactory sets meta.success.
   // (But should be replaced with something better.)
 
   if (isSuccessAction(action)) {
-    return state.mergeIn([viewId], {
-      viewId,
-      isInProgress: !viewIds || !viewIds.length ? false : state.getIn([...viewId, 'isInProgress']),
+    return {
+      isInProgress: false,
       isFailed: false,
       isWarning: false,
       isAutoPeekFailed: false,
       error: null
-    });
+    };
   }
   if (isStartAction(action)) {
-    return state.mergeIn([viewId], {
-      viewId,
+    return {
       isInProgress: true,
       isFailed: false,
       isWarning: false,
       invalidated: false,
       isAutoPeekFailed: false,
       error: null
-    });
+    };
   }
   if (isAutoPeekError(action)) {
-    return state.mergeIn([viewId], {
-      viewId,
+    return {
       isInProgress: false,
       isFailed: false,
       isWarning: false,
       isAutoPeekFailed: true,
       error: null
-    });
+    };
   }
 
   // FAILURE
-  return state.mergeIn([viewId], {
-    viewId,
+  return {
     isInProgress: false,
     isFailed: true,
     isWarning: false,
@@ -144,6 +137,25 @@ function updateLoadingViewId(state, action) {
       id: uuid.v4(),
       dismissed: false
     }
+  };
+};
+
+function updateLoadingViewId(state, action) {
+  const {viewId, invalidateViewIds: viewIds} = action.meta;
+  if (!viewId) {
+    return state;
+  }
+
+  let newViewState = getViewStateFromAction(action);
+  if (isSuccessAction(action)) {
+    newViewState = {
+      ...newViewState,
+      isInProgress: !viewIds || !viewIds.length ? false : state.getIn([...viewId, 'isInProgress'])
+    };
+  }
+  return state.mergeIn([viewId], {
+    ...newViewState,
+    viewId
   });
 }
 
@@ -159,6 +171,10 @@ export default function view(state = Immutable.Map(), action) {
 
   if (action.type === DISMISS_VIEW_STATE_ERROR) {
     return state.mergeIn([meta.viewId, 'error'], { dismissed: true });
+  }
+
+  if (action.type === CLEAR_ENTITIES) {
+    return Immutable.Map();
   }
 
   if (!meta) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,8 +44,8 @@ public class HashAggStats {
     REVERSE_TIME,
     UNPIVOT_TIME,
     VECTORIZED,
-    HASHCOMPUTATION_TIME,
     NUM_HASH_PARTITIONS,
+    MAX_HASHTABLE_BATCH_SIZE,
     MIN_HASHTABLE_ENTRIES,
     MAX_HASHTABLE_ENTRIES,
     MIN_REHASH_COUNT,
@@ -62,7 +62,6 @@ public class HashAggStats {
     TOTAL_RECORDS_SPILLED,    /* total number of records spilled across all spills */
     MAX_RECORDS_SPILLED,      /* maximum number of records spilled across all spills */
     RECURSION_DEPTH,          /* recursion depth, 0 (no spilling), 1 (no recursive spilling), >= 2(recursive spilling) */
-    SORT_ACCUMULATE_TIME,     /* cumulative time taken to sort data for accumulation */
     TOTAL_SPILLED_DATA_SIZE,  /* total size (in bytes) of data spilled by vectorized hash agg operator */
     MAX_SPILLED_DATA_SIZE,    /* max size (in bytes) of data spilled by vectorized hash agg operator */
     MAX_TOTAL_NUM_BUCKETS,    /* max total capacity in hash tables */
@@ -71,7 +70,20 @@ public class HashAggStats {
     UNUSED_FOR_FIXED_KEYS,      /* unused capacity for fixed block vectors */
     ALLOCATED_FOR_VARIABLE_KEYS, /* total capacity allocated for variable block vectors */
     UNUSED_FOR_VARIABLE_KEYS, /* unused capacity for variable block vectors */
-    MAX_VARIABLE_BLOCK_LENGTH; /* maximum amount of data (pivoted keys) that can be stored in variable block vector */
+    MAX_VARIABLE_BLOCK_LENGTH, /* maximum amount of data (pivoted keys) that can be stored in variable block vector */
+
+    // OOB related metrics
+    OOB_SENDS, // Number of times operator informed others of spilling
+    OOB_RECEIVES, // Number of times operator received a notification of spilling.
+    OOB_DROP_LOCAL, // Number of times operator dropped self-referencing spilling notification
+    OOB_DROP_WRONG_STATE, // Number of times operator dropped spilling notification as it was in wrong state to spill
+    OOB_DROP_UNDER_THRESHOLD, // Number of times OOB dropped spilling notification as it was under the threshold.
+    OOB_DROP_NO_VICTIM, // Number of times OOB dropped spilling notification as all allocations were minimal.
+    OOB_SPILL, // Spill was done due to oob.
+    OOB_DROP_ALREADY_SPILLING // Number of times operator dropped spilling notification as it was already spilling
+
+    ;
+
 
     @Override
     public int metricId() {
@@ -108,8 +120,6 @@ public class HashAggStats {
        * and this method is used specifically for old profiles that
        * will not be carrying ids [10 - 20]
        */
-      case 21:
-        return Metric.HASHCOMPUTATION_TIME.ordinal();
       /* 22 is skipped as it was join related stat */
       case 23:
         return Metric.NUM_HASH_PARTITIONS.ordinal();
@@ -146,10 +156,8 @@ public class HashAggStats {
       case 39:
         return Metric.RECURSION_DEPTH.ordinal();
       case 40:
-        return Metric.SORT_ACCUMULATE_TIME.ordinal();
-      case 41:
         return Metric.TOTAL_SPILLED_DATA_SIZE.ordinal();
-      case 42:
+      case 41:
         return Metric.MAX_SPILLED_DATA_SIZE.ordinal();
       default:
         throw new IllegalStateException("Unexpected metric ID for Vectorized HashAgg");

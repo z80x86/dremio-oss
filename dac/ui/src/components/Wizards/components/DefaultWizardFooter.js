@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,7 +71,6 @@ export default class DefaultWizardFooter extends Component {
         <SimpleButton
           buttonStyle='primary'
           onClick={this.onButtonClick.bind(this, 'apply')}
-          disabled={submitting && submitType !== 'apply'}
           submitting={submitType === 'apply'}
           className='wizard-apply-button'
         >

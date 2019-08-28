@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import React from 'react';
 import { render } from 'react-dom';
 import $ from 'jquery';
 import Immutable from 'immutable';
-import reactTapEvent from 'react-tap-event-plugin';
 
 import './vendor/chat';
 import './vendor/gtm';
@@ -53,7 +52,6 @@ window.la = (key) => {
 sentryUtil.install();
 
 const store = configureStore();
-reactTapEvent();
 
 startup.run();
 

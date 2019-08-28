@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.dremio.common.collections;
 /**
  * An immutable ordered sequence of two elements
  *
- * @param <F>  first element
- * @param <S>  second element
+ * @param <F> first element
+ * @param <S> second element
  */
 public class Tuple<F, S> {
   public final F first;
@@ -31,7 +31,6 @@ public class Tuple<F, S> {
   }
 
   public static <F, S> Tuple<F, S> of(final F first, final S second) {
-    return new Tuple(first, second);
+    return new Tuple<>(first, second);
   }
-
 }

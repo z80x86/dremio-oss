@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Stream;
 
 import javax.annotation.Nullable;
 
@@ -87,15 +88,15 @@ public abstract class ContainerFileSystem extends FileSystem {
 
     synchronized(refreshLock) {
       final Map<String, ContainerHolder> oldMap = new HashMap<>(containerMap);
-      ImmutableList.Builder<ContainerFailure> failures = ImmutableList.builder();
-      ImmutableMap.Builder<String, ContainerHolder> newMap = ImmutableMap.builder();
-      for(ContainerCreator creator : getContainerCreators()) {
+      final ImmutableList.Builder<ContainerFailure> failures = ImmutableList.builder();
+      final ImmutableMap.Builder<String, ContainerHolder> newMap = ImmutableMap.builder();
+      getContainerCreators().forEach((creator) -> {
 
         // avoid recreating filesystem if it already exists.
         final ContainerHolder fs = oldMap.remove(creator.getName());
         if(fs != null) {
           newMap.put(creator.getName(), fs);
-          continue;
+          return;
         }
 
         // new file system.
@@ -105,7 +106,7 @@ public abstract class ContainerFileSystem extends FileSystem {
           logger.warn("Failure while attempting to connect to {} named [{}].", containerName, creator.getName(), ex);
           failures.add(new ContainerFailure(creator.getName(), ex));
         }
-      }
+      });
 
       containerMap = newMap.build();
 
@@ -217,7 +218,7 @@ public abstract class ContainerFileSystem extends FileSystem {
   /**
    * A custom memoizing supplier-like interface that also supports throwing an IOException.
    */
-  public abstract class FileSystemSupplier implements AutoCloseable {
+  public abstract static class FileSystemSupplier implements AutoCloseable {
 
     private volatile FileSystem fs;
     public final FileSystem get() throws IOException{
@@ -245,6 +246,16 @@ public abstract class ContainerFileSystem extends FileSystem {
   }
 
   /**
+   * Returns true iff container with the given name exists.
+   *
+   * @param containerName container name
+   * @return true iff container with the given name exists
+   */
+  public boolean containerExists(final String containerName) {
+    return containerMap.containsKey(containerName);
+  }
+
+  /**
    * Do any initial file system setup before retrieving the containers for the first time.
    * @throws IOException
    */
@@ -255,7 +266,7 @@ public abstract class ContainerFileSystem extends FileSystem {
    * @return A list of container creators that can be used for generating container filesystems.
    * @throws IOException
    */
-  protected abstract Iterable<ContainerCreator> getContainerCreators() throws IOException;
+  protected abstract Stream<ContainerCreator> getContainerCreators() throws IOException;
 
   /**
    * Attempt to retrieve a container FileSystem that wasn't previously known.
@@ -271,28 +282,37 @@ public abstract class ContainerFileSystem extends FileSystem {
     return pathComponents.size() == 0;
   }
 
-  private String getContainer(Path path) {
-    List<String> pathComponents = Arrays.asList(removeLeadingSlash(Path.getPathWithoutSchemeAndAuthority(path).toString()).split(Path.SEPARATOR));
+  /**
+   * Get container name from the path.
+   *
+   * @param path path
+   * @return container name
+   */
+  public static String getContainerName(Path path) {
+    final List<String> pathComponents = Arrays.asList(
+        removeLeadingSlash(Path.getPathWithoutSchemeAndAuthority(path).toString())
+            .split(Path.SEPARATOR)
+    );
     return pathComponents.get(0);
   }
 
-  private Path pathWithoutContainer(Path path) {
+  public static Path pathWithoutContainer(Path path) {
     List<String> pathComponents = Arrays.asList(removeLeadingSlash(Path.getPathWithoutSchemeAndAuthority(path).toString()).split(Path.SEPARATOR));
     return new Path("/" + Joiner.on(Path.SEPARATOR).join(pathComponents.subList(1, pathComponents.size())));
   }
 
   private ContainerHolder getFileSystemForPath(Path path) throws IOException {
-    final String name = getContainer(path);
+    final String name = getContainerName(path);
     ContainerHolder container = containerMap.get(name);
 
     if (container == null) {
       try {
-        synchronized(refreshLock) {
+        synchronized (refreshLock) {
           container = containerMap.get(name);
-          if(container == null) {
+          if (container == null) {
             container = getUnknownContainer(name);
-            if(container == null) {
-              throw new IOException(String.format("Unable to find %s named %s.", containerName, name));
+            if (container == null) {
+              throw new ContainerNotFoundException(String.format("Unable to find %s named %s.", containerName, name));
             }
 
             ImmutableMap.Builder<String, ContainerHolder> newMap = ImmutableMap.builder();
@@ -301,6 +321,8 @@ public abstract class ContainerFileSystem extends FileSystem {
             containerMap = newMap.build();
           }
         }
+      } catch (IOException ex) {
+        throw ex;
       } catch (Exception ex) {
         throw new IOException(String.format("Unable to retrieve %s named %s.", containerName, name), ex);
       }
@@ -335,7 +357,7 @@ public abstract class ContainerFileSystem extends FileSystem {
 
   @Override
   public boolean rename(Path src, Path dst) throws IOException {
-    Preconditions.checkArgument(getContainer(src).equals(getContainer(dst)), String.format("Cannot rename files across %ss.", containerName));
+    Preconditions.checkArgument(getContainerName(src).equals(getContainerName(dst)), String.format("Cannot rename files across %ss.", containerName));
     return getFileSystemForPath(src).fs().rename(pathWithoutContainer(src), pathWithoutContainer(dst));
   }
 
@@ -352,7 +374,7 @@ public abstract class ContainerFileSystem extends FileSystem {
 
   @Override
   protected RemoteIterator<LocatedFileStatus> listLocatedStatus(Path f, final PathFilter filter) throws FileNotFoundException, IOException {
-    final String container = getContainer(f);
+    final String container = getContainerName(f);
     final PathFilter alteredFilter = (path) -> {
       return filter.accept(transform(path, container));
     };
@@ -365,7 +387,7 @@ public abstract class ContainerFileSystem extends FileSystem {
 
   @Override
   public RemoteIterator<LocatedFileStatus> listFiles(Path f, boolean recursive) throws FileNotFoundException, IOException {
-    final String container = getContainer(f);
+    final String container = getContainerName(f);
     return RemoteIterators.transform(
         getFileSystemForPath(f).fs().listFiles(pathWithoutContainer(f), recursive),
         t -> new LocatedFileStatus(ContainerFileSystem.transform(t, container), t.getBlockLocations())
@@ -386,7 +408,7 @@ public abstract class ContainerFileSystem extends FileSystem {
       }).toArray(FileStatus.class);
     }
 
-    final String containerName = getContainer(f);
+    final String containerName = getContainerName(f);
     final Path pathWithoutContainerName = pathWithoutContainer(f);
     return FluentIterable.of(getFileSystemForPath(f).fs().listStatus(pathWithoutContainerName))
         .transform(new Function<FileStatus, CorrectableFileStatus>(){
@@ -468,7 +490,16 @@ public abstract class ContainerFileSystem extends FileSystem {
 
   @Override
   public boolean mkdirs(Path f, FsPermission permission) throws IOException {
-    return getFileSystemForPath(f).fs().mkdirs(f, permission);
+    return getFileSystemForPath(f).fs().mkdirs(pathWithoutContainer(f), permission);
+  }
+
+  @Override
+  public boolean exists(Path f) throws IOException {
+    try {
+      return super.exists(f);
+    } catch (ContainerNotFoundException ignored) {
+      return false;
+    }
   }
 
   @Override
@@ -477,7 +508,7 @@ public abstract class ContainerFileSystem extends FileSystem {
       return new FileStatus(0, true, 0, 0, 0, f);
     }
     FileStatus fileStatus = getFileSystemForPath(f).fs().getFileStatus(pathWithoutContainer(f));
-    return transform(fileStatus, getContainer(f));
+    return transform(fileStatus, getContainerName(f));
   }
 
   @Override

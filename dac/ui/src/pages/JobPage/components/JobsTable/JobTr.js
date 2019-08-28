@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,9 +108,12 @@ export default class JobTr extends Component {
             </div>
             <div style={styles.durationStyle} className='duration'>
               {jobDuration}
-              {job.get('accelerated') && <Art src={flame} alt={flameAlt} style={{paddingLeft: 5, height: 20}} title/>}
+              {job.get('accelerated') &&
+              <Art src={flame} alt={flameAlt} style={styles.smallIcon} title/>}
+              {job.get('spilled') &&
+              <Art src='DiskSpill.svg' alt={formatMessage('Job.SpilledHover')} style={styles.smallIcon} title/>}
             </div>
-            <div className='endTime'>{jobFinishTime}</div>
+            <div style={styles.dateTimeStyle} className='endTime'>{jobFinishTime}</div>
           </div>
         </div>
         {this.renderSqlBlock(job.get('queryType'))}
@@ -163,6 +166,14 @@ const styles = {
   },
   durationStyle: {
     display: 'flex',
-    alignItems: 'center'
+    alignItems: 'center',
+    minWidth: 65
+  },
+  dateTimeStyle: {
+    minWidth: 113
+  },
+  smallIcon: {
+    paddingLeft: 5,
+    height: 20
   }
 };

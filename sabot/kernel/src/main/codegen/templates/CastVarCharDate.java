@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ import com.dremio.exec.expr.fn.FunctionErrorContext;
 import org.apache.arrow.vector.holders.*;
 import org.joda.time.DateTimeZone;
 import org.joda.time.DateMidnight;
-import org.apache.arrow.vector.util.DateUtility;
+import com.dremio.common.util.JodaDateUtility;
 import javax.inject.Inject;
 import io.netty.buffer.ArrowBuf;
 
@@ -70,11 +70,11 @@ public class Cast${type.from}To${type.to} implements SimpleFunction {
         out.value = com.dremio.exec.expr.fn.impl.StringFunctionHelpers.getDate(in.buffer, in.start, in.end);
 
         <#elseif type.to == "TimeStampMilli">
-        org.joda.time.format.DateTimeFormatter f = org.apache.arrow.vector.util.DateUtility.getDateTimeFormatter();
+        org.joda.time.format.DateTimeFormatter f = com.dremio.common.util.JodaDateUtility.getDateTimeFormatter();
         out.value = com.dremio.common.util.DateTimes.toMillis(org.joda.time.LocalDateTime.parse(input, f));
 
         <#elseif type.to == "TimeMilli">
-        org.joda.time.format.DateTimeFormatter f = org.apache.arrow.vector.util.DateUtility.getTimeFormatter();
+        org.joda.time.format.DateTimeFormatter f = com.dremio.common.util.JodaDateUtility.getTimeFormatter();
         out.value = (int) com.dremio.common.util.DateTimes.toMillis((f.parseLocalDateTime(input)));
         </#if>
       } catch (RuntimeException e) {

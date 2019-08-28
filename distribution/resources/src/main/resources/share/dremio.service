@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2017-2018 Dremio Corporation
+# Copyright (C) 2017-2019 Dremio Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,17 +28,13 @@ After=network-online.target
 [Service]
 User=dremio
 Group=dremio
-
 RuntimeDirectory=dremio
-Environment=DREMIO_HOME=/opt/dremio
-Environment=DREMIO_CONF_DIR=/opt/dremio/conf
-Environment=DREMIO_PID_DIR=/opt/dremio/run
-
-PIDFile=${DREMIO_PID_DIR}/dremio.pid
-
 ExecStart=/opt/dremio/bin/dremio start-fg
-ExecStop=/opt/dremio/bin/dremio stop
-RestartForceExitStatus=3
+Restart=on-failure
+# Set maximum number of file descriptors Dremio can open.
+# Dremio requires a large number to work correctly.
+LimitNOFILE=65536
+
 
 [Install]
 WantedBy=multi-user.target

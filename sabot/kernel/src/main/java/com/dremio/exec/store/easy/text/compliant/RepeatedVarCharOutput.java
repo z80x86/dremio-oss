@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.util.Text;
 
 import com.dremio.common.exceptions.ExecutionSetupException;
+import com.dremio.common.exceptions.FieldSizeLimitExceptionHelper;
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.exec.exception.SchemaChangeException;
 import com.dremio.sabot.op.scan.OutputMutator;
@@ -44,7 +45,7 @@ import io.netty.buffer.ArrowBuf;
 class RepeatedVarCharOutput extends TextOutput {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(RepeatedVarCharOutput.class);
 
-  static final String COL_NAME = "columns";
+  private static final String COL_NAME = "columns";
   static final SchemaPath COLUMNS = SchemaPath.getSimplePath("columns");
   public static final int MAXIMUM_NUMBER_COLUMNS = 64 * 1024;
 
@@ -79,9 +80,6 @@ class RepeatedVarCharOutput extends TextOutput {
   // are we currently appending to a field
   private boolean fieldOpen;
 
-  // maximum number of fields/columns
-  private final int maxField;
-
   private int charLengthOffset;
 
   /**
@@ -90,10 +88,11 @@ class RepeatedVarCharOutput extends TextOutput {
    * @param outputMutator  Used to create/modify schema in the record batch
    * @param columns  List of columns selected in the query
    * @param isStarQuery  boolean to indicate if all fields are selected or not
+   * @param sizeLimit Maximum size for an individual field
    * @throws SchemaChangeException
    */
-  public RepeatedVarCharOutput(OutputMutator outputMutator, Collection<SchemaPath> columns, boolean isStarQuery) throws SchemaChangeException {
-    super();
+  public RepeatedVarCharOutput(OutputMutator outputMutator, Collection<SchemaPath> columns, boolean isStarQuery, int sizeLimit) throws SchemaChangeException {
+    super(sizeLimit);
 
     this.output = outputMutator;
     rootWriter = new VectorContainerWriter(outputMutator);
@@ -117,28 +116,21 @@ class RepeatedVarCharOutput extends TextOutput {
             columnIds.add(index);
           }
         }
-        Collections.sort(columnIds);
 
+        Collections.sort(columnIds);
       }
 
       boolean[] fields = new boolean[MAXIMUM_NUMBER_COLUMNS];
 
-      int maxField = fields.length;
-
-      if(isStarQuery){
+      if (isStarQuery) {
         Arrays.fill(fields, true);
-      }else{
-        for(Integer i : columnIds){
-          maxField = 0;
-          maxField = Math.max(maxField, i);
+      } else {
+        for (Integer i : columnIds) {
           fields[i] = true;
         }
       }
       this.collectedFields = fields;
-      this.maxField = maxField;
     }
-
-
   }
 
   /**
@@ -153,24 +145,16 @@ class RepeatedVarCharOutput extends TextOutput {
     this.collect = true;
   }
 
-  /**
-   * Helper method to check if the buffer we are accessing
-   * has a minimum reference count and has not been deallocated
-   * @param b  working Arrow buffer
-   */
-  private void checkBuf(ArrowBuf b){
-    if(b.refCnt() < 1){
-      throw new IllegalStateException("Cannot access a dereferenced buffer.");
-    }
-  }
-
   private void expandTmpBufIfNecessary() {
     if (charLengthOffset < tmpBuf.capacity()) {
       return;
     }
+
+    FieldSizeLimitExceptionHelper.checkWriteSizeLimit(charLengthOffset, maxCellLimit, fieldIndex, logger);
+
     byte[] tmp = new byte[tmpBuf.capacity()];
     tmpBuf.getBytes(0, tmp);
-    tmpBuf = tmpBuf.reallocIfNeeded(tmpBuf.capacity() * 2);
+    tmpBuf = tmpBuf.reallocIfNeeded(Math.min(tmpBuf.capacity() * 2, maxCellLimit + 1));
     tmpBuf.setBytes(0, tmp);
     charLengthOffset = tmp.length;
   }
@@ -202,9 +186,10 @@ class RepeatedVarCharOutput extends TextOutput {
 
   @Override
   public void append(byte data) {
-    if(!collect){
+    if (!collect) {
       return;
     }
+
     expandTmpBufIfNecessary();
     tmpBuf.setByte(charLengthOffset, data);
     charLengthOffset++;

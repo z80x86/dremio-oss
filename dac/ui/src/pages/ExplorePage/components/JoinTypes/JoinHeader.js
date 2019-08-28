@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import PropTypes from 'prop-types';
 import Immutable from 'immutable';
 import { connect } from 'react-redux';
 import { injectIntl } from 'react-intl';
+import { getExploreState } from '@app/selectors/explore';
 
 import Art from 'components/Art';
 
@@ -173,7 +174,7 @@ const styles = {
 
 function mapStateToProps(state, ownProps) {
   return {
-    joinTab: state.explore.join.get('joinTab')
+    joinTab: getExploreState(state).join.get('joinTab')
   };
 }
 export default connect(mapStateToProps, {setJoinTab, clearJoinDataset})(JoinHeader);

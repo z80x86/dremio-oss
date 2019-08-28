@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import static com.dremio.dac.proto.model.dataset.ExtractRuleType.position;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.apache.calcite.sql.type.SqlTypeName;
 
@@ -145,7 +146,7 @@ public class DatasetsUtil {
     datasetConfig.setType(DatasetType.VIRTUAL_DATASET);
     datasetConfig.setCreatedAt(virtualDatasetUI.getCreatedAt());
     datasetConfig.setFullPathList(virtualDatasetUI.getFullPathList());
-    datasetConfig.setVersion(virtualDatasetUI.getSavedVersion());
+    datasetConfig.setTag(virtualDatasetUI.getSavedTag());
     datasetConfig.setVirtualDataset(virtualDataset);
     datasetConfig.setRecordSchema(virtualDatasetUI.getRecordSchema());
     if (virtualDatasetUI.getId() != null) {
@@ -185,7 +186,7 @@ public class DatasetsUtil {
     virtualDatasetUI.setName(datasetConfig.getName());
     virtualDatasetUI.setCreatedAt(datasetConfig.getCreatedAt());
     virtualDatasetUI.setFullPathList(datasetConfig.getFullPathList());
-    virtualDatasetUI.setSavedVersion(datasetConfig.getVersion());
+    virtualDatasetUI.setSavedTag(datasetConfig.getTag());
     if (datasetConfig.getId() != null) {
       virtualDatasetUI.setId(datasetConfig.getId().getId());
     }
@@ -219,7 +220,7 @@ public class DatasetsUtil {
     physicalDatasetConfig.setFullPathList(datasetConfig.getFullPathList());
     physicalDatasetConfig.setType(datasetConfig.getType());
     physicalDatasetConfig.setName(datasetConfig.getName());
-    physicalDatasetConfig.setVersion(datasetConfig.getVersion());
+    physicalDatasetConfig.setTag(datasetConfig.getTag());
     physicalDatasetConfig.setId(datasetConfig.getId().getId());
     return physicalDatasetConfig;
   }
@@ -227,11 +228,14 @@ public class DatasetsUtil {
   public static DatasetConfig toDatasetConfig(PhysicalDatasetConfig physicalDatasetConfig, String owner) {
     final DatasetConfig datasetConfig = new DatasetConfig();
 
+    if (physicalDatasetConfig.getId() != null) {
+      datasetConfig.setId(new EntityId(physicalDatasetConfig.getId()));
+    }
     datasetConfig.setOwner(owner);
     datasetConfig.setFullPathList(physicalDatasetConfig.getFullPathList());
     datasetConfig.setName(physicalDatasetConfig.getName());
     datasetConfig.setType(physicalDatasetConfig.getType());
-    datasetConfig.setVersion(physicalDatasetConfig.getVersion());
+    datasetConfig.setTag(physicalDatasetConfig.getTag());
     datasetConfig.setPhysicalDataset(new com.dremio.service.namespace.dataset.proto.PhysicalDataset().setFormatSettings(
       physicalDatasetConfig.getFormatSettings()));
     return datasetConfig;
@@ -239,12 +243,13 @@ public class DatasetsUtil {
 
   public static DatasetConfig toDatasetConfig(FileConfig fileConfig, DatasetType datasetType, String owner, EntityId id) {
     final DatasetConfig datasetConfig = new DatasetConfig();
-
+    Objects.requireNonNull(id, "EntityId must be defined.");
+    Objects.requireNonNull(id.getId(), "EntityId must be defined.");
     datasetConfig.setOwner(owner);
     datasetConfig.setFullPathList(fileConfig.getFullPathList());
     datasetConfig.setName(fileConfig.getName());
     datasetConfig.setOwner(fileConfig.getOwner());
-    datasetConfig.setVersion(fileConfig.getVersion());
+    datasetConfig.setTag(fileConfig.getTag());
     datasetConfig.setType(datasetType);
     datasetConfig.setCreatedAt(fileConfig.getCtime());
     datasetConfig.setId(id);
@@ -257,7 +262,7 @@ public class DatasetsUtil {
     final FileConfig fileConfig = datasetConfig.getPhysicalDataset().getFormatSettings();
 
     fileConfig.setCtime(datasetConfig.getCreatedAt());
-    fileConfig.setVersion(datasetConfig.getVersion());
+    fileConfig.setTag(datasetConfig.getTag());
     fileConfig.setOwner(datasetConfig.getOwner());
     fileConfig.setFullPathList(datasetConfig.getFullPathList());
     fileConfig.setName(datasetConfig.getName());

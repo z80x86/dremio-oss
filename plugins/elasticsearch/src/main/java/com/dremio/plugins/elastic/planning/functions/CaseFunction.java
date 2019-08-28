@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,8 +81,13 @@ class CaseFunction extends ElasticFunction {
     return new FunctionRender(newScript, startRender.getNulls()) {
       @Override
       public String getNullGuardedScript() {
+        return getNullGuardedScript(false);
+      }
+
+      @Override
+      public String getNullGuardedScript(boolean variationDetected) {
         if (isLastNullLiteral) {
-          return super.getNullGuardedScript();
+          return super.getNullGuardedScript(variationDetected);
         } else {
           return getScript();
         }

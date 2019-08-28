@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package com.dremio.exec.store.parquet.columnreaders;
 
-import io.netty.buffer.ArrowBuf;
-
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 
@@ -30,6 +28,8 @@ import org.apache.parquet.format.SchemaElement;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 
 import com.dremio.common.exceptions.ExecutionSetupException;
+
+import io.netty.buffer.ArrowBuf;
 
 public class VarLengthColumnReaders {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(VarLengthColumnReaders.class);

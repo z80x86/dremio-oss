@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,28 +17,45 @@ package com.dremio.dac.cmd.upgrade;
 
 import java.util.Map.Entry;
 
+import com.dremio.common.Version;
+import com.dremio.dac.cmd.AdminLogger;
 import com.dremio.datastore.IndexedStore;
 import com.dremio.exec.store.easy.arrow.ArrowFileMetadata;
 import com.dremio.service.job.proto.JobAttempt;
 import com.dremio.service.job.proto.JobId;
 import com.dremio.service.job.proto.JobResult;
 import com.dremio.service.jobs.LocalJobsService.JobsStoreCreator;
+import com.google.common.collect.ImmutableList;
 
 /**
  * Remove the schema stored in Arrow file footers of job results in KV store (See DX-12627) to reduce the KV store
  * size
  */
-public class MinimizeJobResultsMetadata extends UpgradeTask {
+public class MinimizeJobResultsMetadata extends UpgradeTask implements LegacyUpgradeTask {
+
+
+  //DO NOT MODIFY
+  static final String taskUUID = "c33400d9-fa65-47e2-b99a-5c3db12d8f84";
 
   public MinimizeJobResultsMetadata() {
-    super("Delete schema stored in arrow footers of job results in KV Store", VERSION_106, VERSION_212, NORMAL_ORDER + 12);
+    super("Delete schema stored in arrow footers of job results in KV Store", ImmutableList.of(DeleteHive121BasedInputSplits.taskUUID));
+  }
+
+  @Override
+  public Version getMaxVersion() {
+    return VERSION_212;
+  }
+
+  @Override
+  public String getTaskUUID() {
+    return taskUUID;
   }
 
   @Override
   public void upgrade(UpgradeContext context) throws Exception {
     final IndexedStore<JobId, JobResult> store = context.getKVStoreProvider().getStore(JobsStoreCreator.class);
 
-    System.out.printf("  Minimizing job results metadata%n");
+    AdminLogger.log("  Minimizing job results metadata");
     try {
       for (Entry<JobId, JobResult> entry : store.find()) {
         final JobResult jobResult = entry.getValue();
@@ -61,5 +78,10 @@ public class MinimizeJobResultsMetadata extends UpgradeTask {
     } catch (Exception e) {
       throw new RuntimeException("  Failed to minimize job results metadata", e);
     }
+  }
+
+  @Override
+  public String toString() {
+    return String.format("'%s' up to %s)", getDescription(), getMaxVersion());
   }
 }

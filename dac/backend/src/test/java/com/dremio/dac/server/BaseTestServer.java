@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -778,12 +778,12 @@ public abstract class BaseTestServer extends BaseClientUtils {
     return expectSuccess(reapplyInvocation(versionResourcePath), InitialPreviewResponse.class);
   }
 
-  protected DatasetUIWithHistory save(DatasetUI datasetUI, Long saveVersion) {
+  protected DatasetUIWithHistory save(DatasetUI datasetUI, String saveVersion) {
     final Invocation invocation =
         getBuilder(
             getAPIv2()
                 .path(versionedResourcePath(datasetUI) + "/save")
-                .queryParam("savedVersion", saveVersion)
+                .queryParam("savedTag", saveVersion)
         ).buildPost(entity("", JSON));
 
     return expectSuccess(invocation, DatasetUIWithHistory.class);
@@ -832,23 +832,23 @@ public abstract class BaseTestServer extends BaseClientUtils {
     expectError(CLIENT_ERROR, invocation, ValidationErrorMessage.class);
   }
 
-  protected DatasetUI delete(String datasetResourcePath, Long savedVersion) {
+  protected DatasetUI delete(String datasetResourcePath, String savedVersion) {
     final Invocation invocation =
         getBuilder(
             getAPIv2()
                 .path(datasetResourcePath)
-                .queryParam("savedVersion", savedVersion)
+                .queryParam("savedTag", savedVersion)
         ).buildDelete();
 
     return expectSuccess(invocation, DatasetUI.class);
   }
 
-  protected void saveExpectConflict(DatasetUI datasetUI, Long saveVersion) {
+  protected void saveExpectConflict(DatasetUI datasetUI, String saveVersion) {
     final Invocation invocation =
         getBuilder(
             getAPIv2()
                 .path(versionedResourcePath(datasetUI) + "/save")
-                .queryParam("savedVersion", saveVersion)
+                .queryParam("savedTag", saveVersion)
         ).buildPost(entity("", JSON));
 
     expectStatus(Status.CONFLICT, invocation);

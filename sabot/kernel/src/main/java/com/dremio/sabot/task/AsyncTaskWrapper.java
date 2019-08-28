@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import com.dremio.sabot.task.TaskManager.TaskHandle;
 import com.dremio.sabot.threads.AvailabilityCallback;
 import com.dremio.sabot.threads.sharedres.SharedResourceType;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 
@@ -226,4 +227,8 @@ public class AsyncTaskWrapper implements Task {
     return asyncTask.toString();
   }
 
+  @VisibleForTesting
+  public AsyncTask getAsyncTask() {
+    return asyncTask;
+  }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import javax.inject.Provider;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.dremio.connector.metadata.DatasetHandle;
 import com.dremio.dac.server.BaseTestServer;
 import com.dremio.exec.catalog.CatalogServiceImpl;
 import com.dremio.exec.catalog.StoragePluginId;
@@ -36,7 +37,6 @@ import com.dremio.exec.store.CatalogService;
 import com.dremio.exec.store.StoragePlugin;
 import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.NamespaceService;
-import com.dremio.service.namespace.SourceTableDefinition;
 import com.dremio.service.namespace.proto.EntityId;
 import com.dremio.service.namespace.source.proto.SourceConfig;
 import com.google.common.collect.ImmutableList;
@@ -71,7 +71,7 @@ public class TestCatalogServiceCommunication extends BaseTestServer {
           .setCtime(100L)
           .setConnectionConf(new MockUpConfig());
 
-      doMockDatasets(mockUpPlugin, ImmutableList.<SourceTableDefinition>of());
+      doMockDatasets(mockUpPlugin, ImmutableList.of());
 
       catalogServiceImpl.getSystemUserCatalog().createSource(mockUpConfig);
 
@@ -84,14 +84,14 @@ public class TestCatalogServiceCommunication extends BaseTestServer {
     }
 
     {
+      SourceConfig source = l(NamespaceService.class).getSource(new NamespaceKey(MOCK_UP));
       final SourceConfig mockUpConfig = new SourceConfig()
           .setName(MOCK_UP)
           .setMetadataPolicy(CatalogService.DEFAULT_METADATA_POLICY)
           .setCtime(100L)
           .setId(new EntityId("source-id"))
-          .setVersion(l(NamespaceService.class)
-              .getSource(new NamespaceKey(MOCK_UP))
-              .getVersion())
+          .setTag(source.getTag())
+          .setConfigOrdinal(source.getConfigOrdinal())
           .setConnectionConf(new MockUpConfig());
 
       catalogServiceImpl.getSystemUserCatalog().updateSource(mockUpConfig);
@@ -122,7 +122,7 @@ public class TestCatalogServiceCommunication extends BaseTestServer {
     }
   }
 
-  private void doMockDatasets(StoragePlugin plugin, final List<SourceTableDefinition> datasets) throws Exception {
+  private void doMockDatasets(StoragePlugin plugin, final List<DatasetHandle> datasets) throws Exception {
     ((MockUpPlugin) plugin).setDatasets(datasets);
   }
 }

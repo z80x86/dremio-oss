@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
  */
 package com.dremio.sabot.sort.external.topn;
 
-import static com.dremio.sabot.Fixtures.tb;
 import static com.dremio.sabot.Fixtures.t;
+import static com.dremio.sabot.Fixtures.tb;
 import static com.dremio.sabot.Fixtures.th;
 import static com.dremio.sabot.Fixtures.tr;
 
@@ -74,7 +74,7 @@ public class TestTopN extends BaseTestOperator {
       tr(15)
     );
 
-    TopN topn = new TopN(null, Collections.singletonList(ordering("c0", Direction.ASCENDING, NullDirection.FIRST)), false, 4);
+    TopN topn = new TopN(PROPS, null, 4, Collections.singletonList(ordering("c0", Direction.ASCENDING, NullDirection.FIRST)), false);
     validateSingle(topn, TopNOperator.class, input, output);
   }
 
@@ -104,7 +104,7 @@ public class TestTopN extends BaseTestOperator {
       tr(15)
     );
 
-    TopN topn = new TopN(null, Collections.singletonList(ordering("c0", Direction.ASCENDING, NullDirection.FIRST)), false, 4);
+    TopN topn = new TopN(PROPS, null, 4, Collections.singletonList(ordering("c0", Direction.ASCENDING, NullDirection.FIRST)), false);
     validateSingle(topn, TopNOperator.class, input, output);
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ public class TestVHashJoin extends BaseTestJoin {
 
   @Override
   protected JoinInfo getJoinInfo(List<JoinCondition> conditions, JoinRelType type) {
-    return new JoinInfo(VectorizedHashJoinOperator.class, new HashJoinPOP(null, null, conditions, type, true));
+    return new JoinInfo(VectorizedHashJoinOperator.class, new HashJoinPOP(PROPS, null, null, conditions, type, true));
   }
 
   @Test

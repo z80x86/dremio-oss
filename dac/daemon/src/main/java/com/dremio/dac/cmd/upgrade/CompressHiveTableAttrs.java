@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package com.dremio.dac.cmd.upgrade;
 
+import com.dremio.common.Version;
+import com.dremio.dac.cmd.AdminLogger;
 import com.dremio.exec.catalog.ConnectionReader;
 import com.dremio.exec.store.hive.exec.HiveReaderProtoUtil;
 import com.dremio.hive.proto.HiveReaderProto;
@@ -26,6 +28,7 @@ import com.dremio.service.namespace.NamespaceServiceImpl;
 import com.dremio.service.namespace.dataset.proto.DatasetConfig;
 import com.dremio.service.namespace.dataset.proto.ReadDefinition;
 import com.dremio.service.namespace.source.proto.SourceConfig;
+import com.google.common.collect.ImmutableList;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 import io.protostuff.ByteString;
@@ -33,9 +36,23 @@ import io.protostuff.ByteString;
 /**
  * Rewrite hive dataset config entries to compress the read definitions
  */
-class CompressHiveTableAttrs extends UpgradeTask {
+class CompressHiveTableAttrs extends UpgradeTask implements LegacyUpgradeTask {
+
+  //DO NOT MODIFY
+  static final String taskUUID = "285abdab-19b9-493b-8c2e-f2759c6bbd04";
+
   public CompressHiveTableAttrs() {
-    super("Compressing Hive Table attributes", VERSION_106, VERSION_203, NORMAL_ORDER + 9);
+    super("Compressing Hive Table attributes", ImmutableList.of(MigrateAccelerationMeasures.taskUUID));
+  }
+
+  @Override
+  public Version getMaxVersion() {
+    return VERSION_203;
+  }
+
+  @Override
+  public String getTaskUUID() {
+    return taskUUID;
   }
 
   @Override
@@ -47,7 +64,8 @@ class CompressHiveTableAttrs extends UpgradeTask {
           continue;
         }
 
-        System.out.printf("  Handling Hive source %s%n", source.getName());
+        AdminLogger.log("  Handling Hive source {}", source.getName());
+
         for (NamespaceKey datasetPath : namespaceService.getAllDatasets(new NamespaceKey(source.getName()))) {
           final DatasetConfig datasetConfig = namespaceService.getDataset(datasetPath);
 
@@ -56,14 +74,14 @@ class CompressHiveTableAttrs extends UpgradeTask {
             continue;
           }
 
-          System.out.printf("    Compressing Table '%s'...", datasetPath.getSchemaPath());
+          AdminLogger.log("    Compressing Table {}...", datasetPath.getSchemaPath());
 
           final ReadDefinition readDefinition = datasetConfig.getReadDefinition();
           final byte[] original = readDefinition.getExtendedProperty().toByteArray();
 
           final HiveTableXattr.Builder extended = HiveTableXattr.newBuilder(HiveTableXattr.parseFrom(original));
           if (extended.getPropertyCollectionType() == HiveReaderProto.PropertyCollectionType.DICTIONARY) {
-            System.out.println("already compressed, skipping");
+            AdminLogger.log("already compressed, skipping");
             continue;
           }
 
@@ -73,7 +91,8 @@ class CompressHiveTableAttrs extends UpgradeTask {
           readDefinition.setExtendedProperty(ByteString.copyFrom(compressed));
 
           final int ratio = 100 * compressed.length / original.length;
-          System.out.printf("compressed %d -> %d (%d%%)%n", original.length, compressed.length, ratio);
+
+          AdminLogger.log("compressed {} -> {} {}", original.length, compressed.length, ratio);
 
           namespaceService.addOrUpdateDataset(datasetPath, datasetConfig);
         }
@@ -81,5 +100,10 @@ class CompressHiveTableAttrs extends UpgradeTask {
     } catch (NamespaceException | InvalidProtocolBufferException e) {
       throw new RuntimeException("CompressHiveTableAttrs failed", e);
     }
+  }
+
+  @Override
+  public String toString() {
+    return String.format("'%s' up to %s)", getDescription(), getMaxVersion());
   }
 }

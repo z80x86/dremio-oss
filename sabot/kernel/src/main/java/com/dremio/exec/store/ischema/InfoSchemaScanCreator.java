@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,8 +39,9 @@ public class InfoSchemaScanCreator implements ProducerOperator.Creator<InfoSchem
             ? InfoSchemaConstants.IS_LEGACY_CATALOG_NAME
             : InfoSchemaConstants.IS_CATALOG_NAME;
     final RecordReader reader =
-        table.asReader(catalogName, config.getUserName(), datasetListing, config.getQuery(), config.getColumns());
-    return new ScanOperator(fec.getSchemaUpdater(), config, context, Collections.singleton(reader).iterator());
+        table.asReader(catalogName, config.getProps().getUserName(), datasetListing, config.getQuery(), config.getColumns());
+
+    return new ScanOperator(config, context, Collections.singleton(reader).iterator());
   }
 
 }

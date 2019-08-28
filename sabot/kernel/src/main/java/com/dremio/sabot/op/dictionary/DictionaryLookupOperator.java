@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,9 +30,9 @@ import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.TimeStampMilliVector;
+import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VarCharVector;
-import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.util.TransferPair;
@@ -56,7 +56,6 @@ import com.dremio.exec.store.dfs.FileSystemPlugin;
 import com.dremio.exec.store.dfs.FileSystemWrapper;
 import com.dremio.exec.store.parquet.ParquetFormatPlugin;
 import com.dremio.sabot.exec.context.OperatorContext;
-import com.dremio.sabot.op.filter.VectorContainerWithSV;
 import com.dremio.sabot.op.spi.SingleInputOperator;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;

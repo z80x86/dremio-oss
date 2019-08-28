@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,15 @@ package com.dremio.exec.sql;
 
 import static org.junit.Assert.assertFalse;
 
+import java.io.File;
+import java.io.PrintStream;
+
 import org.apache.commons.io.FileUtils;
 import org.junit.Ignore;
 import org.junit.Test;
 
 import com.dremio.PlanTestBase;
 import com.dremio.exec.proto.UserBitShared.DremioPBError.ErrorType;
-
-import java.io.File;
-import java.io.PrintStream;
 
 public class TestCTAS extends PlanTestBase {
   @Test // DRILL-2589
@@ -154,6 +154,30 @@ public class TestCTAS extends PlanTestBase {
           .sqlBaselineQuery(baselineQuery)
           .build()
           .run();
+    } finally {
+      FileUtils.deleteQuietly(new File(getDfsTestTmpSchemaLocation(), newTblName));
+    }
+  }
+
+  @Test // DX - 16118
+  public void testParquetComplexWithNull() throws Exception {
+    final String newTblName = "parquetComplexWithNull";
+
+    try {
+      final String ctasQuery = String.format("CREATE TABLE %s.%s AS SELECT index from " +
+          "dfs.\"${WORKING_PATH}/src/test/resources/complex_with_null.parquet\" where play_name is not null",
+        TEMP_SCHEMA, newTblName);
+
+      test(ctasQuery);
+
+      final String selectFromCreatedTable = String.format("select count(*) as cnt from %s.%s where index is null", TEMP_SCHEMA, newTblName);
+      testBuilder()
+        .sqlQuery(selectFromCreatedTable)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(111396l)
+        .build()
+        .run();
     } finally {
       FileUtils.deleteQuietly(new File(getDfsTestTmpSchemaLocation(), newTblName));
     }

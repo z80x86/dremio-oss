@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.dremio.sabot.op.spi;
+
+import com.dremio.sabot.exec.fragment.OutOfBandMessage;
 
 /**
  * The base unit of Execution. An operator is expected to consume one or more
@@ -57,6 +59,13 @@ public interface Operator extends AutoCloseable {
 
   OperatorState<?> getState();
 
+  /**
+   * Do work on an out of band message. This can be called as long as the operator is not in NEEDS_SETUP or
+   * DONE state. The default implementation is operator ignoring messages.
+   *
+   * @param message The message to work on.
+   */
+  default void workOnOOB(OutOfBandMessage message) {}
 
   /**
    * A type of operator that can output data.

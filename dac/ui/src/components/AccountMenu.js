@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,29 @@
 import { Component } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
-import config from 'utils/config';
+import config from 'dyn-load/utils/config';
 import { injectIntl } from 'react-intl';
 
 import fileABug from 'utils/fileABug';
-import { getLoginUrl } from 'routes';
+import { logoutUser } from 'actions/account';
+
 
 import Menu from 'components/Menus/Menu';
 import MenuItem from 'components/Menus/MenuItem';
 import DividerHr from 'components/Menus/DividerHr';
+import { HookConsumer } from '@app/containers/RouteLeave';
+
+const mapDispatchToProps = {
+  logoutUser
+};
 
 @injectIntl
 export class AccountMenu extends Component {
   static propTypes = {
     closeMenu: PropTypes.func.isRequired,
-    intl: PropTypes.object.isRequired
+    intl: PropTypes.object.isRequired,
+    //connected
+    logoutUser: PropTypes.func.isRequired
   };
 
   static contextTypes = {
@@ -46,10 +54,18 @@ export class AccountMenu extends Component {
     this.context.router.push({pathname: '/account/info'});
   }
 
-  onLogOut = () => {
+  onLogOut = (doChangesCheckFn) => {
     this.props.closeMenu();
-    // it will trigger logout action in authMiddleware
-    this.context.router.replace(getLoginUrl());
+    const { hasChanges, userChoiceToLeaveOrStayPromise } = doChangesCheckFn();
+    if (hasChanges) {
+      userChoiceToLeaveOrStayPromise.then(leaveTheChanges => {
+        if (leaveTheChanges) {
+          this.props.logoutUser();
+        }
+      });
+    } else {
+      this.props.logoutUser();
+    }
   }
 
   onFileABug = () => {
@@ -66,19 +82,25 @@ export class AccountMenu extends Component {
           <span style={styles.menuInformation}>{intl.formatMessage({ id: 'HeaderMenu.InternalBuild' })}</span>
         </MenuItem>}
       {config.shouldEnableBugFiling
-        && <MenuItem onTouchTap={this.onFileABug}>{intl.formatMessage({ id: 'HeaderMenu.FileABug' })}</MenuItem>}
+        && <MenuItem onClick={this.onFileABug}>{intl.formatMessage({ id: 'HeaderMenu.FileABug' })}</MenuItem>}
       {config.shouldEnableBugFiling && <DividerHr/>}
-      <MenuItem onTouchTap={this.onAccountSettings}>
+      <MenuItem onClick={this.onAccountSettings}>
         {intl.formatMessage({ id: 'HeaderMenu.AccountSettings' })}
       </MenuItem>
-      <MenuItem onTouchTap={this.onLogOut}>
-        {intl.formatMessage({ id: 'HeaderMenu.LogOut' })}
-      </MenuItem>
+      <HookConsumer>
+        {
+          ({ doChangesCheck }) => (
+            <MenuItem onClick={() => this.onLogOut(doChangesCheck)}>
+              {intl.formatMessage({ id: 'HeaderMenu.LogOut' })}
+            </MenuItem>
+          )
+        }
+      </HookConsumer>
     </Menu>;
   }
 }
 
-export default connect(null, null)(AccountMenu);
+export default connect(null, mapDispatchToProps)(AccountMenu);
 
 const styles = {
   menuInformation: {

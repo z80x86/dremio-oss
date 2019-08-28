@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { Component } from 'react';
-import PureRender from 'pure-render-decorator';
+import { PureComponent } from 'react';
 import PropTypes from 'prop-types';
-import Radium from 'radium';
+import classNames from 'classnames';
+
 import Immutable from 'immutable';
 import jobsUtils from 'utils/jobsUtils';
 import timeUtils from 'utils/timeUtils';
@@ -27,6 +27,7 @@ import SettingsBtn from 'components/Buttons/SettingsBtn';
 import RealTimeTimer from 'components/RealTimeTimer';
 import CopyButton from 'components/Buttons/CopyButton';
 import { injectIntl, FormattedMessage } from 'react-intl';
+import { flexColumnContainer, flexElementAuto } from '@app/uiTheme/less/layout.less';
 
 import { BORDER_TABLE } from 'uiTheme/radium/colors';
 import SqlEditor from 'components/SQLEditor.js';
@@ -40,9 +41,7 @@ import ReflectionBlock from './ReflectionBlock';
 
 
 @injectIntl
-@Radium
-@PureRender
-class OverviewContent extends Component {
+class OverviewContent extends PureComponent {
   static checkResultOfProfile = (attemptDetails, reason = '') => {
     if (!reason) {
       return attemptDetails.find( profile => profile.get('reason') );
@@ -146,6 +145,10 @@ class OverviewContent extends Component {
     const jobId = jobDetails.get('jobId').get('id');
     const queueName = getQueueName(jobDetails);
     const jobIdUrl = jobsUtils.navigationURLForJobId(jobId, true);
+    const attemptDetails = jobDetails.get('attemptDetails');
+    const haveMultipleAttempts = attemptDetails.size > 1;
+    const durationLabelId = (haveMultipleAttempts) ? 'Job.TotalDuration' : 'Job.Duration';
+
 
     return (
       <div className='detail-row'>
@@ -155,7 +158,10 @@ class OverviewContent extends Component {
           <ListItem label={intl.formatMessage({ id: 'Job.QueryType' })}>
             <span>{intl.formatMessage({ id: this.getFormatMessageIdForQueryType() })}</span>
           </ListItem>
-          <ListItem label={intl.formatMessage({ id: 'Job.Duration' })}>
+          {haveMultipleAttempts && <ListItem label={intl.formatMessage({ id: 'Job.LastAttemptDuration' })}>
+            <span>{this.renderLastAttemptDuration()}</span>
+          </ListItem>}
+          <ListItem label={intl.formatMessage({ id: durationLabelId })}>
             <span>{this.renderJobDuration()}</span>
           </ListItem>
           <ListItem label={intl.formatMessage({ id: 'Job.StartTime' })}>
@@ -185,6 +191,12 @@ class OverviewContent extends Component {
     const failureInfo = this.props.jobDetails.get('failureInfo');
 
     return (failureInfo) ? <JobErrorLog failureInfo={failureInfo} /> : null;
+  }
+
+  renderCancellationLog() {
+    const cancellationInfo = this.props.jobDetails.get('cancellationInfo');
+
+    return (cancellationInfo) ? <JobErrorLog failureInfo={cancellationInfo} /> : null;
   }
 
   renderDatasetBlock() {
@@ -225,7 +237,7 @@ class OverviewContent extends Component {
             fitHeightToContent
             maxHeight={500}
             contextMenu={false}
-            />
+          />
         </div>
       );
     }
@@ -330,6 +342,14 @@ class OverviewContent extends Component {
     );
   }
 
+  renderLastAttemptDuration() {
+    const { jobDetails } = this.props;
+    const attemptDetails = jobDetails.get('attemptDetails');
+    const lastAttempt = attemptDetails.last();
+    const totalTimeMs = lastAttempt.get('enqueuedTime') + lastAttempt.get('executionTime') + lastAttempt.get('planningTime');
+    return jobsUtils.formatJobDuration(totalTimeMs);
+  }
+
 
   render() {
     const { jobDetails, intl } = this.props;
@@ -341,9 +361,10 @@ class OverviewContent extends Component {
       <div>
         {this.renderJobSummary(jobDetails, intl)}
         {this.renderErrorLog()}
+        {this.renderCancellationLog()}
 
         {!this.isMetadataJob() &&
-          <div className='detail-row'>
+          <div className={classNames('detail-row', flexColumnContainer, flexElementAuto)}>
             {(this.isDatasetBlockToBeShown() || this.isParentsBlockToBeShown()) &&
             <h4>{intl.formatMessage({ id: 'Job.Query' })}</h4>
             }

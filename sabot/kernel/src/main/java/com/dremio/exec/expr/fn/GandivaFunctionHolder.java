@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,34 @@
  */
 package com.dremio.exec.expr.fn;
 
+import java.util.List;
+
+import org.apache.arrow.vector.types.pojo.ArrowType;
+
 import com.dremio.common.expression.CompleteType;
 import com.dremio.common.expression.FunctionHolderExpression;
 import com.dremio.common.expression.LogicalExpression;
 import com.dremio.exec.expr.ClassGenerator;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
-import com.dremio.exec.expr.fn.AbstractFunctionHolder;
-import com.dremio.exec.expr.fn.FunctionErrorContext;
 import com.sun.codemodel.JVar;
-
-import java.util.List;
 
 public class GandivaFunctionHolder extends AbstractFunctionHolder {
   private final CompleteType[] argTypes;
-
   private final CompleteType returnType;
-
   private final String name;
+  private final boolean returnTypeIndependent;
 
   public GandivaFunctionHolder(CompleteType[] argTypes, CompleteType returnType, String name) {
     this.argTypes = argTypes;
     this.returnType = returnType;
     this.name = name;
+    // a function that processes decimals. we need to determine output return type.
+    // it is based on input type.
+    if (returnType.getType().getTypeID() == ArrowType.ArrowTypeID.Decimal) {
+      this.returnTypeIndependent = false;
+    } else {
+      this.returnTypeIndependent = true;
+    }
   }
 
   @Override
@@ -73,7 +79,7 @@ public class GandivaFunctionHolder extends AbstractFunctionHolder {
 
   @Override
   public boolean isReturnTypeIndependent() {
-    return false;
+    return returnTypeIndependent;
   }
 
   @Override
@@ -81,7 +87,49 @@ public class GandivaFunctionHolder extends AbstractFunctionHolder {
     return null;
   }
 
-  public CompleteType getReturnType() {
-    return returnType;
+  @Override
+  public CompleteType getReturnType(List<LogicalExpression> args) {
+    if (returnTypeIndependent) {
+      return returnType;
+    }
+
+    OutputDerivation derivation;
+    switch (name) {
+      case "add" :
+        derivation = OutputDerivation.DECIMAL_ADD;
+        break;
+      case "subtract" :
+        derivation = OutputDerivation.DECIMAL_SUBTRACT;
+        break;
+      case "multiply" :
+        derivation = OutputDerivation.DECIMAL_MULTIPLY;
+        break;
+      case "divide" :
+        derivation = OutputDerivation.DECIMAL_DIVIDE;
+        break;
+      case "mod" :
+      case "modulo" :
+        derivation = OutputDerivation.DECIMAL_MOD;
+        break;
+      case "abs":
+        derivation = OutputDerivation.DECIMAL_MAX;
+        break;
+      case "ceil":
+      case "floor":
+        derivation = OutputDerivation.DECIMAL_ZERO_SCALE;
+        break;
+      case "round":
+      case "trunc":
+      case "truncate":
+        derivation = (args.size() == 1) ? OutputDerivation.DECIMAL_ZERO_SCALE :
+          OutputDerivation.DECIMAL_SET_SCALE;
+        break;
+      case "castDECIMAL":
+        derivation = OutputDerivation.DECIMAL_CAST;
+        break;
+      default:
+        throw new UnsupportedOperationException("unknown decimal function " + this.name);
+    }
+    return derivation.getOutputType(CompleteType.DECIMAL, args);
   }
 }

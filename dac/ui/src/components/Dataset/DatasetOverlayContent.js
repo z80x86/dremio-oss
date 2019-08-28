@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import PropTypes from 'prop-types';
 import { loadSummaryDataset } from 'actions/resources/dataset';
 import { getViewState } from 'selectors/resources';
 import { getSummaryDataset } from 'selectors/datasets';
+import { stopPropagation } from '@app/utils/reactEventUtils';
 
 import ViewStateWrapper from 'components/ViewStateWrapper';
 import ColumnMenuItem from 'components/DragComponents/ColumnMenuItem';
@@ -57,7 +58,8 @@ export class DatasetOverlayContent extends Component {
     style: PropTypes.object,
     typeIcon: PropTypes.string.isRequired,
     dragType: PropTypes.string,
-    iconStyles: PropTypes.object
+    iconStyles: PropTypes.object,
+    onRef: PropTypes.func
   };
 
   static defaultProps = {
@@ -72,11 +74,6 @@ export class DatasetOverlayContent extends Component {
 
   componentWillMount() {
     this.props.loadSummaryDataset(this.props.fullPath.join('/'), VIEW_ID);
-  }
-
-  preventLink(e) {
-    e.preventDefault();
-    e.stopPropagation();
   }
 
   renderHeader() {
@@ -96,7 +93,7 @@ export class DatasetOverlayContent extends Component {
         <div style={{display: 'flex', marginRight: 5}}>
           { /* disabled pending DX-6596 Edit link from DatasetOverlay is broken */ }
           {false && this.renderPencil(summaryDataset)}
-          <Link to={summaryDataset.getIn(['links', 'query'])}><FontIcon type='Query'/></Link>
+          <Link to={summaryDataset.getIn(['links', 'query'])}><FontIcon tooltip={la('Query')} type='Query'/></Link>
         </div>
       </div>
     );
@@ -134,15 +131,18 @@ export class DatasetOverlayContent extends Component {
   }
 
   render() {
-    const { summaryDataset, onMouseEnter, onMouseLeave, placement, viewState, onClose } = this.props;
+    const { summaryDataset, onMouseEnter, onMouseLeave, placement, viewState, onClose, onRef } = this.props;
     const position = placement === 'right' ? placement : '';
 
     return (
       <div
+        ref={onRef}
         style={[styles.base, this.props.style]}
         className={`dataset-label-overlay ${position}`}
         onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}>
+        onMouseLeave={onMouseLeave}
+        onClick={stopPropagation}
+      >
         <ViewStateWrapper viewState={viewState} onDismissError={onClose}>
           { summaryDataset.size > 0 &&
             <div>
@@ -151,7 +151,7 @@ export class DatasetOverlayContent extends Component {
                 <div style={styles.attribute}>
                   <div style={styles.attributeLabel}>{la('Jobs')}:</div>
                   <div style={styles.attributeValue}>
-                    <Link to={summaryDataset.getIn(['links', 'jobs'])} onMouseDown={this.preventLink}>
+                    <Link to={summaryDataset.getIn(['links', 'jobs'])} onMouseDown={stopPropagation}>
                       {summaryDataset.get('jobCount') || 0} »
                     </Link>
                   </div>
@@ -225,7 +225,6 @@ const styles = {
   },
   attributeLabel: {
     ...formDescription,
-    float: 'left',
     width: 90
   },
   breadCrumbs: {

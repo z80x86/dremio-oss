@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@ package com.dremio.sabot.op.common.ht2;
 import java.util.List;
 
 import org.apache.arrow.vector.FieldVector;
+
 import com.dremio.common.expression.Describer;
 import com.google.common.base.Preconditions;
+
 import io.netty.buffer.ArrowBuf;
 import io.netty.util.internal.PlatformDependent;
 

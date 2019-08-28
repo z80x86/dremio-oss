@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,28 +34,28 @@ export default class ReplaceGroup extends Component {
 
   static renderMenuItems(columnType, onClick) {
     return [
-      <ColumnMenuItem
+      <ColumnMenuItem key='EXTRACT_TEXT'
         columnType={columnType}
         actionType='EXTRACT_TEXT'
         title={la('Extract Text…')}
         availableTypes={[TEXT]}
         onClick={onClick}
       />,
-      <ColumnMenuItem
+      <ColumnMenuItem key='REPLACE_TEXT'
         columnType={columnType}
         actionType='REPLACE_TEXT'
         title={la('Replace Text…')}
         availableTypes={[TEXT]}
         onClick={onClick}
       />,
-      <ColumnMenuItem
+      <ColumnMenuItem key='REPLACE'
         columnType={columnType}
         actionType='REPLACE'
         title={la('Replace…')}
         availableTypes={REPLACEABLE_TYPES}
         onClick={onClick}
       />,
-      <ColumnMenuItem
+      <ColumnMenuItem key='SPLIT'
         columnType={columnType}
         actionType='SPLIT'
         title={la('Split…')}

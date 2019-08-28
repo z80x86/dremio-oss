@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { CALL_API } from 'redux-api-middleware';
+import { RSAA } from 'redux-api-middleware';
 
 import { API_URL_V2 } from 'constants/Api';
 import schemaUtils from 'utils/apiUtils/schemaUtils';
 import exploreUtils from 'utils/explore/exploreUtils';
-import fullDatasetSchema from 'schemas/v2/fullDataset';
+import { datasetWithoutData } from 'schemas/v2/fullDataset';
 
 export const NEW_UNTITLED_START   = 'NEW_UNTITLED_START';
 export const NEW_UNTITLED_SUCCESS = 'NEW_UNTITLED_SUCCESS';
@@ -31,12 +31,12 @@ function newUntitledFetch(dataset, parentFullPath, viewId) {
   // (only one seems to be sent though)
   const meta = { viewId, entity: dataset };
   const newVersion = exploreUtils.getNewDatasetVersion();
-  const href = exploreUtils.getHrefForUntitledDatasetConfig(parentFullPath, newVersion);
+  const href = exploreUtils.getHrefForUntitledDatasetConfig(parentFullPath, newVersion, true);
   return {
-    [CALL_API]: {
+    [RSAA]: {
       types: [
         { type: NEW_UNTITLED_START, meta },
-        schemaUtils.getSuccessActionTypeWithSchema(NEW_UNTITLED_SUCCESS, fullDatasetSchema, meta),
+        schemaUtils.getSuccessActionTypeWithSchema(NEW_UNTITLED_SUCCESS, datasetWithoutData, meta),
         { type: NEW_UNTITLED_FAILURE, meta }
       ],
       method: 'POST',
@@ -68,19 +68,18 @@ export const newUntitledSqlActionTypes = [
 /**
  * common helper for different table operations
  */
-export function postNewUntitledSql(href, sql, queryContext, viewId, discardResults) {
+export function postNewUntitledSql(href, sql, queryContext, viewId) {
   const meta = { viewId };
-  const successMeta = {...meta, ignoreEntities: discardResults};
 
   const body = {
     context: queryContext,
     sql
   };
   return {
-    [CALL_API]: {
+    [RSAA]: {
       types: [
         { type: NEW_UNTITLED_SQL_START, meta },
-        schemaUtils.getSuccessActionTypeWithSchema(NEW_UNTITLED_SQL_SUCCESS, fullDatasetSchema, successMeta),
+        schemaUtils.getSuccessActionTypeWithSchema(NEW_UNTITLED_SQL_SUCCESS, datasetWithoutData, meta),
         { type: NEW_UNTITLED_SQL_FAILURE, meta }
       ],
       method: 'POST',

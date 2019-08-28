@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,40 +29,52 @@ public final class ProcessExit {
 
   /**
    * Exit the VM as we hit a catastrophic failure.
-   * @param name a descriptive message
+   * @param message a descriptive message
    * @param code an error code to exit the JVM with.
    */
   public static void exit(String message, int code) {
     exit(null, message, code);
   }
 
-  public static void exitHeap(Throwable t, int code) {
-    exit(t, "There was insufficient heap memory to continue operating.", code);
+  public static void exitHeap(Throwable t) {
+    final int heapExitCode = 1;
+    try {
+      exit(t, "There was insufficient heap memory to continue operating.", heapExitCode);
+    } finally {
+      // We tried to exit with a nice error message, but that failed, likely when we tried to create a String for the
+      // error message. Can't let this thread simply exit
+      Runtime.getRuntime().halt(heapExitCode);
+    }
   }
 
   /**
    * Exit the VM as we hit a catastrophic failure.
-   * @param e
+   * @param t
    *          The Throwable that occurred
-   * @param name
+   * @param message
    *          A descriptive message
    * @param code
    *          An error code to exit the JVM with.
    */
   public static void exit(Throwable t, String message, int code) {
-    logger.error("Dremio is exiting. {}", message, t);
-
-    final PrintStream out = ("true".equals(System.getProperty("dremio.catastrophic_to_standard_out", "true"))) ? System.out
-        : System.err;
-    out.println("Dremio is exiting. " + message);
-    if (t != null) {
-      t.printStackTrace(out);
-    }
-    out.flush();
     try {
-      Thread.sleep(5000);
-    } catch (InterruptedException e) {
+      logger.error("Dremio is exiting. {}", message, t);
+
+      final PrintStream out = ("true".equals(System.getProperty("dremio.catastrophic_to_standard_out", "true"))) ? System.out
+        : System.err;
+      out.println("Dremio is exiting. " + message);
+      if (t != null) {
+        t.printStackTrace(out);
+      }
+      out.flush();
+      try {
+        Thread.sleep(5000);
+      } catch (InterruptedException e) {
+        // Exception ignored
+      }
+    } finally {
+      // We tried to exit with a nice error message, but that failed for some reason. Can't let this thread simply exit
+      Runtime.getRuntime().halt(code);
     }
-    System.exit(code);
   }
 }

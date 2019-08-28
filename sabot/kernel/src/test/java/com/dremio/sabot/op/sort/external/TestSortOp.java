@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,27 +19,28 @@ import static com.dremio.sabot.CustomGenerator.ID;
 import static java.util.Collections.singletonList;
 import static org.apache.calcite.rel.RelFieldCollation.Direction.ASCENDING;
 import static org.apache.calcite.rel.RelFieldCollation.NullDirection.FIRST;
+import static org.junit.Assert.assertEquals;
 
-import com.dremio.common.exceptions.UserException;
-import com.dremio.common.util.TestTools;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.BufferManager;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import static org.junit.Assert.assertEquals;
+import org.junit.rules.TestRule;
 
 import com.dremio.common.AutoCloseables;
+import com.dremio.common.exceptions.UserException;
+import com.dremio.common.util.TestTools;
+import com.dremio.exec.ExecConstants;
 import com.dremio.exec.expr.ClassProducer;
 import com.dremio.exec.physical.config.ExternalSort;
 import com.dremio.sabot.BaseTestOperator;
 import com.dremio.sabot.CustomGenerator;
 import com.dremio.sabot.Fixtures;
 import com.dremio.sabot.exec.context.BufferManagerImpl;
-import org.junit.rules.TestRule;
-
-import java.util.concurrent.TimeUnit;
 
 public class TestSortOp extends BaseTestOperator {
 
@@ -65,11 +66,10 @@ public class TestSortOp extends BaseTestOperator {
   }
 
   @Test
-  public void testSpillSortWithUserException1() throws Exception {
-    try {
-      ExternalSort sort = new ExternalSort(null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
-      sort.setInitialAllocation(1_000_000); // this can't go below sort's initialAllocation (20K)
-      sort.setMaxAllocation(2_000_000); // this can't go below sort's initialAllocation (20K)
+  public void testQuickSorterSpillSortWithUserException1() throws Exception {
+    try (AutoCloseable option = with(ExecConstants.EXTERNAL_SORT_ENABLE_SPLAY_SORT, false)) {
+      ExternalSort sort = new ExternalSort(PROPS.cloneWithNewReserve(1_000_000), null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
+      sort.getProps().setMemLimit(2_000_000); // this can't go below sort's initialAllocation (20K)
       Fixtures.Table table = generator.getExpectedSortedTable();
       validateSingle(sort, ExternalSortOperator.class, generator, table, 4000);
     } catch (UserException uex) {
@@ -81,11 +81,10 @@ public class TestSortOp extends BaseTestOperator {
   }
 
   @Test
-  public void testSpillSortWithUserException2() throws Exception {
-    try {
-      ExternalSort sort = new ExternalSort(null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
-      sort.setInitialAllocation(1_000_000); // this can't go below sort's initialAllocation (20K)
-      sort.setMaxAllocation(1_000_000); // this can't go below sort's initialAllocation (20K)
+  public void testQuickSorterSpillSortWithUserException2() throws Exception {
+    try (AutoCloseable option = with(ExecConstants.EXTERNAL_SORT_ENABLE_SPLAY_SORT, false)) {
+      ExternalSort sort = new ExternalSort(PROPS.cloneWithNewReserve(1_000_000), null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
+      sort.getProps().setMemLimit(1_000_000); // this can't go below sort's initialAllocation (20K)
       Fixtures.Table table = generator.getExpectedSortedTable();
       validateSingle(sort, ExternalSortOperator.class, generator, table, 10000);
     } catch (UserException uex) {
@@ -97,11 +96,52 @@ public class TestSortOp extends BaseTestOperator {
   }
 
   @Test
-  public void testSpillSort() throws Exception {
-    ExternalSort sort = new ExternalSort(null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
-    sort.setInitialAllocation(1_000_000); // this can't go below sort's initialAllocation (20K)
-    sort.setMaxAllocation(2_000_000); // this can't go below sort's initialAllocation (20K)
-    Fixtures.Table table = generator.getExpectedSortedTable();
-    validateSingle(sort, ExternalSortOperator.class, generator, table, 1000);
+  public void testQuickSorterSpillSort() throws Exception {
+    try (AutoCloseable option = with(ExecConstants.EXTERNAL_SORT_ENABLE_SPLAY_SORT, false)) {
+      ExternalSort sort = new ExternalSort(PROPS.cloneWithNewReserve(1_000_000), null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
+      sort.getProps().setMemLimit(2_000_000); // this can't go below sort's initialAllocation (20K)
+      Fixtures.Table table = generator.getExpectedSortedTable();
+      validateSingle(sort, ExternalSortOperator.class, generator, table, 1000);
+    }
+  }
+
+  @Test
+  public void testSplayTreeSpillSortWithUserException1() throws Exception {
+    try (AutoCloseable option = with(ExecConstants.EXTERNAL_SORT_ENABLE_SPLAY_SORT, true)) {
+      ExternalSort sort = new ExternalSort(PROPS.cloneWithNewReserve(1_000_000), null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
+      sort.getProps().setMemLimit(2_000_000); // this can't go below sort's initialAllocation (20K)
+      Fixtures.Table table = generator.getExpectedSortedTable();
+      validateSingle(sort, ExternalSortOperator.class, generator, table, 4000);
+    } catch (UserException uex) {
+      assertEquals("DiskRunManager: Unable to secure enough memory to merge spilled sort data.", uex.getContextStrings().get(1));
+      assertEquals("Target Batch Size (in bytes) 236000", uex.getContextStrings().get(2));
+      assertEquals("Target Batch Size 4000", uex.getContextStrings().get(3));
+      assertEquals(34, uex.getContextStrings().size());
+    }
+  }
+
+  @Test
+  public void testSplayTreeSpillSortWithUserException2() throws Exception {
+    try (AutoCloseable option = with(ExecConstants.EXTERNAL_SORT_ENABLE_SPLAY_SORT, true)) {
+      ExternalSort sort = new ExternalSort(PROPS.cloneWithNewReserve(1_000_000), null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
+      sort.getProps().setMemLimit(1_000_000); // this can't go below sort's initialAllocation (20K)
+      Fixtures.Table table = generator.getExpectedSortedTable();
+      validateSingle(sort, ExternalSortOperator.class, generator, table, 10000);
+    } catch (UserException uex) {
+      assertEquals("Memory failed due to not enough memory to sort even one batch of records.", uex.getContextStrings().get(0));
+      assertEquals("Target Batch Size (in bytes) 590000", uex.getContextStrings().get(1));
+      assertEquals("Target Batch Size 10000", uex.getContextStrings().get(2));
+      assertEquals(33, uex.getContextStrings().size());
+    }
+  }
+
+  @Test
+  public void testSplayTreeSpillSort() throws Exception {
+    try (AutoCloseable option = with(ExecConstants.EXTERNAL_SORT_ENABLE_SPLAY_SORT, true)) {
+      ExternalSort sort = new ExternalSort(PROPS.cloneWithNewReserve(1_000_000), null, singletonList(ordering(ID.getName(), ASCENDING, FIRST)), false);
+      sort.getProps().setMemLimit(2_000_000); // this can't go below sort's initialAllocation (20K)
+      Fixtures.Table table = generator.getExpectedSortedTable();
+      validateSingle(sort, ExternalSortOperator.class, generator, table, 1000);
+    }
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,10 +34,10 @@ public class TestFastComplexSchema extends BaseTestQuery {
             "         ON t1.f = cast(r.r_regionkey as bigint)");
   }
 
-  @Ignore("DX-3852")
   @Test
   public void test2() throws Exception {
     test("alter session set \"planner.enable_hashjoin\" = false");
+    test("alter session set \"planner.enable_mergejoin\" = true");
     test("alter session set \"planner.slice_target\" = 1");
     test("SELECT r.r_name, \n" +
             "       t1.f \n" +
@@ -48,6 +48,7 @@ public class TestFastComplexSchema extends BaseTestQuery {
             "         ON t1.f = cast(r.r_regionkey as bigint) \n" +
             "ORDER  BY r.r_name");
     test("alter session set \"planner.enable_hashjoin\" = true");
+    test("alter session set \"planner.enable_mergejoin\" = false");
     test("alter session set \"planner.slice_target\" = 1000000");
   }
 

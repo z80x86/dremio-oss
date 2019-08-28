@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import com.dremio.datastore.StoreCreationFunction;
 import com.dremio.datastore.StringSerializer;
 import com.dremio.datastore.VersionExtractor;
 import com.dremio.service.reflection.proto.RefreshRequest;
-import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
@@ -62,15 +61,18 @@ public class RefreshRequestsStore {
     }
 
     @Override
-    public Long incrementVersion(RefreshRequest value) {
-      final Long current = value.getVersion();
-      value.setVersion(Optional.fromNullable(current).or(-1L) + 1);
-      return current;
+    public void setVersion(RefreshRequest value, Long version) {
+      value.setVersion(version);
     }
 
     @Override
-    public void setVersion(RefreshRequest value, Long version) {
-      value.setVersion(version == null ? 0 : version);
+    public String getTag(RefreshRequest value) {
+      return value.getTag();
+    }
+
+    @Override
+    public void setTag(RefreshRequest value, String tag) {
+      value.setTag(tag);
     }
   }
 

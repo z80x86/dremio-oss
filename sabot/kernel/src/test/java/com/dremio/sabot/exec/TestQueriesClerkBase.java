@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import org.apache.arrow.memory.AllocationListener;
@@ -33,6 +34,7 @@ import org.junit.After;
 import org.junit.Before;
 
 import com.dremio.common.AutoCloseables;
+import com.dremio.exec.planner.fragment.PlanFragmentFull;
 import com.dremio.exec.proto.CoordExecRPC;
 import com.dremio.exec.proto.CoordinationProtos;
 import com.dremio.exec.proto.ExecProtos;
@@ -63,12 +65,11 @@ public class TestQueriesClerkBase {
   }
 
   // Bare-bones plan fragment: only contains the major and minor fragment IDs
-  protected CoordExecRPC.PlanFragment getDummyPlan(UserBitShared.QueryId queryId, int majorFragmentId, int minorFragmentId){
+  protected PlanFragmentFull getDummyPlan(UserBitShared.QueryId queryId, int majorFragmentId, int minorFragmentId){
     ExecProtos.FragmentHandle handle = ExecProtos.FragmentHandle
       .newBuilder()
       .setQueryId(queryId)
       .setMajorFragmentId(majorFragmentId)
-      .setMinorFragmentId(minorFragmentId)
       .build();
 
     CoordExecRPC.FragmentPriority priority = CoordExecRPC.FragmentPriority
@@ -76,11 +77,14 @@ public class TestQueriesClerkBase {
       .setWorkloadClass(UserBitShared.WorkloadClass.GENERAL)
       .build();
 
-    return CoordExecRPC.PlanFragment
-      .newBuilder()
-      .setHandle(handle)
-      .setPriority(priority)
-      .build();
+    return new PlanFragmentFull(
+      CoordExecRPC.PlanFragmentMajor.newBuilder()
+        .setHandle(handle)
+        .setPriority(priority)
+        .build(),
+      CoordExecRPC.PlanFragmentMinor.newBuilder()
+        .setMinorFragmentId(minorFragmentId)
+        .build());
   }
 
   protected CoordExecRPC.SchedulingInfo getDummySchedulingInfo() {
@@ -172,6 +176,17 @@ public class TestQueriesClerkBase {
     public long getHeadroom() {
       throw new UnsupportedOperationException();
     }
+
+    @Override
+    public BufferAllocator getParentAllocator() {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Collection<BufferAllocator> getChildAllocators() {
+      throw new UnsupportedOperationException();
+    }
+
     public AllocationReservation newReservation() {
       throw new UnsupportedOperationException();
     }

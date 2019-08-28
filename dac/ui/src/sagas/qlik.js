@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ export function* fetchQlikApp(dataset) {
 
   headers.append('Accept', 'text/plain+qlik-app');
   if (localStorageUtils) {
-    headers.append('Authorization', `_dremio${localStorageUtils.getAuthToken()}`);
+    headers.append('Authorization', localStorageUtils.getAuthToken());
   }
   const response = yield call(fetch, `${API_URL_V2}${href}`, {method: 'GET', headers});
   const responseText = yield response.text();

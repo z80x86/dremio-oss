@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -144,10 +144,10 @@ public class CoreStoreProviderImpl implements CoreStoreProviderRpcService, Itera
 
   @VisibleForTesting
   CoreStoreProviderImpl(String baseDirectory, boolean inMemory, boolean timed) {
-    this(baseDirectory, inMemory, timed, true, false);
+    this(baseDirectory, inMemory, timed, true, false, false);
   }
 
-  CoreStoreProviderImpl(String baseDirectory, boolean inMemory, boolean timed, boolean validateOCC, boolean disableOCC) {
+  CoreStoreProviderImpl(String baseDirectory, boolean inMemory, boolean timed, boolean validateOCC, boolean disableOCC, boolean noDBOpenRetry) {
     super();
     switch(MODE){
     case DISK:
@@ -164,7 +164,7 @@ public class CoreStoreProviderImpl implements CoreStoreProviderRpcService, Itera
     this.disableOCC = disableOCC; // occ store is not created.
     this.inMemory = inMemory;
 
-    this.byteManager = new ByteStoreManager(baseDirectory, inMemory);
+    this.byteManager = new ByteStoreManager(baseDirectory, inMemory, noDBOpenRetry);
     this.indexManager = new IndexManager(
         baseDirectory,
         inMemory,
@@ -197,6 +197,11 @@ public class CoreStoreProviderImpl implements CoreStoreProviderRpcService, Itera
   }
 
   void recoverIfPreviouslyCrashed() throws Exception {
+    if (inMemory) {
+      // No recovery for in-memory
+      return;
+    }
+
     alarmFile = new File(baseDirectory, ALARM);
 
     if (!REINDEX_ON_CRASH_DISABLED && alarmFile.exists()) {
@@ -253,8 +258,14 @@ public class CoreStoreProviderImpl implements CoreStoreProviderRpcService, Itera
   private boolean reIndexDelta() {
     final ReIndexer reIndexer = new ReIndexer(indexManager, idToStore);
     try {
-      final boolean status = byteManager.replayDelta(reIndexer);
-      logger.debug("Partial re-indexing status: {}, metrics:\n{}", status, reIndexer.getMetrics());
+      final boolean status = byteManager.replayDelta(
+          reIndexer,
+          s -> idToStore.containsKey(s) && // to skip removed and auxiliary indexes
+              idToStore.get(s)
+                  .getStoreBuilderConfig()
+                  .getDocumentConverterClassName() != null
+      );
+      logger.info("Partial re-indexing status: {}, metrics:\n{}", status, reIndexer.getMetrics());
       return status;
     } catch (DatastoreException e) {
       logger.warn("Partial reindexing failed", e);

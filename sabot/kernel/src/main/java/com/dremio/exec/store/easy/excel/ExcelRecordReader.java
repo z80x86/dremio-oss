@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 package com.dremio.exec.store.easy.excel;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.ArrayList;
 
-import io.netty.buffer.ArrowBuf;
 import org.apache.arrow.vector.complex.impl.VectorContainerWriter;
 import org.apache.hadoop.fs.Path;
 
@@ -28,6 +27,7 @@ import com.dremio.common.AutoCloseables;
 import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.expression.SchemaPath;
+import com.dremio.exec.ExecConstants;
 import com.dremio.exec.store.AbstractRecordReader;
 import com.dremio.exec.store.RecordReader;
 import com.dremio.exec.store.dfs.FileSystemWrapper;
@@ -36,6 +36,8 @@ import com.dremio.exec.store.easy.excel.xls.XlsInputStream;
 import com.dremio.exec.store.easy.excel.xls.XlsRecordProcessor;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.op.scan.OutputMutator;
+
+import io.netty.buffer.ArrowBuf;
 
 /**
  * {@link RecordReader} implementation for reading a single sheet in an Excel file. Current support is
@@ -96,13 +98,14 @@ public class ExcelRecordReader extends AbstractRecordReader implements XlsInputS
 
     try {
       inputStream = dfs.open(path);
+      final int maxCellSize = Math.toIntExact(context.getOptions().getOption(ExecConstants.LIMIT_FIELD_SIZE_BYTES));
 
       if (pluginConfig.xls) {
         // we don't need to close this stream, it will be closed by the parser
         final XlsInputStream xlsStream = new XlsInputStream(this, inputStream);
-        parser = new XlsRecordProcessor(xlsStream, pluginConfig, writer, managedBuf, columnsToProject);
+        parser = new XlsRecordProcessor(xlsStream, pluginConfig, writer, managedBuf, columnsToProject, maxCellSize);
       } else {
-        parser = new StAXBasedParser(inputStream, pluginConfig, writer, managedBuf, columnsToProject);
+        parser = new StAXBasedParser(inputStream, pluginConfig, writer, managedBuf, columnsToProject, maxCellSize);
       }
     } catch (final SheetNotFoundException e) {
       // This check will move to schema validation in planning after DX-2271

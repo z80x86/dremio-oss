@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,9 +66,14 @@ class TimeUtils {
     return moment(timestamp).fromNow();
   }
 
-  formatTime(time, invalidDateString = 'Invalid date') { // todo: loc of 'Invalid date', and loc of real date string
+  formatTime(time, invalidDateString = la('Invalid date'), locale = window.navigator.language) {
+    moment.locale(locale);
     const t = moment(time, 'x');
-    return t.isValid() ? t.format('MM/DD/YYYY HH:mm:ss') : invalidDateString;
+    return t.isValid() ? t.format('L HH:mm:ss') : invalidDateString;
+  }
+
+  formatTimeDiff(timeDiffMs, format = 'H:mm:ss') {
+    return moment.utc(timeDiffMs).format(format);
   }
 }
 

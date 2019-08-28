@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,9 @@ import {hashHeightTopSplitter} from 'constants/explorePage/heightTopSplitter';
 function getInitialState() {
   return Immutable.fromJS({
     sqlState: localStorageUtils.getDefaultSqlState(),
-    sqlSize: hashHeightTopSplitter.default,
+    sqlSize: hashHeightTopSplitter.getDefaultSqlHeight(),
     isResizeInProgress: false,
     isUnsavedChangesModalShowing: false,
-    initialDatasetVersion: null,
     qlikDialogVisible: false,
     qlikShowDialogDataset: null,
     qlikInProgress: false,

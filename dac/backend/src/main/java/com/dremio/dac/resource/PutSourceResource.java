@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,7 +84,7 @@ public class PutSourceResource {
         throw new SourceNotFoundException(sourcePath.getSourceName().getName());
       }
       source.setState(sourceState);
-      source.setVersion(sourceConfig.getVersion());
+      source.setTag(sourceConfig.getTag());
       source.setId(sourceConfig.getId().getId());
       return source;
     } catch (ExecutionSetupException e) {

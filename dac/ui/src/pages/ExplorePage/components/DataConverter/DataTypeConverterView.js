@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -133,8 +133,8 @@ export default class DataTypeConverterView extends Component {
             onChange={this.onConvertTypeChange}
             className={selectLeftAligned}
             itemClass={selectItemCls}
-            itemRenderer={(item, label) => (<span className={classNames([typeElement, 'font-icon'])}>
-              <span className={classNames(['icon-type', typeToIconType[item.option]])}></span>
+            itemRenderer={({ option, label }) => (<span className={classNames([typeElement, 'font-icon'])}>
+              <span className={classNames(['icon-type', typeToIconType[option]])}></span>
               {label}
             </span>)}
           />

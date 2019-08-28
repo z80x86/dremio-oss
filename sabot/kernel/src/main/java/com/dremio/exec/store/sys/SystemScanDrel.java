@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,10 @@ import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
+
 import com.dremio.common.expression.SchemaPath;
-import com.dremio.common.logical.data.LogicalOperator;
 import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.planner.common.ScanRelBase;
-import com.dremio.exec.planner.logical.LogicalPlanImplementor;
 import com.dremio.exec.planner.logical.Rel;
 import com.dremio.exec.store.TableMetadata;
 
@@ -41,11 +40,6 @@ public class SystemScanDrel extends ScanRelBase implements Rel {
       List<SchemaPath> projectedColumns,
       double observedRowcountAdjustment) {
     super(cluster, traitSet, table, pluginId, tableMetadata, projectedColumns, observedRowcountAdjustment);
-  }
-
-  @Override
-  public LogicalOperator implement(LogicalPlanImplementor implementor) {
-    throw new UnsupportedOperationException();
   }
 
   @Override

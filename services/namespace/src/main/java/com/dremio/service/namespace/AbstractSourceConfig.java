@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ public abstract class AbstractSourceConfig<T extends AbstractSourceConfig<T>> {
   public abstract ByteString getConfig();
   public abstract String getType();
   public abstract String getName();
-  public abstract Long getVersion();
+  public abstract String getTag();
   public abstract Object getLegacySourceTypeEnum();
 
   public <X extends AbstractConnectionConf> X getConnectionConf(AbstractConnectionReader reader){

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package com.dremio.exec.server.options;
 
 import java.util.Map;
 
-
 import com.dremio.options.OptionManager;
 import com.dremio.options.OptionValue;
 import com.dremio.options.OptionValue.OptionType;
@@ -32,7 +31,7 @@ public abstract class InMemoryOptionManager extends FallbackOptionManager {
 
   protected final Map<String, OptionValue> options;
 
-  InMemoryOptionManager(final OptionManager fallback, final Map<String, OptionValue> options) {
+  protected InMemoryOptionManager(final OptionManager fallback, final Map<String, OptionValue> options) {
     super(fallback);
     this.options = options;
   }
@@ -83,6 +82,6 @@ public abstract class InMemoryOptionManager extends FallbackOptionManager {
    * @param type option type
    * @return true iff the type is supported
    */
-  abstract boolean supportsOptionType(OptionType type);
+  abstract protected boolean supportsOptionType(OptionType type);
 
 }

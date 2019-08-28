@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +54,8 @@ public class TestSearchService extends BaseTestServer {
   @AfterClass
   public static void after() throws Exception {
     NamespaceService namespaceService = newNamespaceService();
-    namespaceService.deleteSpace(new NamespaceKey("searchSpace"), 0L);
+    NamespaceKey namespaceKey = new NamespaceKey("searchSpace");
+    namespaceService.deleteSpace(namespaceKey, namespaceService.getSpace(namespaceKey).getTag());
   }
 
   @Test

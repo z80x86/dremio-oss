@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package com.dremio.exec.store.dfs;
 
-import static com.dremio.exec.store.dfs.easy.EasyDatasetXAttrSerDe.EASY_DATASET_SPLIT_XATTR_SERIALIZER;
-import static com.dremio.exec.store.parquet.ParquetDatasetXAttrSerDe.PARQUET_DATASET_SPLIT_XATTR_SERIALIZER;
 import static com.dremio.service.users.SystemUser.SYSTEM_USERNAME;
 
 import java.io.IOException;
@@ -27,8 +25,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Nullable;
@@ -43,6 +41,7 @@ import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.io.compress.CompressionCodecFactory;
 import org.apache.hadoop.security.AccessControlException;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.parquet.Preconditions;
 
 import com.dremio.common.config.LogicalPlanPersistence;
@@ -50,20 +49,39 @@ import com.dremio.common.exceptions.UserException;
 import com.dremio.common.logical.FormatPluginConfig;
 import com.dremio.common.utils.PathUtils;
 import com.dremio.common.utils.SqlUtils;
+import com.dremio.connector.ConnectorException;
+import com.dremio.connector.metadata.BytesOutput;
+import com.dremio.connector.metadata.DatasetHandle;
+import com.dremio.connector.metadata.DatasetMetadata;
+import com.dremio.connector.metadata.DatasetNotFoundException;
+import com.dremio.connector.metadata.EntityPath;
+import com.dremio.connector.metadata.GetDatasetOption;
+import com.dremio.connector.metadata.GetMetadataOption;
+import com.dremio.connector.metadata.ListPartitionChunkOption;
+import com.dremio.connector.metadata.PartitionChunkListing;
+import com.dremio.connector.metadata.extensions.SupportsReadSignature;
+import com.dremio.connector.metadata.extensions.ValidateMetadataOption;
+import com.dremio.datastore.LegacyProtobufSerializer;
 import com.dremio.exec.ExecConstants;
-import com.dremio.exec.catalog.MutablePlugin;
+import com.dremio.exec.catalog.CurrentSchemaOption;
 import com.dremio.exec.catalog.DatasetSplitsPointer;
+import com.dremio.exec.catalog.FileConfigOption;
+import com.dremio.exec.catalog.MetadataObjectsUtils;
+import com.dremio.exec.catalog.MutablePlugin;
+import com.dremio.exec.catalog.SortColumnsOption;
 import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.catalog.conf.Property;
 import com.dremio.exec.dotfile.DotFile;
 import com.dremio.exec.dotfile.DotFileType;
 import com.dremio.exec.dotfile.DotFileUtil;
 import com.dremio.exec.dotfile.View;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.Writer;
 import com.dremio.exec.physical.base.WriterOptions;
 import com.dremio.exec.planner.logical.CreateTableEntry;
 import com.dremio.exec.planner.logical.ViewTable;
+import com.dremio.exec.record.BatchSchema;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.store.ClassPathFileSystem;
 import com.dremio.exec.store.DatasetRetrievalOptions;
@@ -72,48 +90,49 @@ import com.dremio.exec.store.PartitionNotFoundException;
 import com.dremio.exec.store.SchemaConfig;
 import com.dremio.exec.store.SchemaEntity;
 import com.dremio.exec.store.SchemaEntity.SchemaEntityType;
-import com.dremio.exec.store.dfs.SchemaMutability.MutationType;
 import com.dremio.exec.store.SplitsPointer;
 import com.dremio.exec.store.StoragePlugin;
 import com.dremio.exec.store.StoragePluginRulesFactory;
 import com.dremio.exec.store.TimedRunnable;
+import com.dremio.exec.store.dfs.SchemaMutability.MutationType;
+import com.dremio.exec.store.file.proto.FileProtobuf.FileSystemCachedEntity;
+import com.dremio.exec.store.file.proto.FileProtobuf.FileUpdateKey;
 import com.dremio.exec.util.ImpersonationUtil;
-import com.dremio.sabot.exec.context.OperatorStats;
+import com.dremio.sabot.exec.context.OperatorContext;
+import com.dremio.sabot.exec.store.easy.proto.EasyProtobuf.EasyDatasetSplitXAttr;
+import com.dremio.sabot.exec.store.parquet.proto.ParquetProtobuf.ParquetDatasetSplitXAttr;
+import com.dremio.service.namespace.MetadataProtoUtils;
 import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.NamespaceService;
+import com.dremio.service.namespace.PartitionChunkMetadata;
 import com.dremio.service.namespace.SourceState;
-import com.dremio.service.namespace.SourceTableDefinition;
 import com.dremio.service.namespace.TableInstance;
 import com.dremio.service.namespace.capabilities.BooleanCapabilityValue;
 import com.dremio.service.namespace.capabilities.SourceCapabilities;
 import com.dremio.service.namespace.dataset.proto.DatasetConfig;
-import com.dremio.service.namespace.dataset.proto.DatasetSplit;
 import com.dremio.service.namespace.dataset.proto.DatasetType;
-import com.dremio.service.namespace.dataset.proto.PhysicalDataset;
-import com.dremio.service.namespace.file.proto.FileSystemCachedEntity;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.DatasetSplit;
+import com.dremio.service.namespace.file.proto.FileConfig;
 import com.dremio.service.namespace.file.proto.FileType;
-import com.dremio.service.namespace.file.proto.FileUpdateKey;
 import com.dremio.service.namespace.proto.NameSpaceContainer;
 import com.dremio.service.namespace.proto.NameSpaceContainer.Type;
 import com.dremio.service.users.SystemUser;
 import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
 import com.google.common.base.Stopwatch;
 import com.google.common.base.Strings;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-
-import io.protostuff.ByteString;
-import io.protostuff.ProtostuffIOUtil;
+import com.google.protobuf.InvalidProtocolBufferException;
 
 /**
  * Storage plugin for file system
  */
-public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements StoragePlugin, MutablePlugin {
+public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements StoragePlugin, MutablePlugin, SupportsReadSignature {
   /**
    * Default {@link Configuration} instance. Use this instance through {@link #getNewFsConf()} to create new copies
    * of {@link Configuration} objects.
@@ -133,7 +152,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
   private final Path basePath;
 
   private final Provider<StoragePluginId> idProvider;
-  private FileSystemWrapper fs;
+  private FileSystemWrapper systemUserFS;
   private Configuration fsConf;
   private FormatPluginOptionExtractor optionExtractor;
   protected FormatCreator formatCreator;
@@ -141,11 +160,10 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
   private List<FormatMatcher> dropFileMatchers;
   private CompressionCodecFactory codecFactory;
 
-  public FileSystemPlugin(final C config, final SabotContext context, final String name, FileSystemWrapper fs, Provider<StoragePluginId> idProvider) {
+  public FileSystemPlugin(final C config, final SabotContext context, final String name, Provider<StoragePluginId> idProvider) {
     this.name = name;
     this.config = config;
     this.idProvider = idProvider;
-    this.fs = fs;
     this.context = context;
     this.fsConf = getNewFsConf();
     this.lpPersistance = context.getLpPersistence();
@@ -156,14 +174,13 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     return config;
   }
 
-  @Override
-  public Iterable<SourceTableDefinition> getDatasets(String user, DatasetRetrievalOptions ignored) throws Exception {
-    return Collections.emptyList(); // file system does not know about physical datasets
+  public boolean supportsColocatedReads() {
+    return true;
   }
 
   @Override
   public SourceCapabilities getSourceCapabilities() {
-    return fs.isPdfs() ? new SourceCapabilities(REQUIRES_HARD_AFFINITY) : SourceCapabilities.NONE;
+    return systemUserFS.isPdfs() ? new SourceCapabilities(REQUIRES_HARD_AFFINITY) : SourceCapabilities.NONE;
   }
 
   public static final Configuration getNewFsConf() {
@@ -174,20 +191,38 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     return fsConf;
   }
 
+  @Override
   public StoragePluginId getId() {
     return idProvider.get();
   }
 
-  public FileSystemWrapper getFS(String userName) {
-    return getFs(userName, null);
+  /**
+   * Create a new {@link FileSystemWrapper} for a given user.
+   *
+   * @param userName
+   * @return
+   */
+  public FileSystemWrapper createFS(String userName) {
+    return createFs(userName, null);
   }
 
-  public FileSystemWrapper getFs(String userName, OperatorStats stats) {
+  public FileSystemWrapper createFs(String userName, OperatorContext operatorContext) {
+    return ImpersonationUtil.createFileSystem(context, getName(), config, operatorContext,
+      getUGIForUser(userName), getFsConf(), getConnectionUniqueProperties(),
+      isAsyncEnabledForQuery(operatorContext) && getConfig().isAsyncEnabled());
+  }
+
+  public FileSystemWrapper getFileSystem(Configuration config, OperatorContext operatorContext) throws IOException {
+    return FileSystemWrapperCreator.get(config, (operatorContext == null) ? null : operatorContext.getStats(),
+      isAsyncEnabledForQuery(operatorContext) && getConfig().isAsyncEnabled());
+  }
+
+  public UserGroupInformation getUGIForUser(String userName) {
     if (!config.isImpersonationEnabled()) {
-      userName = ImpersonationUtil.getProcessUserName();
+      return ImpersonationUtil.getProcessUserUGI();
     }
-    return ImpersonationUtil.createFileSystem(ImpersonationUtil.createProxyUgi(userName), getFsConf(), stats,
-        getConnectionUniqueProperties());
+
+    return ImpersonationUtil.createProxyUgi(userName);
   }
 
   public Iterable<String> getSubPartitions(List<String> table,
@@ -198,7 +233,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     List<FileStatus> fileStatuses;
     try {
       Path fullPath = PathUtils.toFSPath(resolveTableNameToValidPath(table));
-      fileStatuses = getFS(schemaConfig.getUserName()).list(fullPath, false);
+      fileStatuses = createFS(schemaConfig.getUserName()).list(fullPath, false);
     } catch (IOException e) {
       throw new PartitionNotFoundException("Error finding partitions for table " + table, e);
     }
@@ -212,10 +247,9 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
 
   @Override
   public SourceState getState() {
-    final FileSystemWrapper fs = getFS(ImpersonationUtil.getProcessUserName());
-    if (!fs.isPdfs()) {
+    if (!systemUserFS.isPdfs()) {
       try {
-        fs.listStatus(config.getPath());
+        systemUserFS.listStatus(config.getPath());
         return SourceState.GOOD;
       } catch (Exception e) {
         return SourceState.badState(e);
@@ -230,7 +264,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     List<DotFile> files = Collections.emptyList();
     try {
       try {
-        files = DotFileUtil.getDotFiles(getFS(schemaConfig.getUserName()), config.getPath(), tableSchemaPath.get(tableSchemaPath.size() - 1), DotFileType.VIEW);
+        files = DotFileUtil.getDotFiles(createFS(schemaConfig.getUserName()), config.getPath(), tableSchemaPath.get(tableSchemaPath.size() - 1), DotFileType.VIEW);
       } catch (AccessControlException e) {
         if (!schemaConfig.getIgnoreAuthErrors()) {
           logger.debug(e.getMessage());
@@ -299,32 +333,23 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     return combined;
   }
 
-  @Override
-  public SourceTableDefinition getDataset(NamespaceKey datasetPath, DatasetConfig oldConfig, DatasetRetrievalOptions retrievalOptions) throws Exception {
-    FormatPluginConfig formatPluginConfig = null;
-
-    PhysicalDataset physicalDataset = oldConfig == null ? null : oldConfig.getPhysicalDataset();
-    if(physicalDataset != null && physicalDataset.getFormatSettings() != null){
-      formatPluginConfig = PhysicalDatasetUtils.toFormatPlugin(physicalDataset.getFormatSettings(), Collections.<String>emptyList());
-    }
-
-    return getDatasetWithFormat(datasetPath, oldConfig, formatPluginConfig, retrievalOptions, null);
-  }
-
-  SourceTableDefinition getDatasetWithOptions(NamespaceKey datasetPath, TableInstance instance, boolean ignoreAuthErrors, String user) throws Exception{
+  FileDatasetHandle getDatasetWithOptions(
+      NamespaceKey datasetPath,
+      TableInstance instance,
+      boolean ignoreAuthErrors,
+      String user,
+      int maxLeafColumns
+  ) throws Exception {
     final FormatPluginConfig fconfig = optionExtractor.createConfigForTable(instance);
-    return getDatasetWithFormat(
-        datasetPath,
-        null,
-        fconfig,
-        DatasetRetrievalOptions.DEFAULT.toBuilder()
-            .setIgnoreAuthzErrors(ignoreAuthErrors)
-            .build(),
-        user
-    );
+    final DatasetRetrievalOptions options = DatasetRetrievalOptions.DEFAULT.toBuilder()
+        .setIgnoreAuthzErrors(ignoreAuthErrors)
+        .setMaxMetadataLeafColumns(maxLeafColumns)
+        .build();
+
+    return getDatasetWithFormat(datasetPath, new PreviousDatasetInfo(null, null, null), fconfig, options, user);
   }
 
-  protected SourceTableDefinition getDatasetWithFormat(NamespaceKey datasetPath, DatasetConfig oldConfig, FormatPluginConfig formatPluginConfig,
+  protected FileDatasetHandle getDatasetWithFormat(NamespaceKey datasetPath, PreviousDatasetInfo oldConfig, FormatPluginConfig formatPluginConfig,
                                                        DatasetRetrievalOptions retrievalOptions, String user) throws Exception {
 
     if(datasetPath.size() <= 1){
@@ -335,7 +360,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
       // TODO: why do we need distinguish between system user and process user?
       final String userName = config.isImpersonationEnabled() ? SystemUser.SYSTEM_USERNAME : ImpersonationUtil.getProcessUserName();
       List<String> parentSchemaPath = new ArrayList<>(fullPath.subList(0, fullPath.size() - 1));
-      FileSystemWrapper fs = getFS((user != null) ? user : userName);
+      FileSystemWrapper fs = createFS((user != null) ? user : userName);
       FileSelection fileSelection = FileSelection.create(fs, fullPath);
       String tableName = datasetPath.getName();
 
@@ -354,17 +379,17 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
       final FileStatus rootStatus = fs.getFileStatus(new Path(fileSelection.getSelectionRoot()));
 
       // Get subdirectories under file selection before pruning directories
-      final List<FileSystemCachedEntity> cachedEntities = Lists.newArrayList();
+      final FileUpdateKey.Builder updateKeyBuilder = FileUpdateKey.newBuilder();
       if (rootStatus.isDirectory()) {
         // first entity is always a root
-        cachedEntities.add(fromFileStatus(rootStatus));
+        updateKeyBuilder.addCachedEntities(fromFileStatus(rootStatus));
       }
 
       for (FileStatus dirStatus: fileSelection.getAllDirectories()) {
-        cachedEntities.add(fromFileStatus(dirStatus));
+        updateKeyBuilder.addCachedEntities(fromFileStatus(dirStatus));
       }
+      final FileUpdateKey updateKey = updateKeyBuilder.build();
 
-      final FileUpdateKey updateKey = new FileUpdateKey().setCachedEntitiesList(cachedEntities);
       // Expand selection by copying it first used to check extensions of files in directory.
       final FileSelection fileSelectionWithoutDir =  hasDirectories? new FileSelection(fileSelection).minusDirectories(): fileSelection;
       if(fileSelectionWithoutDir == null || fileSelectionWithoutDir.isEmpty()){
@@ -372,15 +397,18 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
         return null;
       }
 
-      SourceTableDefinition datasetAccessor = null;
-
+      FileDatasetHandle.checkMaxFiles(datasetPath.getName(), fileSelectionWithoutDir.getStatuses().size(), getContext(),
+        getConfig().isInternal());
+      FileDatasetHandle datasetAccessor = null;
       if (formatPluginConfig != null) {
 
         FormatPlugin formatPlugin = formatCreator.getFormatPluginByConfig(formatPluginConfig);
         if(formatPlugin == null){
           formatPlugin = formatCreator.newFormatPlugin(formatPluginConfig);
         }
-        datasetAccessor = formatPlugin.getDatasetAccessor(oldConfig, fs, fileSelectionWithoutDir, this, datasetPath, tableName, updateKey);
+        DatasetType type = fs.isDirectory(new Path(fileSelectionWithoutDir.getSelectionRoot())) ? DatasetType.PHYSICAL_DATASET_SOURCE_FOLDER : DatasetType.PHYSICAL_DATASET_SOURCE_FILE;
+        datasetAccessor = formatPlugin.getDatasetAccessor(type, oldConfig, fs, fileSelectionWithoutDir, this, datasetPath,
+            updateKey, retrievalOptions.maxMetadataLeafColumns());
       }
 
       if (datasetAccessor == null &&
@@ -388,7 +416,10 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
         for (final FormatMatcher matcher : matchers) {
           try {
             if (matcher.matches(fs, fileSelection, codecFactory)) {
-              datasetAccessor = matcher.getFormatPlugin().getDatasetAccessor(oldConfig, fs, fileSelectionWithoutDir, this, datasetPath, tableName, updateKey);
+              DatasetType type = fs.isDirectory(new Path(fileSelectionWithoutDir.getSelectionRoot())) ? DatasetType.PHYSICAL_DATASET_SOURCE_FOLDER : DatasetType.PHYSICAL_DATASET_SOURCE_FILE;
+              datasetAccessor = matcher.getFormatPlugin()
+                  .getDatasetAccessor(type, oldConfig, fs, fileSelectionWithoutDir, this, datasetPath,
+                      updateKey, retrievalOptions.maxMetadataLeafColumns());
               if (datasetAccessor != null) {
                 break;
               }
@@ -400,6 +431,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
       }
 
       return datasetAccessor;
+
     } catch (AccessControlException e) {
       if (!retrievalOptions.ignoreAuthzErrors()) {
         logger.debug(e.getMessage());
@@ -444,11 +476,8 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     }
 
 //    boolean footerNoSeek = contetMutext.getOptionManager().getOption(ExecConstants.PARQUET_FOOTER_NOSEEK);
-
     // NOTE: Add fallback format matcher if given in the configuration. Make sure fileMatchers is an order-preserving list.
-    if(fs == null) {
-      this.fs = getFS(SYSTEM_USERNAME);
-    }
+    this.systemUserFS = createFS(SYSTEM_USERNAME);
     dropFileMatchers = matchers.subList(0, matchers.size());
 
     createIfNecessary();
@@ -469,10 +498,10 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
 
     try {
       // no need to exists here as FileSystemWrapper does an exists check and this is a noop if already existing.
-      fs.mkdirs(config.getPath());
+      systemUserFS.mkdirs(config.getPath());
     } catch (IOException ex) {
       try {
-        if(fs.exists(config.getPath())) {
+        if(systemUserFS.exists(config.getPath())) {
           // race creation, ignore.
           return;
         }
@@ -500,20 +529,21 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
   }
 
   protected FileSystemCachedEntity fromFileStatus(FileStatus status){
-    return new FileSystemCachedEntity()
+    return FileSystemCachedEntity.newBuilder()
         .setPath(status.getPath().toString())
-        .setLastModificationTime(status.getModificationTime());
+        .setLastModificationTime(status.getModificationTime())
+        .build();
   }
 
   @Override
   public boolean hasAccessPermission(String user, NamespaceKey key, DatasetConfig datasetConfig) {
     if (config.isImpersonationEnabled()) {
       if (datasetConfig.getReadDefinition() != null) { // allow accessing partial datasets
-        final FileSystemWrapper userFs = getFS(user);
+        final FileSystemWrapper userFs = createFS(user);
         final List<TimedRunnable<Boolean>> permissionCheckTasks = Lists.newArrayList();
 
         permissionCheckTasks.addAll(getUpdateKeyPermissionTasks(datasetConfig, userFs));
-        permissionCheckTasks.addAll(getSplitPermissiomTasks(datasetConfig, userFs, user));
+        permissionCheckTasks.addAll(getSplitPermissionTasks(datasetConfig, userFs, user));
 
         try {
           Stopwatch stopwatch = Stopwatch.createStarted();
@@ -526,7 +556,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
             }
           }
         } catch (IOException ioe) {
-          throw UserException.dataReadError(ioe).build(logger);
+          throw new RuntimeException("Failed to check access permission", ioe);
         }
       }
     }
@@ -535,9 +565,13 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
 
   // Check if all sub directories can be listed/read
   private Collection<FsPermissionTask> getUpdateKeyPermissionTasks(DatasetConfig datasetConfig, FileSystemWrapper userFs) {
-    final FileUpdateKey fileUpdateKey = new FileUpdateKey();
-    ProtostuffIOUtil.mergeFrom(datasetConfig.getReadDefinition().getReadSignature().toByteArray(), fileUpdateKey, FileUpdateKey.getSchema());
-    if (fileUpdateKey.getCachedEntitiesList() == null || fileUpdateKey.getCachedEntitiesList().isEmpty()) {
+    FileUpdateKey fileUpdateKey;
+    try {
+      fileUpdateKey = LegacyProtobufSerializer.parseFrom(FileUpdateKey.PARSER, datasetConfig.getReadDefinition().getReadSignature().toByteArray());
+    } catch (InvalidProtocolBufferException e) {
+      throw new RuntimeException("Cannot read file update key", e);
+    }
+    if (fileUpdateKey.getCachedEntitiesList().isEmpty()) {
       return Collections.emptyList();
     }
     final List<FsPermissionTask> fsPermissionTasks = Lists.newArrayList();
@@ -566,25 +600,31 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
   }
 
   // Check if all splits are accessible
-  private Collection<FsPermissionTask> getSplitPermissiomTasks(DatasetConfig datasetConfig, FileSystemWrapper userFs, String user) {
+  private Collection<FsPermissionTask> getSplitPermissionTasks(DatasetConfig datasetConfig, FileSystemWrapper userFs, String user) {
     final SplitsPointer splitsPointer = DatasetSplitsPointer.of(context.getNamespaceService(user), datasetConfig);
     final boolean isParquet = datasetConfig.getPhysicalDataset().getFormatSettings().getType() == FileType.PARQUET;
     final List<FsPermissionTask> fsPermissionTasks = Lists.newArrayList();
     final List<Path> batch = Lists.newArrayList();
 
-    for (DatasetSplit split:  splitsPointer.getSplitIterable()) {
-      final Path filePath;
-      if (isParquet) {
-        filePath = new Path(PARQUET_DATASET_SPLIT_XATTR_SERIALIZER.revert(split.getExtendedProperty().toByteArray()).getPath());
-      } else {
-        filePath = new Path(EASY_DATASET_SPLIT_XATTR_SERIALIZER.revert(split.getExtendedProperty().toByteArray()).getPath());
-      }
+    for (PartitionChunkMetadata partitionChunkMetadata: splitsPointer.getPartitionChunks()) {
+      for (DatasetSplit split : partitionChunkMetadata.getDatasetSplits()) {
+        final Path filePath;
+        try {
+          if (isParquet) {
+            filePath = new Path(LegacyProtobufSerializer.parseFrom(ParquetDatasetSplitXAttr.PARSER, split.getSplitExtendedProperty().toByteArray()).getPath());
+          } else {
+            filePath = new Path(LegacyProtobufSerializer.parseFrom(EasyDatasetSplitXAttr.PARSER, split.getSplitExtendedProperty().toByteArray()).getPath());
+          }
+        } catch (InvalidProtocolBufferException e) {
+          throw new RuntimeException("Could not deserialize split info", e);
+        }
 
-      batch.add(filePath);
-      if (batch.size() == PERMISSION_CHECK_TASK_BATCH_SIZE) {
-        // make a copy of batch
-        fsPermissionTasks.add(new FsPermissionTask(userFs, new ArrayList<>(batch), FsAction.READ));
-        batch.clear();
+        batch.add(filePath);
+        if (batch.size() == PERMISSION_CHECK_TASK_BATCH_SIZE) {
+          // make a copy of batch
+          fsPermissionTasks.add(new FsPermissionTask(userFs, new ArrayList<>(batch), FsAction.READ));
+          batch.clear();
+        }
       }
     }
 
@@ -627,96 +667,76 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     }
   }
 
-  public FileSystemWrapper getFs() {
-    return fs;
+  /**
+   * Returns a shared {@link FileSystemWrapper} for the system user.
+   *
+   * @return
+   */
+  public FileSystemWrapper getSystemUserFS() {
+    return systemUserFS;
   }
 
   public String getName() {
     return name;
   }
 
-  @Override
-  public boolean containerExists(NamespaceKey key) {
-    final List<String> folderPath = key.getPathComponents();
-    try {
-      return getFS(SYSTEM_USERNAME).isDirectory(PathUtils.toFSPath(resolveTableNameToValidPath(folderPath)));
-    } catch (IOException e) {
-      logger.debug("Failure reading path.", e);
-      return false;
-    }
-  }
-
-  @Override
-  public boolean datasetExists(NamespaceKey key) {
-    final List<String> filePath = key.getPathComponents();
-    try {
-      return getFS(SYSTEM_USERNAME).exists(PathUtils.toFSPath(resolveTableNameToValidPath(filePath)));
-    } catch (IOException e) {
-      logger.debug("Failure reading path.", e);
-      return false;
-    }
-  }
-
   protected boolean fileExists(String username, List<String> filePath) throws IOException {
-    return getFS(username).isFile(PathUtils.toFSPath(resolveTableNameToValidPath(filePath)));
+    return createFS(username).isFile(PathUtils.toFSPath(resolveTableNameToValidPath(filePath)));
+  }
+
+  protected boolean isAsyncEnabledForQuery(OperatorContext context) {
+    return true;
   }
 
   @Override
-  public CheckResult checkReadSignature(ByteString key, final DatasetConfig oldConfig, DatasetRetrievalOptions retrievalOptions) throws Exception {
-    final FileUpdateKey fileUpdateKey = new FileUpdateKey();
-    ProtostuffIOUtil.mergeFrom(key.toByteArray(), fileUpdateKey, FileUpdateKey.getSchema());
+  public MetadataValidity validateMetadata(BytesOutput signature, DatasetHandle datasetHandle, DatasetMetadata metadata,
+      ValidateMetadataOption... options) throws DatasetNotFoundException {
+    final FileUpdateKey fileUpdateKey;
+    try {
+      fileUpdateKey = LegacyProtobufSerializer.parseFrom(FileUpdateKey.PARSER, MetadataProtoUtils.toProtobuf(signature));
+    } catch (InvalidProtocolBufferException e) {
+      // Wrap protobuf exception for consistency
+      throw new RuntimeException(e);
+    }
 
-    if (retrievalOptions.forceUpdate() ||
-        fileUpdateKey.getCachedEntitiesList() == null ||
-        fileUpdateKey.getCachedEntitiesList().isEmpty()) {
+    if (fileUpdateKey.getCachedEntitiesList() == null || fileUpdateKey.getCachedEntitiesList().isEmpty()) {
+      // TODO: evaluate the need for this.
+//       Preconditions.checkArgument(oldConfig.getType() == DatasetType.PHYSICAL_DATASET_SOURCE_FILE,
+//           "only file based datasets can have empty read signature");
       // single file dataset
-      Preconditions.checkArgument(oldConfig.getType() == DatasetType.PHYSICAL_DATASET_SOURCE_FILE, "only file based datasets can have empty read signature");
-      if (!fileExists(SYSTEM_USERNAME, oldConfig.getFullPathList())) {
-        return CheckResult.DELETED;
-      } else {
-        // assume file has changed
-        final SourceTableDefinition newDatasetAccessor =
-            getDataset(new NamespaceKey(oldConfig.getFullPathList()), oldConfig, retrievalOptions);
-        return new CheckResult() {
-          @Override
-          public UpdateStatus getStatus() {
-            return UpdateStatus.CHANGED;
-          }
-
-          @Override
-          public SourceTableDefinition getDataset() {
-            return newDatasetAccessor;
-          }
-        };
-      }
+      return MetadataValidity.INVALID;
     }
 
     final UpdateStatus status = checkMultifileStatus(fileUpdateKey);
     switch(status) {
     case DELETED:
-      return CheckResult.DELETED;
+      throw new DatasetNotFoundException(datasetHandle.getDatasetPath());
     case UNCHANGED:
+      return MetadataValidity.VALID;
     case CHANGED:
-      // continue below.
-      break;
+      return MetadataValidity.INVALID;
     default:
       throw new UnsupportedOperationException(status.name());
     }
 
-    final SourceTableDefinition newDatasetAccessor =
-        getDataset(new NamespaceKey(oldConfig.getFullPathList()), oldConfig, retrievalOptions);
-    return new CheckResult() {
-      @Override
-      public UpdateStatus getStatus() {
-        return status;
-      }
+  }
 
-      @Override
-      public SourceTableDefinition getDataset() {
-        return newDatasetAccessor;
-      }
-    };
+  private enum UpdateStatus {
+    /**
+     * Metadata hasn't changed.
+     */
+    UNCHANGED,
 
+
+    /**
+     * Metadata has changed.
+     */
+    CHANGED,
+
+    /**
+     * Dataset has been deleted.
+     */
+    DELETED
   }
 
   /**
@@ -731,7 +751,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
       final Path cachedEntityPath =  new Path(cachedEntity.getPath());
       try {
 
-        final Optional<FileStatus> optionalStatus = fs.getFileStatusSafe(cachedEntityPath);
+        final com.google.common.base.Optional<FileStatus> optionalStatus = systemUserFS.getFileStatusSafe(cachedEntityPath);
         if(!optionalStatus.isPresent()) {
           // if first entity (root) is missing then table is deleted
           if (i == 0) {
@@ -773,7 +793,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
   }
 
   @Override
-  public boolean createView(NamespaceKey key, View view, SchemaConfig schemaConfig) throws IOException {
+  public boolean createOrUpdateView(NamespaceKey key, View view, SchemaConfig schemaConfig) throws IOException {
     if(!getMutability().hasMutationCapability(MutationType.VIEW, schemaConfig.isSystemUser())) {
       throw UserException.parseError()
         .message("Unable to create view. Schema [%s] is immutable for this user.", key.getParent())
@@ -781,7 +801,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     }
 
     Path viewPath = getViewPath(key.getPathComponents());
-    FileSystemWrapper fs = getFS(schemaConfig.getUserName());
+    FileSystemWrapper fs = createFS(schemaConfig.getUserName());
     boolean replaced = fs.exists(viewPath);
     final FsPermission viewPerms =
             new FsPermission(schemaConfig.getOption(ExecConstants.NEW_VIEW_DEFAULT_PERMS_KEY).getStringVal());
@@ -799,7 +819,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
         .build(logger);
     }
 
-    getFS(schemaConfig.getUserName()).delete(getViewPath(tableSchemaPath), false);
+    createFS(schemaConfig.getUserName()).delete(getViewPath(tableSchemaPath), false);
   }
 
   private Path getViewPath(List<String> tableSchemaPath) {
@@ -836,6 +856,10 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     FormatMatcher matcher = null;
     FileSelection noDir = fileSelection.minusDirectories();
 
+    if (noDir == null || noDir.getStatuses() == null) {
+      return true;
+    }
+
     for(FileStatus s : noDir.getStatuses()) {
       FileSelection subSelection = FileSelection.create(s);
       if (matcher == null) {
@@ -856,6 +880,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
    * We check if the table contains homogeneous file formats that Dremio can read. Once the checks are performed
    * we rename the file to start with an "_". After the rename we issue a recursive delete of the directory.
    */
+  @Override
   public void dropTable(List<String> tableSchemaPath, SchemaConfig schemaConfig) {
     if(!getMutability().hasMutationCapability(MutationType.TABLE, schemaConfig.isSystemUser())) {
       throw UserException.parseError()
@@ -863,7 +888,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
         .build(logger);
     }
 
-    FileSystemWrapper fs = getFS(schemaConfig.getUserName());
+    FileSystemWrapper fs = createFS(schemaConfig.getUserName());
     List<String> fullPath = resolveTableNameToValidPath(tableSchemaPath);
     FileSelection fileSelection;
     try {
@@ -890,22 +915,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
 
       final Path fsPath = PathUtils.toFSPath(fullPath);
 
-      // Generate unique identifier which will be added as a suffix to the table name
-      ThreadLocalRandom r = ThreadLocalRandom.current();
-      long time =  (System.currentTimeMillis()/1000);
-      Long p1 = ((Integer.MAX_VALUE - time) << 32) + r.nextInt();
-      Long p2 = r.nextLong();
-      final String fileNameDelimiter = FileSystemWrapper.HIDDEN_FILE_PREFIX;
-      final String newFileName = FileSystemWrapper.HIDDEN_FILE_PREFIX + fsPath.getName() + fileNameDelimiter
-              + p1 + fileNameDelimiter + p2;
-
-      Path renamePath = new Path(fsPath.getParent(), newFileName);
-      if (!fs.rename(fsPath, renamePath)) {
-        throw UserException.ioExceptionError()
-            .message("Failed to rename folder %s -> %s prior to deletion", fsPath, renamePath)
-            .build(logger);
-      }
-      if (!fs.delete(renamePath, true)) {
+      if (!fs.delete(fsPath, true)) {
         throw UserException.ioExceptionError()
             .message("Failed to drop table: %s", PathUtils.constructFullPath(tableSchemaPath))
             .build(logger);
@@ -928,7 +938,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
    */
   public SchemaEntity get(List<String> path, String userName) {
     try {
-      final FileStatus status = getFS(userName).getFileStatus(PathUtils.toFSPath(resolveTableNameToValidPath(path)));
+      final FileStatus status = createFS(userName).getFileStatus(PathUtils.toFSPath(resolveTableNameToValidPath(path)));
 
       final Set<List<String>> tableNames = Sets.newHashSet();
       final NamespaceService ns = context.getNamespaceService(userName);
@@ -951,7 +961,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
 
   public List<SchemaEntity> list(List<String> folderPath, String userName) {
     try {
-      final List<FileStatus> files = Lists.newArrayList(getFS(userName).listStatus(PathUtils.toFSPath(resolveTableNameToValidPath(folderPath))));
+      final List<FileStatus> files = Lists.newArrayList(createFS(userName).listStatus(PathUtils.toFSPath(resolveTableNameToValidPath(folderPath))));
       final Set<List<String>> tableNames = Sets.newHashSet();
       final NamespaceService ns = context.getNamespaceService(userName);
       final NamespaceKey folderNSKey = new NamespaceKey(folderPath);
@@ -1011,12 +1021,19 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     return optionExtractor.createConfigForTable(tableName, storageOptions);
   }
 
-  public FileSystem getProcessFs() {
-    return fs;
-  }
-
   public List<String> getConnectionUniqueProperties() {
     return config.getConnectionUniqueProperties();
+  }
+
+  protected static String getTableName(final NamespaceKey key) {
+    final String tableName;
+    if(key.size() == 2) {
+      tableName = key.getLeaf();
+    } else {
+      List<String> subString = key.getPathComponents().subList(1, key.size());
+      tableName = Joiner.on('/').join(subString);
+    }
+    return tableName;
   }
 
   @Override
@@ -1027,13 +1044,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
         .build(logger);
     }
 
-    final String tableName;
-    if(key.size() == 2) {
-      tableName = key.getLeaf();
-    } else {
-      List<String> subString = key.getPathComponents().subList(1, key.size());
-      tableName = Joiner.on('/').join(subString);
-    }
+    final String tableName = getTableName(key);
 
     final FormatPlugin formatPlugin;
     if (storageOptions == null || storageOptions.isEmpty()) {
@@ -1052,7 +1063,7 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
     // check that there is no directory at the described path.
     Path path = resolveTablePathToValidPath(tableName);
     try {
-      if(fs.exists(path)) {
+      if(systemUserFS.exists(path)) {
         throw UserException.validationError().message("Folder already exists at path: %s.", key).build(logger);
       }
     } catch (IOException e) {
@@ -1068,8 +1079,63 @@ public class FileSystemPlugin<C extends FileSystemConf<C, ?>> implements Storage
   }
 
   @Override
-  public Writer getWriter(PhysicalOperator child, String userName, String location, WriterOptions options) throws IOException {
+  public Writer getWriter(PhysicalOperator child, String location, WriterOptions options, OpProps props) throws IOException {
     throw new IllegalStateException("The ctas entry for a file system plugin should invoke get writer on the format plugin directly.");
   }
 
+  @Override
+  public Optional<DatasetHandle> getDatasetHandle(EntityPath datasetPath, GetDatasetOption... options)
+      throws ConnectorException {
+    BatchSchema currentSchema = CurrentSchemaOption.getSchema(options);
+    FileConfig fileConfig = FileConfigOption.getFileConfig(options);
+    List<String> sortColumns = SortColumnsOption.getSortColumns(options);
+
+    FormatPluginConfig formatPluginConfig = null;
+    if (fileConfig != null) {
+      formatPluginConfig = PhysicalDatasetUtils.toFormatPlugin(fileConfig, Collections.<String>emptyList());
+    }
+
+    final PreviousDatasetInfo pdi = new PreviousDatasetInfo(fileConfig, currentSchema, sortColumns);
+    try {
+      return Optional.ofNullable(getDatasetWithFormat(MetadataObjectsUtils.toNamespaceKey(datasetPath), pdi,
+          formatPluginConfig, DatasetRetrievalOptions.of(options), null));
+    } catch (Exception e) {
+      Throwables.propagateIfPossible(e, ConnectorException.class);
+      throw new ConnectorException(e);
+    }
+  }
+
+  @Override
+  public DatasetMetadata getDatasetMetadata(
+      DatasetHandle datasetHandle,
+      PartitionChunkListing chunkListing,
+      GetMetadataOption... options
+  ) throws ConnectorException {
+    return datasetHandle.unwrap(FileDatasetHandle.class)
+        .getDatasetMetadata(options);
+  }
+
+  @Override
+  public PartitionChunkListing listPartitionChunks(DatasetHandle datasetHandle, ListPartitionChunkOption... options)
+      throws ConnectorException {
+    return datasetHandle.unwrap(FileDatasetHandle.class)
+        .listPartitionChunks(options);
+  }
+
+  @Override
+  public BytesOutput provideSignature(DatasetHandle datasetHandle, DatasetMetadata metadata) throws ConnectorException {
+    return datasetHandle.unwrap(FileDatasetHandle.class)
+        .provideSignature(metadata);
+  }
+
+  @Override
+  public boolean containerExists(EntityPath containerPath) {
+    final List<String> folderPath = containerPath.getComponents();
+    try {
+      return systemUserFS.isDirectory(PathUtils.toFSPath(resolveTableNameToValidPath(folderPath)));
+    } catch (IOException e) {
+      logger.debug("Failure reading path.", e);
+      return false;
+    }
+  }
 }

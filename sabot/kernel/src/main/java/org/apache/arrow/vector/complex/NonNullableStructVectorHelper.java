@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,8 @@ import org.apache.arrow.vector.types.SerializedFieldHelper;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.util.BasicTypeHelper;
 
-import com.dremio.common.types.Types;
 import com.dremio.common.types.TypeProtos.MinorType;
+import com.dremio.common.types.Types;
 import com.dremio.exec.expr.TypeHelper;
 import com.dremio.exec.proto.UserBitShared.NamePart;
 import com.dremio.exec.proto.UserBitShared.SerializedField;

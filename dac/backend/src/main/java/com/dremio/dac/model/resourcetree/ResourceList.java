@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,18 @@
  */
 package com.dremio.dac.model.resourcetree;
 
-import java.util.Collections;
 import java.util.List;
 
 import com.dremio.dac.model.resourcetree.ResourceTreeEntity.ResourceType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonUnwrapped;
 
 /**
  * Resources listed under a folder/space/source/home.
  */
 public class ResourceList {
-
-  @JsonUnwrapped
   private final List<ResourceTreeEntity> resources;
-
-  public ResourceList() {
-    resources = Collections.emptyList();
-  }
 
   @JsonCreator
   public ResourceList(

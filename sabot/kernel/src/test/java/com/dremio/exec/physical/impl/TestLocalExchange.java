@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
 import org.junit.AfterClass;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -42,19 +43,23 @@ import com.dremio.exec.physical.config.UnorderedDeMuxExchange;
 import com.dremio.exec.planner.PhysicalPlanReader;
 import com.dremio.exec.planner.fragment.Fragment;
 import com.dremio.exec.planner.fragment.Fragment.ExchangeFragmentPair;
+import com.dremio.exec.planner.fragment.PlanFragmentFull;
+import com.dremio.exec.planner.fragment.PlanFragmentsIndex;
 import com.dremio.exec.planner.fragment.PlanningSet;
 import com.dremio.exec.planner.fragment.SimpleParallelizer;
 import com.dremio.exec.planner.observer.AbstractAttemptObserver;
 import com.dremio.exec.pop.PopUnitTestBase;
-import com.dremio.exec.proto.CoordExecRPC.PlanFragment;
 import com.dremio.exec.proto.CoordExecRPC.QueryContextInformation;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.proto.UserBitShared;
 import com.dremio.exec.proto.UserBitShared.QueryId;
 import com.dremio.exec.server.SabotContext;
-import com.dremio.options.OptionList;
 import com.dremio.exec.util.Utilities;
+import com.dremio.options.OptionList;
 import com.dremio.sabot.rpc.user.UserSession;
+import com.dremio.service.execselector.ExecutorSelectionHandle;
+import com.dremio.service.execselector.ExecutorSelectionHandleImpl;
+import com.dremio.service.execselector.ExecutorSelectionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -62,6 +67,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+
 /**
  * This test starts a Drill cluster with CLUSTER_SIZE nodes and generates data for test tables.
  *
@@ -87,14 +93,7 @@ public class TestLocalExchange extends PlanTestBase {
       .withCredentials(UserBitShared.UserCredentials.newBuilder().setUserName("foo").build())
       .build();
 
-  private static final SimpleParallelizer PARALLELIZER = new SimpleParallelizer(
-      1 /*parallelizationThreshold (slice_count)*/,
-      6 /*maxWidthPerNode*/,
-      1000 /*maxGlobalWidth*/,
-      1.2, /*affinityFactor*/
-      AbstractAttemptObserver.NOOP,
-      true,
-      1.5d);
+  private SimpleParallelizer PARALLELIZER;
 
   private final static int NUM_DEPTS = 40;
   private final static int NUM_EMPLOYEES = 1000;
@@ -187,6 +186,18 @@ public class TestLocalExchange extends PlanTestBase {
       final String dept = String.format("Department %d", i % NUM_DEPTS);
       joinQueryBaselineValues.add(new String[] { employee, dept });
     }
+  }
+
+  @Before
+  public void initParallelizer() {
+    PARALLELIZER = new SimpleParallelizer(
+        1 /*parallelizationThreshold (slice_count)*/,
+        6 /*maxWidthPerNode*/,
+        1000 /*maxGlobalWidth*/,
+        1.2, /*affinityFactor*/
+        AbstractAttemptObserver.NOOP,
+        true,
+        1.5d);
   }
 
   public static void setupHelper(boolean isMuxOn, boolean isDeMuxOn) throws Exception {
@@ -397,7 +408,7 @@ public class TestLocalExchange extends PlanTestBase {
 
   // Verify the number of partition senders in a major fragments is not more than the cluster size and each endpoint
   // in the cluster has at most one fragment from a given major fragment that has the partition sender.
-  private static void testHelperVerifyPartitionSenderParallelization(
+  private void testHelperVerifyPartitionSenderParallelization(
       String plan, boolean isMuxOn, boolean isDeMuxOn) throws Exception {
 
     final SabotContext sabotContext = getSabotContext();
@@ -410,20 +421,36 @@ public class TestLocalExchange extends PlanTestBase {
 
     // Create a planningSet to get the assignment of major fragment ids to fragments.
     PARALLELIZER.initFragmentWrappers(rootFragment, planningSet);
+    PARALLELIZER.setExecutorSelectionService(new ExecutorSelectionService() {
+      @Override
+      public ExecutorSelectionHandle getExecutors(int desiredNumExecutors) {
+        return new ExecutorSelectionHandleImpl(sabotContext.getExecutors());
+      }
+
+      @Override
+      public void start() throws Exception {
+      }
+
+      @Override
+      public void close() throws Exception {
+      }
+    });
 
     findFragmentsWithPartitionSender(rootFragment, planningSet, deMuxFragments, htrFragments);
 
     final QueryContextInformation queryContextInfo = Utilities.createQueryContextInfo("dummySchemaName");
-    List<PlanFragment> fragments = PARALLELIZER.getFragments(new OptionList(), sabotContext.getEndpoint(),
+    List<PlanFragmentFull> fragments = PARALLELIZER.getFragments(new OptionList(), sabotContext.getEndpoint(),
         QueryId.getDefaultInstance(),
-        sabotContext.getExecutors(), planReader, rootFragment, USER_SESSION, queryContextInfo, Mockito.mock(FunctionLookupContext.class));
+        planReader, rootFragment,
+        new PlanFragmentsIndex.Builder(),
+        USER_SESSION, queryContextInfo, Mockito.mock(FunctionLookupContext.class));
 
     // Make sure the number of minor fragments with HashPartitioner within a major fragment is not more than the
     // number of SabotNodes in cluster
     ArrayListMultimap<Integer, NodeEndpoint> partitionSenderMap = ArrayListMultimap.create();
-    for(PlanFragment planFragment : fragments) {
+    for(PlanFragmentFull planFragment : fragments) {
       // Our parallelizer doesn't compress fragments
-      if (planFragment.getFragmentJson().toStringUtf8().contains("hash-partition-sender")) {
+      if (planFragment.getMajor().getFragmentJson().toStringUtf8().contains("hash-partition-sender")) {
         int majorFragmentId = planFragment.getHandle().getMajorFragmentId();
         NodeEndpoint assignedEndpoint = planFragment.getAssignment();
         partitionSenderMap.get(majorFragmentId).add(assignedEndpoint);

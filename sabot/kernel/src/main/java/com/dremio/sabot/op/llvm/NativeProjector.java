@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,20 +19,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
-import io.netty.buffer.ArrowBuf;
 import org.apache.arrow.gandiva.evaluator.Projector;
 import org.apache.arrow.gandiva.exceptions.GandivaException;
-import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.gandiva.expression.ExpressionTree;
-
-import com.dremio.common.expression.LogicalExpression;
-import com.dremio.exec.record.VectorAccessible;
+import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
+
+import com.dremio.common.expression.LogicalExpression;
+import com.dremio.exec.record.VectorAccessible;
+import com.dremio.sabot.exec.context.FunctionContext;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+
+import io.netty.buffer.ArrowBuf;
 
 public class NativeProjector implements AutoCloseable {
   private final VectorAccessible incoming;
@@ -40,18 +42,20 @@ public class NativeProjector implements AutoCloseable {
   private Projector projector = null;
   private VectorSchemaRoot root;
   private final Schema schema;
+  private final FunctionContext functionContext;
   private final Set<Field> referencedFields;
 
-  NativeProjector(VectorAccessible incoming, Schema schema) {
+  NativeProjector(VectorAccessible incoming, Schema schema, FunctionContext functionContext) {
     this.incoming = incoming;
     this.schema = schema;
+    this.functionContext = functionContext;
     // preserve order of insertion
     referencedFields = Sets.newLinkedHashSet();
   }
 
   public void add(LogicalExpression expr, FieldVector outputVector) {
     final ExpressionTree tree = GandivaExpressionBuilder.serializeExpr(incoming, expr,
-      outputVector, referencedFields);
+      outputVector, referencedFields, functionContext);
     columnExprList.add(tree);
   }
 

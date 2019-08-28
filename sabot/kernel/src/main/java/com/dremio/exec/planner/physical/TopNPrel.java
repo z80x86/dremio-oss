@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,10 @@ package com.dremio.exec.planner.physical;
 import java.io.IOException;
 import java.util.List;
 
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.plan.RelOptCost;
+import org.apache.calcite.plan.RelOptPlanner;
+import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
@@ -28,13 +32,14 @@ import com.dremio.exec.physical.config.TopN;
 import com.dremio.exec.planner.cost.DremioCost;
 import com.dremio.exec.planner.cost.DremioCost.Factory;
 import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
-
-import org.apache.calcite.plan.RelOptCluster;
-import org.apache.calcite.plan.RelOptCost;
-import org.apache.calcite.plan.RelOptPlanner;
-import org.apache.calcite.plan.RelTraitSet;
-
+import com.dremio.options.Options;
+import com.dremio.options.TypeValidators.LongValidator;
+import com.dremio.options.TypeValidators.PositiveLongValidator;
+@Options
 public class TopNPrel extends SinglePrel {
+
+  public static final LongValidator RESERVE = new PositiveLongValidator("planner.op.topn.reserve_bytes", Long.MAX_VALUE, DEFAULT_RESERVE);
+  public static final LongValidator LIMIT = new PositiveLongValidator("planner.op.topn.limit_bytes", Long.MAX_VALUE, DEFAULT_LIMIT);
 
   protected int limit;
   protected final RelCollation collation;
@@ -56,9 +61,14 @@ public class TopNPrel extends SinglePrel {
 
     PhysicalOperator childPOP = child.getPhysicalOperator(creator);
 
-    TopN topN = new TopN(childPOP, PrelUtil.getOrdering(this.collation, getInput().getRowType()), false, this.limit);
-    return creator.addMetadata(this, topN);
-  }
+    return new TopN(
+        creator.props(this, null, childPOP.getProps().getSchema(), RESERVE, LIMIT),
+        childPOP,
+        limit,
+        PrelUtil.getOrdering(this.collation, getInput().getRowType()),
+        false
+        );
+   }
 
   /**
    * Cost of doing Top-N is proportional to M log N where M is the total number of
@@ -80,13 +90,11 @@ public class TopNPrel extends SinglePrel {
     return costFactory.makeCost(inputRows, cpuCost, diskIOCost, 0);
   }
 
-
   @Override
   public RelWriter explainTerms(RelWriter pw) {
     return super.explainTerms(pw)
         .item("limit", limit);
   }
-
 
   @Override
   public SelectionVectorMode[] getSupportedEncodings() {

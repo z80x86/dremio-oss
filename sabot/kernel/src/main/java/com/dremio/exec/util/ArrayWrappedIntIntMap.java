@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 package com.dremio.exec.util;
 
 
-import com.google.common.base.Preconditions;
-
 import java.util.Arrays;
+
+import com.google.common.base.Preconditions;
 
 /**
  * Simple Map type data structure for storing entries of (int -> int) mappings where the max key value is below 2^16

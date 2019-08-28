@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,8 +64,13 @@ public class PDFSConf extends FileSystemConf<PDFSConf, FileSystemPlugin<PDFSConf
   }
 
   @Override
+  public List<String> getConnectionUniqueProperties() {
+    return ImmutableList.of();
+  }
+
+  @Override
   public FileSystemPlugin<PDFSConf> newPlugin(SabotContext context, String name, Provider<StoragePluginId> pluginIdProvider) {
-    return new FileSystemPlugin<>(this, context, name, null, pluginIdProvider);
+    return new FileSystemPlugin<>(this, context, name, pluginIdProvider);
   }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,15 @@ class Transforms {
   dropColumn({name, table}) {
     const nextColumns = table.get('columns').filter(col => col.get('name') !== name);
     const colIndex = table.get('columns').findIndex(col => col.get('name') === name);
-    const nextRows = table.get('rows').filter((r, index) => index !== colIndex);
-    return table.set('columns', nextColumns).set('rows', nextRows);
+
+    let nextTable = table.set('columns', nextColumns);
+    // the data may be loaded asynchronously, so rows could be not presented
+    let nextRows = table.get('rows');
+    if (nextRows) {
+      nextRows = nextRows.map(row => row.set('row', row.get('row').filter((r, index) => index !== colIndex)));
+      nextTable = nextTable.set('rows', nextRows);
+    }
+    return nextTable;
   }
 
   renameColumn({name, nextName, table}) {

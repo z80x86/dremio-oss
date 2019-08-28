@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,16 @@
  */
 package com.dremio.exec.store;
 
+import java.io.IOException;
+
 import org.apache.arrow.vector.types.pojo.Field;
 
-import com.dremio.common.types.Types;
 import com.dremio.common.types.TypeProtos.MinorType;
+import com.dremio.common.types.Types;
 import com.dremio.common.util.MajorTypeHelper;
 import com.dremio.exec.record.BatchSchema;
-import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
-
-import java.io.IOException;
+import com.dremio.exec.record.VectorAccessible;
 
 /**
  * Record writer interface for writing a record batch to persistent storage.

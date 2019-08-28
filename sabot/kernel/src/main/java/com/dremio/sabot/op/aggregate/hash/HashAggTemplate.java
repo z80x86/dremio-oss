@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,6 @@ import java.util.List;
 
 import javax.inject.Named;
 
-import com.dremio.sabot.op.aggregate.vectorized.HashAggStats;
-import com.dremio.sabot.op.common.hashtable.HashTableStats;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.AllocationHelper;
 import org.apache.arrow.vector.FixedWidthVector;
@@ -49,11 +47,14 @@ import com.dremio.exec.record.TypedFieldId;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorContainer;
 import com.dremio.exec.record.VectorWrapper;
+import com.dremio.options.OptionManager;
 import com.dremio.sabot.exec.context.FunctionContext;
 import com.dremio.sabot.exec.context.OperatorStats;
+import com.dremio.sabot.op.aggregate.vectorized.HashAggStats;
 import com.dremio.sabot.op.common.hashtable.ChainedHashTable;
 import com.dremio.sabot.op.common.hashtable.HashTable;
 import com.dremio.sabot.op.common.hashtable.HashTableConfig;
+import com.dremio.sabot.op.common.hashtable.HashTableStats;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Iterables;
@@ -204,9 +205,10 @@ public abstract class HashAggTemplate implements HashAggregator {
 
   @Override
   public void setup(HashAggregate hashAggrConfig, HashTableConfig htConfig, ClassProducer producer,
-      OperatorStats stats, BufferAllocator allocator, VectorAccessible incoming,
-      LogicalExpression[] valueExprs, List<TypedFieldId> valueFieldIds, TypedFieldId[] groupByOutFieldIds,
-      VectorContainer outContainer) throws SchemaChangeException, ClassTransformationException, IOException {
+                    OperatorStats stats, BufferAllocator allocator, VectorAccessible incoming,
+                    LogicalExpression[] valueExprs, List<TypedFieldId> valueFieldIds, TypedFieldId[] groupByOutFieldIds,
+                    VectorContainer outContainer, OptionManager optionManager)
+    throws SchemaChangeException, ClassTransformationException, IOException {
 
     if (valueExprs == null || valueFieldIds == null) {
       throw new IllegalArgumentException("Invalid aggr value exprs or workspace variables.");
@@ -267,7 +269,7 @@ public abstract class HashAggTemplate implements HashAggregator {
         new ChainedHashTable(htConfig, producer, allocator, incoming, null /* no incoming probe */, outContainer, listener);
     this.batchHolders = new ArrayList<BatchHolder>();
     this.numGroupByOutFields = groupByOutFieldIds.length;
-    this.htable = ht.createAndSetupHashTable(groupByOutFieldIds);
+    this.htable = ht.createAndSetupHashTable(groupByOutFieldIds, optionManager);
 
     doSetup(producer.getFunctionContext(), incoming);
   }
@@ -349,6 +351,12 @@ public abstract class HashAggTemplate implements HashAggregator {
 
     return recordCount;
   }
+
+  @Override
+  public long numHashTableEntries() {
+    return htable.size();
+  }
+
 
   // Code-generated methods (implemented in HashAggBatch)
   public abstract void doSetup(@Named("context") FunctionContext context, @Named("incoming") VectorAccessible incoming);

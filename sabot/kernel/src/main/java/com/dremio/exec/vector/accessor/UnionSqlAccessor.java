@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,14 @@
  */
 package com.dremio.exec.vector.accessor;
 
+import java.math.BigDecimal;
+
 import org.apache.arrow.vector.complex.UnionVector;
 import org.apache.arrow.vector.complex.reader.FieldReader;
 
-import com.dremio.common.types.Types;
 import com.dremio.common.types.TypeProtos.MajorType;
 import com.dremio.common.types.TypeProtos.MinorType;
-
-import java.io.InputStream;
-import java.io.Reader;
-import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.Time;
-import java.sql.Timestamp;
+import com.dremio.common.types.Types;
 
 public class UnionSqlAccessor extends AbstractSqlAccessor {
 

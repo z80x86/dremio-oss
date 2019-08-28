@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { fork } from 'redux-saga/effects';
+import { all, fork } from 'redux-saga/effects';
 
+import { afterLogin, afterLogout, afterAppStop } from '@app/sagas/loginLogout';
+import { afterAppInit } from 'dyn-load/sagas/appBoot';
 import wsEvents from './wsEvents';
 import qlik from './qlik';
 import serverStatus from './serverStatus';
 import autoPeek from './autoPeek';
-import runDataset from './runDataset';
 import downloadDataset from './downloadDataset';
 import downloadFile from './downloadFile';
 import signupUser from './signupUser';
@@ -27,22 +28,23 @@ import performTransform from './performTransform';
 import performLoadDataset from './performLoadDataset';
 import transformHistoryCheck from './transformHistoryCheck';
 import transformCardPreview from './transformCardPreview';
-import focusSagas from './editorFocus';
 
 export default function* rootSaga() {
-  yield [
+  yield all([
     fork(wsEvents),
     fork(qlik),
     fork(serverStatus),
     fork(autoPeek),
-    fork(runDataset),
     fork(downloadDataset),
     fork(downloadFile),
     fork(signupUser),
+    fork(afterLogin),
+    fork(afterLogout),
+    fork(afterAppInit),
+    fork(afterAppStop),
     fork(performTransform),
     fork(performLoadDataset),
     fork(transformHistoryCheck),
-    fork(transformCardPreview),
-    fork(focusSagas)
-  ];
+    fork(transformCardPreview)
+  ]);
 }

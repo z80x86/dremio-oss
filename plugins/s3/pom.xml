@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
 
-    Copyright (C) 2017-2018 Dremio Corporation
+    Copyright (C) 2017-2019 Dremio Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -25,13 +25,16 @@
 
   <parent>
     <artifactId>dremio-plugin-parent</artifactId>
-    <groupId>com.dremio.plugin</groupId>
-    <version>3.0.5-201812021947440442-9a23f45</version>
+    <groupId>com.dremio.plugins</groupId>
+    <version>3.3.2-201908142136370993-d60145d</version>
   </parent>
 
   <artifactId>dremio-s3-plugin</artifactId>
   <name>Plugins - S3 Plugin</name>
   <packaging>jar</packaging>
+  <properties>
+    <surefire.extra.argLine>-Ds3mock.reserved.port=${s3mock.reserved.port}</surefire.extra.argLine>
+  </properties>
 
   <dependencies>
     <dependency>
@@ -45,6 +48,10 @@
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-aws</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
     </dependency>
     <dependency>
       <groupId>com.google.cloud.bigdataoss</groupId>
@@ -87,6 +94,12 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>io.findify</groupId>
+      <artifactId>s3mock_2.12</artifactId>
+      <version>0.2.4</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.javassist</groupId>
       <artifactId>javassist</artifactId>
       <scope>test</scope>
@@ -108,21 +121,37 @@
       <dependencies>
         <dependency>
           <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-azure</artifactId>
-          <version>${hadoop.version}</version>
-          <exclusions>
-            <exclusion>
-              <groupId>commons-logging</groupId>
-              <artifactId>commons-logging</artifactId>
-            </exclusion>
-          </exclusions>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-azure-datalake</artifactId>
           <version>${hadoop.version}</version>
         </dependency>
       </dependencies>
     </profile>
   </profiles>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>reserve-network-port</id>
+            <goals>
+              <goal>reserve-network-port</goal>
+            </goals>
+            <phase>process-resources</phase>
+            <configuration>
+              <!-- avoid using system range for ephemeral ports as servers are not 
+                immediately started, and pre-allocated ports might have been reused by OS 
+                Some tests also use fixed port in the 20000 range -->
+              <minPortNumber>10000</minPortNumber>
+              <maxPortNumber>19999</maxPortNumber>
+              <portNames>
+                <portName>s3mock.reserved.port</portName>
+              </portNames>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

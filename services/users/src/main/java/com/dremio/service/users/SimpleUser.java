@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,12 +36,12 @@ public final class SimpleUser implements User {
     private String email;
     private long createdAt;
     private long modifiedAt;
-    private Long version;
+    private String version;
 
     private Builder() {}
 
     private Builder(UID uid, String userName, String firstName, String lastName, String email,
-        long createdAt, long modifiedAt, Long version) {
+        long createdAt, long modifiedAt, String version) {
       super();
       this.uid = uid;
       this.userName = userName;
@@ -116,11 +116,11 @@ public final class SimpleUser implements User {
       return this;
     }
 
-    public Long getVersion() {
+    public String getVersion() {
       return version;
     }
 
-    public Builder setVersion(Long version) {
+    public Builder setVersion(String version) {
       this.version = version;
       return this;
     }
@@ -137,7 +137,7 @@ public final class SimpleUser implements User {
   private final String email;
   private final long createdAt;
   private final long modifiedAt;
-  private final Long version;
+  private final String version;
 
   @JsonCreator
   private SimpleUser(
@@ -148,7 +148,7 @@ public final class SimpleUser implements User {
       @JsonProperty("email") String email,
       @JsonProperty("createdAt") long createdAt,
       @JsonProperty("modifiedAt") long modifiedAt,
-      @JsonProperty("version") Long version) {
+      @JsonProperty("version") String version) {
     super();
     this.uid = uid;
     this.userName = userName;
@@ -195,7 +195,7 @@ public final class SimpleUser implements User {
   }
 
   @Override
-  public Long getVersion() {
+  public String getVersion() {
     return version;
   }
 

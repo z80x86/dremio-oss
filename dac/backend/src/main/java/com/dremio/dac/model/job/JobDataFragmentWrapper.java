@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ public class JobDataFragmentWrapper implements JobDataFragment {
     this.columns = ImmutableList.copyOf(nameToColumns.values());
   }
 
-  private static ImmutableMap<String, Column> getColumnsFromSchema(BatchSchema schema){
+  public static ImmutableMap<String, Column> getColumnsFromSchema(BatchSchema schema){
     ImmutableMap.Builder<String, Column> columns = ImmutableMap.builder();
     for (int i = 0; i < schema.getFieldCount(); ++i) {
       final Field column = schema.getColumn(i);
@@ -236,8 +236,10 @@ public class JobDataFragmentWrapper implements JobDataFragment {
 
         SerializationContextImpl context = new SerializationContextImpl(data.getJobId().getId());
 
+        final boolean convertNumbersToStrings = DataJsonOutput.isNumberAsString(provider);
+
         DACJobResultsSerializer jsonWriter =
-            new DACJobResultsSerializer(generator, context, Integer.getInteger(MAX_CELL_SIZE_KEY, 100));
+            new DACJobResultsSerializer(generator, context, Integer.getInteger(MAX_CELL_SIZE_KEY, 100), convertNumbersToStrings);
         jsonWriter.setup();
 
         int currentRowInWriting = data.offsetInJobResults; // row number in complete job results

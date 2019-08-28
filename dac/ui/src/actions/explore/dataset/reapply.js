@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,38 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { CALL_API } from 'redux-api-middleware';
+import { RSAA } from 'redux-api-middleware';
 import { push, replace } from 'react-router-redux';
 
 import { API_URL_V2 } from 'constants/Api';
 import schemaUtils from 'utils/apiUtils/schemaUtils';
-import fullDatasetSchema from 'schemas/v2/fullDataset';
+import { datasetWithoutData } from 'schemas/v2/fullDataset';
 import { performNextAction } from 'actions/explore/nextAction';
 
 export const REAPPLY_DATASET_START   = 'REAPPLY_DATASET_START';
 export const REAPPLY_DATASET_SUCCESS = 'REAPPLY_DATASET_SUCCESS';
 export const REAPPLY_DATASET_FAILURE = 'REAPPLY_DATASET_FAILURE';
 
-export function editOriginalSql(previousDatasetId, selfApiUrl, nextAction, viewId, replaceNav) {
+export function editOriginalSql(previousDatasetId, selfApiUrl) {
   return (dispatch) => {
-    return dispatch(fetchOriginalSql(previousDatasetId,
-      selfApiUrl,
-      viewId)).then((response) => {
-        if (!response.error) {
-          dispatch(navigateAfterReapply(response, replaceNav, nextAction));
-        }
-        return response;
-      });
+    return dispatch(fetchOriginalSql(previousDatasetId, selfApiUrl));
   };
 }
 
 function fetchOriginalSql(previousDatasetId, selfApiUrl, viewId) {
   const meta = { viewId, previousId: previousDatasetId };
   return {
-    [CALL_API]: {
+    [RSAA]: {
       types: [
         { type: REAPPLY_DATASET_START, meta },
-        schemaUtils.getSuccessActionTypeWithSchema(REAPPLY_DATASET_SUCCESS, fullDatasetSchema, meta),
+        schemaUtils.getSuccessActionTypeWithSchema(REAPPLY_DATASET_SUCCESS, datasetWithoutData, meta),
         { type: REAPPLY_DATASET_FAILURE, meta: { ...meta, notification: true }}
       ],
       method: 'POST',

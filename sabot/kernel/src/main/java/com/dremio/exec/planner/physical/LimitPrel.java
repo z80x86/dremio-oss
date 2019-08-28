@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,13 @@
  */
 package com.dremio.exec.planner.physical;
 
-import org.apache.calcite.rel.RelNode;
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.List;
+
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 
@@ -26,12 +30,16 @@ import com.dremio.exec.physical.config.Limit;
 import com.dremio.exec.planner.common.LimitRelBase;
 import com.dremio.exec.planner.physical.visitor.PrelVisitor;
 import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
+import com.dremio.options.Options;
+import com.dremio.options.TypeValidators.LongValidator;
+import com.dremio.options.TypeValidators.PositiveLongValidator;
 
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-
+@Options
 public class LimitPrel extends LimitRelBase implements Prel {
+
+  public static final LongValidator RESERVE = new PositiveLongValidator("planner.op.limit.reserve_bytes", Long.MAX_VALUE, DEFAULT_RESERVE);
+  public static final LongValidator LIMIT = new PositiveLongValidator("planner.op.limit.limit_bytes", Long.MAX_VALUE, DEFAULT_LIMIT);
+
 
   public LimitPrel(RelOptCluster cluster, RelTraitSet traitSet, RelNode child, RexNode offset, RexNode fetch) {
     super(cluster, traitSet, child, offset, fetch);
@@ -55,8 +63,12 @@ public class LimitPrel extends LimitRelBase implements Prel {
     int first = getFirst();
     Integer last = getLast();
 
-    Limit limit = new Limit(childPOP, first, last);
-    return creator.addMetadata(this, limit);
+    return new Limit(
+        creator.props(this, null, childPOP.getProps().getSchema(), RESERVE, LIMIT),
+        childPOP,
+        first,
+        last
+        );
   }
 
   private int getFirst(){

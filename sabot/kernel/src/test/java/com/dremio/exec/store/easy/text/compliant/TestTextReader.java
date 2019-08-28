@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,12 @@
  */
 package com.dremio.exec.store.easy.text.compliant;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+
+import java.io.File;
+import java.io.FileWriter;
+
 import org.apache.commons.io.FileUtils;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -23,12 +29,6 @@ import org.junit.Test;
 import com.dremio.BaseTestQuery;
 import com.dremio.common.exceptions.UserRemoteException;
 import com.dremio.exec.proto.UserBitShared;
-
-import java.io.File;
-import java.io.FileWriter;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
 
 /**
  * Class to test exception handling for TextInput related to bad lineDelimiter and
@@ -263,7 +263,7 @@ public class TestTextReader extends BaseTestQuery {
         fail("Unexpected Error");
       }
       UserRemoteException urex = (UserRemoteException) ex;
-      assertEquals(UserBitShared.DremioPBError.ErrorType.DATA_READ, urex.getErrorType());
+      assertEquals(UserBitShared.DremioPBError.ErrorType.UNSUPPORTED_OPERATION, urex.getErrorType());
     }
   }
 

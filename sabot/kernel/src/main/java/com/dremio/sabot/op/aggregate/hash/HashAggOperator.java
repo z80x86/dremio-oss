@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.apache.arrow.vector.types.pojo.Field;
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.common.exceptions.UserException;
+import com.dremio.common.expression.CompleteType;
 import com.dremio.common.expression.IfExpression;
 import com.dremio.common.expression.LogicalExpression;
 import com.dremio.common.logical.data.NamedExpression;
@@ -35,17 +36,22 @@ import com.dremio.exec.exception.ClassTransformationException;
 import com.dremio.exec.exception.SchemaChangeException;
 import com.dremio.exec.expr.ClassGenerator;
 import com.dremio.exec.expr.CodeGenerator;
+import com.dremio.exec.expr.FunctionHolderExpr;
 import com.dremio.exec.expr.TypeHelper;
 import com.dremio.exec.expr.ValueVectorWriteExpression;
 import com.dremio.exec.physical.config.HashAggregate;
+import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.exec.record.TypedFieldId;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorContainer;
-import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.exec.record.selection.SelectionVector2;
 import com.dremio.exec.record.selection.SelectionVector4;
 import com.dremio.exec.testing.ControlsInjector;
 import com.dremio.exec.testing.ControlsInjectorFactory;
+import com.dremio.exec.testing.InjectedOutOfMemoryError;
+import com.dremio.options.OptionManager;
+import com.dremio.options.Options;
+import com.dremio.options.TypeValidators;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.exec.context.OperatorStats;
 import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator;
@@ -72,13 +78,21 @@ import com.sun.codemodel.JVar;
  *
  * Must hold the entire aggregate table in memory.
  */
+@Options
 public class HashAggOperator implements SingleInputOperator {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(HashAggOperator.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(HashAggOperator.class);
+
+  public static final TypeValidators.PositiveLongValidator HASHAGG_MINMAX_CARDINALITY_LIMIT = new TypeValidators.PositiveLongValidator("exec.operator.aggregate.minmax_cardinality_limit", Long.MAX_VALUE, 10000);
+
+  //this option sets the capacity of an ArrowBuf in BufferManager from which various buffers may be sliced.
+  public static final TypeValidators.PowerOfTwoLongValidator BUF_MANAGER_CAPACITY = new TypeValidators.PowerOfTwoLongValidator("exec.operator.aggregate.bufmgr.capacity", 1 << 24, 1 << 16);
 
   private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(HashAggOperator.class);
 
   @VisibleForTesting
-  public static final String INJECTOR_DO_WORK = "doWork";
+  public static final String INJECTOR_DO_WORK_OOM = "doWork";
+  @VisibleForTesting
+  public static final String INJECTOR_DO_WORK_OOM_ERROR = "doWork-error";
 
   private final OperatorContext context;
   private final OperatorStats stats;
@@ -94,6 +108,8 @@ public class HashAggOperator implements SingleInputOperator {
   private TypedFieldId[] aggrOutFieldIds;      // field ids for the outgoing batch
   private VectorAccessible incoming;
   private int outputBatchIndex;
+  private boolean isCardinalityLimited;
+  private long cardinalityLimit;
 
 
   public HashAggOperator(HashAggregate popConfig, OperatorContext context) throws ExecutionSetupException {
@@ -108,6 +124,10 @@ public class HashAggOperator implements SingleInputOperator {
       // nulls are equal in group by case
       comparators.add(Comparator.IS_NOT_DISTINCT_FROM);
     }
+
+    this.isCardinalityLimited = false;
+    final OptionManager options = context.getOptions();
+    this.cardinalityLimit = options.getOption(HASHAGG_MINMAX_CARDINALITY_LIMIT);
   }
 
 
@@ -138,11 +158,17 @@ public class HashAggOperator implements SingleInputOperator {
   @Override
   public void consumeData(int records) throws Exception {
     aggregator.addBatch(records);
+    if (isCardinalityLimited && aggregator.numHashTableEntries() > cardinalityLimit) {
+      throw UserException.functionError()
+        .message("Computing the min() or max() measures of variable-length columns only supported for low-cardinality aggregations")
+        .build(logger);
+    }
   }
 
   @Override
   public VectorAccessible setup(VectorAccessible accessible) throws Exception {
-    injector.injectChecked(context.getExecutionControls(), INJECTOR_DO_WORK, OutOfMemoryException.class);
+    injector.injectChecked(context.getExecutionControls(), INJECTOR_DO_WORK_OOM, OutOfMemoryException.class);
+    injector.injectChecked(context.getExecutionControls(), INJECTOR_DO_WORK_OOM_ERROR, InjectedOutOfMemoryError.class);
     this.incoming = accessible;
     this.aggregator = createAggregatorInternal();
     state = State.CAN_CONSUME;
@@ -204,6 +230,10 @@ public class HashAggOperator implements SingleInputOperator {
       aggrOutFieldIds[i] = outgoing.add(vv);
 
       aggrExprs[i] = new ValueVectorWriteExpression(aggrOutFieldIds[i], expr, true);
+
+      if (isCardinalityLimitNeeded(expr, expr.getCompleteType())) {
+        isCardinalityLimited = true;
+      }
     }
 
     setupUpdateAggrValues(cgInner);
@@ -228,9 +258,24 @@ public class HashAggOperator implements SingleInputOperator {
         aggrExprs,
         cgInner.getWorkspaceTypes(),
         groupByOutFieldIds,
-        outgoing);
+        outgoing,
+        context.getOptions()
+      );
 
     return agg;
+  }
+
+  // Certain measures have to be cardinality-limited, or else we run out of heap
+  private boolean isCardinalityLimitNeeded(LogicalExpression expr, CompleteType exprType) {
+    // Cardinality is limited for min()/max() of variable-length types
+    if (!(expr instanceof FunctionHolderExpr)) {
+      return false;
+    }
+    String functionName = ((FunctionHolderExpr)expr).getName();
+    if (!functionName.equals("min") && !functionName.equals("max")) {
+      return false;
+    }
+    return !exprType.isFixedWidthScalar();
   }
 
   private void setupUpdateAggrValues(ClassGenerator<HashAggregator> cg) {
@@ -286,7 +331,8 @@ public class HashAggOperator implements SingleInputOperator {
     @Override
     public SingleInputOperator create(OperatorContext context, HashAggregate operator) throws ExecutionSetupException {
       if(operator.isVectorize()) {
-        if (context.getOptions().getOption(VectorizedHashAggOperator.VECTORIZED_HASHAGG_USE_SPILLING_OPERATOR)) {
+        boolean useSpill = operator.isUseSpill();
+        if (context.getOptions().getOption(VectorizedHashAggOperator.VECTORIZED_HASHAGG_USE_SPILLING_OPERATOR) && useSpill) {
           return new VectorizedHashAggOperator(operator, context);
         } else {
           return new VectorizedHashAggOperatorNoSpill(operator, context);
@@ -294,7 +340,7 @@ public class HashAggOperator implements SingleInputOperator {
       } else {
         return new HashAggOperator(operator, context);
       }
-    }
+    } //create
 
   }
 

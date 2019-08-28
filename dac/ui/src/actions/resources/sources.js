@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { CALL_API } from 'redux-api-middleware';
+import { RSAA } from 'redux-api-middleware';
 import { API_URL_V2 } from 'constants/Api';
 import { arrayOf } from 'normalizr';
 
@@ -26,6 +26,7 @@ import sourceSchema from 'dyn-load/schemas/source';
 import sourcesMapper from 'utils/mappers/sourcesMapper';
 import { getUniqueName } from 'utils/pathUtils';
 import DataFreshnessSection from 'components/Forms/DataFreshnessSection';
+import { getSpaceNames, getSourceNames } from '@app/selectors/home';
 
 export const ADD_NEW_SOURCE_START = 'ADD_NEW_SOURCE_START';
 export const ADD_NEW_SOURCE_SUCCESS = 'ADD_NEW_SOURCE_SUCCESS';
@@ -39,7 +40,7 @@ function postCreateSource(sourceModel, meta, _shouldShowFailureNotification = fa
   };
   const failureMeta = _shouldShowFailureNotification ? { ...meta, notification: true } : meta;
   return {
-    [CALL_API]: {
+    [RSAA]: {
       types: [
         { type: ADD_NEW_SOURCE_START, meta},
         schemaUtils.getSuccessActionTypeWithSchema(ADD_NEW_SOURCE_SUCCESS, sourceSchema, meta),
@@ -61,29 +62,32 @@ export function createSource(data, sourceType) {
 }
 
 
-export function createSampleSource(sources, spaces, meta) {
-  const existingNames = new Set([...sources, ...spaces].map(e => e.get('name')));
+export function createSampleSource(meta) {
+  return (dispatch, getState) => {
+    const state = getState();
+    const sources = getSourceNames(state);
+    const spaces = getSpaceNames(state);
+    const existingNames = new Set([...sources, ...spaces]);
 
-  const name = getUniqueName(la('Samples'), (nameTry) => {
-    return !existingNames.has(nameTry);
-  });
+    const name = getUniqueName(la('Samples'), (nameTry) => {
+      return !existingNames.has(nameTry);
+    });
 
-  const sourceModel = {
-    'config': {
-      'externalBucketList': [
-        'samples.dremio.com'
-      ],
-      'credentialType': 'NONE',
-      'secure': false,
-      'propertyList': []
-    },
-    name,
-    'accelerationRefreshPeriod': DataFreshnessSection.defaultFormValueRefreshInterval(),
-    'accelerationGracePeriod': DataFreshnessSection.defaultFormValueGracePeriod(),
-    'accelerationNeverRefresh': true,
-    'type': 'S3'
-  };
-  return (dispatch) => {
+    const sourceModel = {
+      'config': {
+        'externalBucketList': [
+          'samples.dremio.com'
+        ],
+        'credentialType': 'NONE',
+        'secure': false,
+        'propertyList': []
+      },
+      name,
+      'accelerationRefreshPeriod': DataFreshnessSection.defaultFormValueRefreshInterval(),
+      'accelerationGracePeriod': DataFreshnessSection.defaultFormValueGracePeriod(),
+      'accelerationNeverRefresh': true,
+      'type': 'S3'
+    };
     return dispatch(postCreateSource(sourceModel, meta, true));
   };
 }
@@ -103,7 +107,7 @@ export const SOURCES_LIST_LOAD_FAILURE = 'SOURCES_LIST_LOAD_FAILURE';
 function fetchSourceListData() {
   const meta = {viewId: 'AllSources', mergeEntities: true};
   return {
-    [CALL_API]: {
+    [RSAA]: {
       types: [
         {type: SOURCES_LIST_LOAD_START, meta},
         schemaUtils.getSuccessActionTypeWithSchema(SOURCES_LIST_LOAD_SUCCESS, { sources: arrayOf(sourceSchema) }, meta),
@@ -137,7 +141,7 @@ function fetchRemoveSource(source) {
 
   const errorMessage = la('There was an error removing the source.');
   return {
-    [CALL_API]: {
+    [RSAA]: {
       types: [
         {
           type: REMOVE_SOURCE_START, meta
@@ -155,7 +159,7 @@ function fetchRemoveSource(source) {
         }
       ],
       method: 'DELETE',
-      endpoint: makeUncachebleURL(`${API_URL_V2}${source.getIn(['links', 'self'])}?version=${source.get('version')}`)
+      endpoint: makeUncachebleURL(`${API_URL_V2}${source.getIn(['links', 'self'])}?version=${source.get('tag')}`)
     }
   };
 }
@@ -172,7 +176,7 @@ export const RENAME_SOURCE_FAILURE = 'RENAME_SOURCE_FAILURE';
 
 function fetchRenameSource(oldName, newName) {
   return {
-    [CALL_API]: {
+    [RSAA]: {
       types: [
         {
           type: RENAME_SOURCE_START,
@@ -201,26 +205,14 @@ export function renameSource(oldName, newName) {
   };
 }
 
-export const SET_SOURCE_PIN_STATE = 'SET_SOURCE_PIN_STATE';
-
-export function setSourcePin(sourceName, isActivePin) {
-  return (dispatch) => {
-    dispatch({
-      type: SET_SOURCE_PIN_STATE,
-      name: sourceName,
-      isActivePin
-    });
-  };
-}
-
 export const GET_CREATED_SOURCE_START = 'GET_CREATED_SOURCE_START';
 export const GET_CREATED_SOURCE_SUCCESS = 'GET_CREATED_SOURCE_SUCCESS';
 export const GET_CREATED_SOURCE_FAILURE = 'GET_CREATED_SOURCE_FAILURE';
 
-export function fetchSource(sourceName, viewId) {
+export function loadSource(sourceName, viewId) {
   const meta = {viewId};
   return {
-    [CALL_API]: {
+    [RSAA]: {
       types: [
         {type: GET_CREATED_SOURCE_START, meta},
         {type: GET_CREATED_SOURCE_SUCCESS, meta},
@@ -229,11 +221,5 @@ export function fetchSource(sourceName, viewId) {
       method: 'GET',
       endpoint: `${API_URL_V2}/source/${sourceName}?includeContents=false`
     }
-  };
-}
-
-export function loadSource(sourceName, viewId) {
-  return (dispatch) => {
-    return dispatch(fetchSource(sourceName, viewId));
   };
 }

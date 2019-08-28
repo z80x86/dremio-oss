@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,30 +18,39 @@ package com.dremio.exec.planner.physical;
 import java.io.IOException;
 import java.util.List;
 
-import org.apache.calcite.rel.InvalidRelException;
-import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptCost;
 import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.rel.InvalidRelException;
+import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Union;
+import org.apache.calcite.rel.metadata.RelMetadataQuery;
 
+import com.dremio.common.exceptions.UserException;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.config.UnionAll;
 import com.dremio.exec.planner.cost.DremioCost;
 import com.dremio.exec.planner.cost.DremioCost.Factory;
+import com.dremio.exec.record.BatchSchema;
 import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
+import com.dremio.options.Options;
+import com.dremio.options.TypeValidators.LongValidator;
+import com.dremio.options.TypeValidators.PositiveLongValidator;
 import com.google.common.collect.Lists;
 
+@Options
 public class UnionAllPrel extends UnionPrel {
+
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(UnionAllPrel.class);
+
+  public static final LongValidator RESERVE = new PositiveLongValidator("planner.op.unionall.reserve_bytes", Long.MAX_VALUE, DEFAULT_RESERVE);
+  public static final LongValidator LIMIT = new PositiveLongValidator("planner.op.unionall.limit_bytes", Long.MAX_VALUE, DEFAULT_LIMIT);
 
   public UnionAllPrel(RelOptCluster cluster, RelTraitSet traits, List<RelNode> inputs,
       boolean checkCompatibility) throws InvalidRelException {
     super(cluster, traits, inputs, true /* all */, checkCompatibility);
-
   }
-
 
   @Override
   public Union copy(RelTraitSet traitSet, List<RelNode> inputs, boolean all) {
@@ -70,14 +79,24 @@ public class UnionAllPrel extends UnionPrel {
 
   @Override
   public PhysicalOperator getPhysicalOperator(PhysicalPlanCreator creator) throws IOException {
-    List<PhysicalOperator> inputPops = Lists.newArrayList();
+    List<PhysicalOperator> children = Lists.newArrayList();
 
     for (int i = 0; i < this.getInputs().size(); i++) {
-      inputPops.add( ((Prel)this.getInputs().get(i)).getPhysicalOperator(creator));
+      children.add( ((Prel)this.getInputs().get(i)).getPhysicalOperator(creator));
     }
 
-    UnionAll unionall = new UnionAll(inputPops);
-    return creator.addMetadata(this, unionall);
+    BatchSchema left = children.get(0).getProps().getSchema();
+    BatchSchema right = children.get(1).getProps().getSchema();
+    if(!right.equalsTypesAndPositions(left)){
+      throw UserException.dataReadError()
+      .message("Unable to complete query, attempting to union two datasets that have different underlying schemas. Left: %s, Right: %s", left, right)
+      .build(logger);
+    }
+
+    return new UnionAll(
+        creator.props(this, null, left, RESERVE, LIMIT),
+        children
+        );
   }
 
   @Override

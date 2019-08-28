@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ public class UserServiceTestImpl implements UserService {
   }
 
   @Override
-  public void deleteUser(String userName, long version) throws UserNotFoundException, IOException {
+  public void deleteUser(String userName, String version) throws UserNotFoundException, IOException {
     throw new UnsupportedOperationException("not supported");
   }
 

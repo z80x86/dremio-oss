@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ export const panel = {
   top: 42,
   bottom: 2,
   right: 0,
-  left: '50%',
+  left: '60%',
   transform: 'translateX(100%)',
   borderRight: `1px solid ${BORDER}`,
   borderTop: `1px solid ${BORDER}`,

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.util.Properties;
 
 import com.dremio.common.config.SabotConfig;
-import com.dremio.exec.ExecConstants;
 import com.dremio.exec.util.MiniZooKeeperCluster;
 
 /**

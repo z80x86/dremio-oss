@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,9 @@
  */
 package com.dremio.exec.store.hive.exec;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -32,23 +34,27 @@ import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.exceptions.ExecutionSetupException;
+import com.dremio.common.exceptions.InvalidMetadataErrorContext;
+import com.dremio.common.exceptions.UserException;
+import com.google.common.collect.ImmutableList;
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.exec.ExecConstants;
 import com.dremio.exec.record.BatchSchema;
 import com.dremio.exec.store.RecordReader;
-import com.dremio.exec.store.dfs.FileSystemWrapper;
+import com.dremio.exec.store.dfs.FileSystemWrapperCreator;
 import com.dremio.exec.store.parquet.InputStreamProvider;
 import com.dremio.exec.store.parquet.ParquetFilterCondition;
 import com.dremio.exec.store.parquet.ParquetReaderFactory;
 import com.dremio.exec.store.parquet.ParquetReaderUtility;
 import com.dremio.exec.store.parquet.SchemaDerivationHelper;
+import com.dremio.exec.store.parquet.SingleStreamProvider;
+import com.dremio.exec.store.parquet.StreamPerColumnProvider;
 import com.dremio.exec.store.parquet.UnifiedParquetReader;
 import com.dremio.parquet.reader.ParquetDirectByteBufferAllocator;
-import com.dremio.sabot.driver.SchemaChangeMutator;
 import com.dremio.sabot.exec.context.OperatorContext;
+import com.dremio.sabot.exec.store.parquet.proto.ParquetProtobuf.ParquetDatasetSplitScanXAttr;
 import com.dremio.sabot.op.scan.OutputMutator;
 import com.dremio.sabot.op.scan.ScanOperator;
-import com.dremio.service.namespace.file.proto.ParquetDatasetSplitScanXAttr;
 import com.google.common.collect.Lists;
 
 /**
@@ -57,18 +63,20 @@ import com.google.common.collect.Lists;
  */
 public class FileSplitParquetRecordReader implements RecordReader {
 
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(FileSplitParquetRecordReader.class);
   private final OperatorContext oContext;
   private final BatchSchema tableSchema;
   private final List<SchemaPath> columnsToRead;
   private final List<ParquetFilterCondition> conditions;
   private final FileSplit fileSplit;
-  private final ParquetMetadata footer;
   private final JobConf jobConf;
+  final Collection<List<String>> referencedTables;
   private final boolean vectorize;
   private final boolean enableDetailedTracing;
   private final BatchSchema outputSchema;
   private final ParquetReaderFactory readerFactory;
 
+  private ParquetMetadata footer;
   private List<UnifiedParquetReader> innerReaders;
   private Iterator<UnifiedParquetReader> innerReadersIter;
   private UnifiedParquetReader currentReader;
@@ -80,8 +88,8 @@ public class FileSplitParquetRecordReader implements RecordReader {
       final List<SchemaPath> columnsToRead,
       final List<ParquetFilterCondition> conditions,
       final FileSplit fileSplit,
-      final ParquetMetadata footer,
       final JobConf jobConf,
+      final Collection<List<String>> referencedTables,
       final boolean vectorize,
       final BatchSchema outputSchema,
       final boolean enableDetailedTracing
@@ -91,53 +99,102 @@ public class FileSplitParquetRecordReader implements RecordReader {
     this.columnsToRead = columnsToRead;
     this.conditions = conditions;
     this.fileSplit = fileSplit;
-    this.footer = footer;
     this.jobConf = jobConf;
+    this.referencedTables = referencedTables;
     this.readerFactory = readerFactory;
     this.vectorize = vectorize;
     this.enableDetailedTracing = enableDetailedTracing;
     this.outputSchema = outputSchema;
   }
 
+  private InputStreamProvider getInputStreamProvider(boolean useSingleStream, Path path,
+                                                     FileSystem fs, long fileLength, boolean readFullFile) {
+    final long maxFooterLen = oContext.getOptions().getOption(ExecConstants.PARQUET_MAX_FOOTER_LEN_VALIDATOR);
+    return (useSingleStream || readFullFile) ? new SingleStreamProvider(fs, path, fileLength, maxFooterLen, readFullFile, oContext) :
+            new StreamPerColumnProvider(fs, path, fileLength,  maxFooterLen, oContext.getStats());
+  }
+
   @Override
   public void setup(OutputMutator output) throws ExecutionSetupException {
     try {
-      final Path finalPath = fileSplit.getPath();
+      boolean useSingleStream =
+        // option is set for single stream
+        oContext.getOptions().getOption(ExecConstants.PARQUET_SINGLE_STREAM) ||
+          // number of columns is above threshold
+          columnsToRead.size() >= oContext.getOptions().getOption(ExecConstants.PARQUET_SINGLE_STREAM_COLUMN_THRESHOLD) ||
+          // split size is below multi stream size limit and the limit is enabled
+          (oContext.getOptions().getOption(ExecConstants.PARQUET_MULTI_STREAM_SIZE_LIMIT_ENABLE) &&
+            fileSplit.getLength() < oContext.getOptions().getOption(ExecConstants.PARQUET_MULTI_STREAM_SIZE_LIMIT));
 
+      final Path finalPath = fileSplit.getPath();
+      final String pathString = Path.getPathWithoutSchemeAndAuthority(finalPath).toString();
       final FileSystem fs;
+      final long fileLength;
+      final boolean readFullFile;
+      InputStreamProvider inputStreamProvider = null;
+
       try {
-        fs = FileSystemWrapper.get(finalPath, jobConf, oContext.getStats());
-      } catch(IOException e) {
-        throw new ExecutionSetupException(String.format("Failed to create FileSystem: %s", e.getMessage()), e);
+        // TODO: DX-16001 - make async configurable for Hive.
+        fs = FileSystemWrapperCreator.get(finalPath, jobConf, oContext.getStats());
+        fileLength = fs.getFileStatus(finalPath).getLen();
+        readFullFile = fileLength < oContext.getOptions().getOption(ExecConstants.PARQUET_FULL_FILE_READ_THRESHOLD) &&
+                ((float)columnsToRead.size()) / outputSchema.getFieldCount() > oContext.getOptions().getOption(ExecConstants.PARQUET_FULL_FILE_READ_COLUMN_RATIO);
+        logger.debug("readFullFile={},length={},threshold={},columns={},totalColumns={},ratio={},req ratio={}",
+                readFullFile,
+                fileLength,
+                oContext.getOptions().getOption(ExecConstants.PARQUET_FULL_FILE_READ_THRESHOLD),
+                columnsToRead.size(),
+                outputSchema.getFieldCount(),
+                ((float)columnsToRead.size()) / outputSchema.getFieldCount(),
+                oContext.getOptions().getOption(ExecConstants.PARQUET_FULL_FILE_READ_COLUMN_RATIO));
+
+        inputStreamProvider = getInputStreamProvider(useSingleStream, finalPath, fs, fileLength, readFullFile);
+        footer = inputStreamProvider.getFooter();
+      } catch(Exception e) {
+        // Close input stream provider in case of errors
+        if (inputStreamProvider != null) {
+          try {
+            inputStreamProvider.close();
+          } catch(Exception ignore) {}
+        }
+        if (e instanceof FileNotFoundException) {
+          // the outer try-catch handles this.
+          throw e;
+        } else {
+          throw new ExecutionSetupException(
+              String.format("Failed to create FileSystem: %s", e.getMessage()), e);
+        }
       }
 
       final List<Integer> rowGroupNums = getRowGroupNumbersFromFileSplit(fileSplit, footer);
       oContext.getStats().addLongStat(ScanOperator.Metric.NUM_ROW_GROUPS, rowGroupNums.size());
-
       innerReaders = Lists.newArrayList();
-      for (int rowGroupNum : rowGroupNums) {
-        ParquetDatasetSplitScanXAttr split = new ParquetDatasetSplitScanXAttr();
-        split.setRowGroupIndex(rowGroupNum);
-        split.setPath(Path.getPathWithoutSchemeAndAuthority(finalPath).toString());
-        split.setStart(0l);
-        split.setLength((long) Integer.MAX_VALUE);
 
+      if (rowGroupNums.isEmpty()) {
+        try {
+          inputStreamProvider.close();
+        } catch (Exception ignore) {}
+      }
+
+      for (int rowGroupNum : rowGroupNums) {
+        ParquetDatasetSplitScanXAttr split = ParquetDatasetSplitScanXAttr.newBuilder()
+            .setRowGroupIndex(rowGroupNum)
+            .setPath(pathString)
+            .setStart(0l)
+            .setLength(Integer.MAX_VALUE)
+            .build();
+
+        final boolean autoCorrectCorruptDates = oContext.getOptions().getOption(ExecConstants.PARQUET_AUTO_CORRECT_DATES_VALIDATOR);
         final SchemaDerivationHelper schemaHelper = SchemaDerivationHelper.builder()
             .readInt96AsTimeStamp(true)
-            .dateCorruptionStatus(ParquetReaderUtility.detectCorruptDates(footer, columnsToRead, true))
+            .dateCorruptionStatus(ParquetReaderUtility.detectCorruptDates(footer, columnsToRead, autoCorrectCorruptDates))
             .noSchemaLearning(outputSchema)
             .build();
 
-        boolean useSingleStream =
-          // option is set for single stream
-          oContext.getOptions().getOption(ExecConstants.PARQUET_SINGLE_STREAM) ||
-            // number of columns is above threshold
-            columnsToRead.size() >= oContext.getOptions().getOption(ExecConstants.PARQUET_SINGLE_STREAM_COLUMN_THRESHOLD) ||
-            // split size is below multi stream size limit and the limit is enabled
-            (oContext.getOptions().getOption(ExecConstants.PARQUET_MULTI_STREAM_SIZE_LIMIT_ENABLE) &&
-              fileSplit.getLength() < oContext.getOptions().getOption(ExecConstants.PARQUET_MULTI_STREAM_SIZE_LIMIT));
-
-        InputStreamProvider inputStreamProvider = new InputStreamProvider(fs, new Path(split.getPath()), useSingleStream);
+        // Reuse the stream used for reading footer to read the first row group.
+        if (innerReaders.size() > 0) {
+          inputStreamProvider = getInputStreamProvider(useSingleStream, finalPath, fs, fileLength, readFullFile);
+        }
 
         final UnifiedParquetReader innerReader = new UnifiedParquetReader(
             oContext,
@@ -154,24 +211,27 @@ public class FileSplitParquetRecordReader implements RecordReader {
             schemaHelper,
             vectorize,
             enableDetailedTracing,
-          inputStreamProvider
+            true,
+            inputStreamProvider
         );
+        innerReader.setIgnoreSchemaLearning(true);
 
         innerReader.setup(output);
 
         innerReaders.add(innerReader);
       }
       innerReadersIter = innerReaders.iterator();
+    } catch (FileNotFoundException e) {
+      throw UserException.invalidMetadataError(e)
+        .addContext("Parquet file not found")
+        .addContext("File", fileSplit.getPath())
+        .setAdditionalExceptionContext(new InvalidMetadataErrorContext(ImmutableList.copyOf(referencedTables)))
+        .build(logger);
     } catch (IOException e) {
       throw new ExecutionSetupException("Failure during setup", e);
     }
 
     currentReader = innerReadersIter.hasNext() ? innerReadersIter.next() : null;
-  }
-
-  @Override
-  public SchemaChangeMutator getSchemaChangeMutator() {
-    return SchemaChangeMutator.DEFAULT;
   }
 
   @Override

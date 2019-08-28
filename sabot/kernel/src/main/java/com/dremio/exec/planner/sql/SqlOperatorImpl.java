@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,8 @@ package com.dremio.exec.planner.sql;
 
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
-import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlSyntax;
-import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlReturnTypeInference;
 
 public class SqlOperatorImpl extends SqlFunction {
@@ -59,13 +57,13 @@ public class SqlOperatorImpl extends SqlFunction {
   public SqlOperatorImpl(String name, int argCountMin, int argCountMax, boolean isDeterministic,
       boolean isDynamic, SqlReturnTypeInference sqlReturnTypeInference, SqlSyntax syntax) {
     super(name,
-        null,
-        SqlKind.OTHER_FUNCTION,
-        sqlReturnTypeInference,
-        null,
-        Checker.getChecker(argCountMin, argCountMax),
-        null,
-        SqlFunctionCategory.USER_DEFINED_FUNCTION);
+      null,
+      SqlKind.OTHER_FUNCTION,
+      sqlReturnTypeInference,
+      null,
+      Checker.getChecker(argCountMin, argCountMax),
+      null,
+      SqlFunctionCategory.USER_DEFINED_FUNCTION);
     this.isDeterministic = isDeterministic;
     this.isDynamic = isDynamic;
     this.syntax = syntax;

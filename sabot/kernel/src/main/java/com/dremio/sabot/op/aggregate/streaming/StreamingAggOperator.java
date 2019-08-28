@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,16 +33,16 @@ import com.dremio.common.logical.data.NamedExpression;
 import com.dremio.exec.compile.sig.GeneratorMapping;
 import com.dremio.exec.compile.sig.MappingSet;
 import com.dremio.exec.expr.ClassGenerator;
+import com.dremio.exec.expr.ClassGenerator.HoldingContainer;
 import com.dremio.exec.expr.TypeHelper;
 import com.dremio.exec.expr.ValueVectorWriteExpression;
-import com.dremio.exec.expr.ClassGenerator.HoldingContainer;
 import com.dremio.exec.expr.fn.FunctionGenerationHelper;
 import com.dremio.exec.physical.config.StreamingAggregate;
+import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.exec.record.TypedFieldId;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorContainer;
 import com.dremio.exec.record.VectorWrapper;
-import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.exec.context.OperatorStats;
 import com.dremio.sabot.op.spi.SingleInputOperator;
@@ -115,13 +115,13 @@ public class StreamingAggOperator implements SingleInputOperator  {
 
     final ClassGenerator<StreamingAggregator> cg = context.getClassProducer().createGenerator(StreamingAggTemplate.TEMPLATE_DEFINITION).getRoot();
 
-    final LogicalExpression[] keyExprs = new LogicalExpression[config.getKeys().size()];
-    final LogicalExpression[] valueExprs = new LogicalExpression[config.getExprs().size()];
-    final TypedFieldId[] keyOutputIds = new TypedFieldId[config.getKeys().size()];
+    final LogicalExpression[] keyExprs = new LogicalExpression[config.getGroupByExprs().size()];
+    final LogicalExpression[] valueExprs = new LogicalExpression[config.getAggrExprs().size()];
+    final TypedFieldId[] keyOutputIds = new TypedFieldId[config.getGroupByExprs().size()];
 
 
     for (int i = 0; i < keyExprs.length; i++) {
-      final NamedExpression ne = config.getKeys().get(i);
+      final NamedExpression ne = config.getGroupByExprs().get(i);
       final LogicalExpression expr = context.getClassProducer().materialize(ne.getExpr(), onDeckInput);
       if (expr == null) {
         continue;
@@ -133,7 +133,7 @@ public class StreamingAggOperator implements SingleInputOperator  {
     }
 
     for (int i = 0; i < valueExprs.length; i++) {
-      final NamedExpression ne = config.getExprs().get(i);
+      final NamedExpression ne = config.getAggrExprs().get(i);
       final LogicalExpression expr = context.getClassProducer().materialize(ne.getExpr(), onDeckInput);
       if (expr instanceof IfExpression) {
         throw UserException.unsupportedError().message("Union type not supported in aggregate functions").build(logger);
@@ -229,7 +229,7 @@ public class StreamingAggOperator implements SingleInputOperator  {
     if(done){
       state = State.DONE;
       if (consumedCount == 0) {
-        if(config.getExprs().size() == outgoing.getNumberOfColumns()){
+        if(config.getAggrExprs().size() == outgoing.getNumberOfColumns()){
           // no group by.
           constructSpecialBatch();
           state = State.DONE;
@@ -280,7 +280,7 @@ public class StreamingAggOperator implements SingleInputOperator  {
    */
   private void constructSpecialBatch() {
     outgoing.allocateNew();
-    List<NamedExpression> exprs = config.getExprs();
+    List<NamedExpression> exprs = config.getAggrExprs();
     if(outgoing.getNumberOfColumns() != exprs.size()){
       throw new IllegalStateException();
     }

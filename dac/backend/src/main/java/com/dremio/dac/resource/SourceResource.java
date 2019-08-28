@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,7 +76,6 @@ import com.dremio.service.namespace.file.FileFormat;
 import com.dremio.service.namespace.physicaldataset.proto.PhysicalDatasetConfig;
 import com.dremio.service.namespace.source.proto.SourceConfig;
 import com.dremio.service.reflection.ReflectionService;
-import com.dremio.service.reflection.proto.ReflectionGoal;
 
 /**
  * Rest resource for sources.
@@ -89,7 +88,7 @@ public class SourceResource {
 //  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(SourceResource.class);
 
   private final QueryExecutor executor;
-  private final Provider<NamespaceService> namespaceService;
+  private final NamespaceService namespaceService;
   private final Provider<ReflectionService> reflectionService;
   private final SourceService sourceService;
   private final SourceName sourceName;
@@ -103,7 +102,7 @@ public class SourceResource {
 
   @Inject
   public SourceResource(
-      Provider<NamespaceService> namespaceService,
+      NamespaceService namespaceService,
       Provider<ReflectionService> reflectionService,
       SourceService sourceService,
       @PathParam("sourceName") SourceName sourceName,
@@ -138,13 +137,14 @@ public class SourceResource {
   public SourceUI getSource(@QueryParam("includeContents") @DefaultValue("true") boolean includeContents)
       throws Exception {
     try {
-      final SourceConfig config = namespaceService.get().getSource(sourcePath.toNamespaceKey());
+      final SourceConfig config = namespaceService.getSource(sourcePath.toNamespaceKey());
       final SourceState sourceState = sourceService.getSourceState(sourcePath.getSourceName().getName());
       if (sourceState == null) {
         throw new SourceNotFoundException(sourcePath.getSourceName().getName());
       }
 
-      final BoundedDatasetCount datasetCount = namespaceService.get().getDatasetCount(new NamespaceKey(config.getName()), BoundedDatasetCount.SEARCH_TIME_LIMIT_MS, BoundedDatasetCount.COUNT_LIMIT_TO_STOP_SEARCH);
+      final BoundedDatasetCount datasetCount = namespaceService.getDatasetCount(new NamespaceKey(config.getName()),
+          BoundedDatasetCount.SEARCH_TIME_LIMIT_MS, BoundedDatasetCount.COUNT_LIMIT_TO_STOP_SEARCH);
       final SourceUI source = newSource(config)
           .setNumberOfDatasets(datasetCount.getCount());
       source.setDatasetCountBounded(datasetCount.isCountBound() || datasetCount.isTimeBound());
@@ -158,7 +158,7 @@ public class SourceResource {
       }
       if (includeContents) {
         source.setContents(sourceService.listSource(sourcePath.getSourceName(),
-          namespaceService.get().getSource(sourcePath.toNamespaceKey()), securityContext.getUserPrincipal().getName()));
+          namespaceService.getSource(sourcePath.toNamespaceKey()), securityContext.getUserPrincipal().getName()));
       }
       return source;
     } catch (NamespaceNotFoundException nfe) {
@@ -169,14 +169,14 @@ public class SourceResource {
   @RolesAllowed("admin")
   @DELETE
   @Produces(MediaType.APPLICATION_JSON)
-  public void deleteSource(@QueryParam("version") Long version) throws NamespaceException, SourceNotFoundException {
+  public void deleteSource(@QueryParam("version") String version) throws NamespaceException, SourceNotFoundException {
     if (version == null) {
       throw new ClientErrorException("missing version parameter");
     }
     try {
-      SourceConfig config = namespaceService.get().getSource(new SourcePath(sourceName).toNamespaceKey());
-      if(!Objects.equals(config.getVersion(), version)) {
-        throw new ConcurrentModificationException(String.format("Unable to delete source, expected version %s, received version %s.", config.getVersion(), version));
+      SourceConfig config = namespaceService.getSource(new SourcePath(sourceName).toNamespaceKey());
+      if(!Objects.equals(config.getTag(), version)) {
+        throw new ConcurrentModificationException(String.format("Unable to delete source, expected version %s, received version %s.", config.getTag(), version));
       }
       catalog.deleteSource(config);
     } catch (NamespaceNotFoundException nfe) {
@@ -258,7 +258,7 @@ public class SourceResource {
     try {
       final PhysicalDatasetConfig physicalDatasetConfig = sourceService.getFilesystemPhysicalDataset(sourceName, filePath);
       fileFormat = FileFormat.getForFile(physicalDatasetConfig.getFormatSettings());
-      fileFormat.setVersion(physicalDatasetConfig.getVersion());
+      fileFormat.setVersion(physicalDatasetConfig.getTag());
     } catch (PhysicalDatasetNotFoundException nfe) {
       fileFormat = sourceService.getDefaultFileFormat(sourceName, filePath);
     }
@@ -279,11 +279,11 @@ public class SourceResource {
     PhysicalDatasetConfig physicalDatasetConfig = new PhysicalDatasetConfig();
     physicalDatasetConfig.setName(filePath.getFileName().getName());
     physicalDatasetConfig.setFormatSettings(fileFormat.asFileConfig());
-    physicalDatasetConfig.setVersion(fileFormat.getVersion());
+    physicalDatasetConfig.setTag(fileFormat.getVersion());
     physicalDatasetConfig.setType(DatasetType.PHYSICAL_DATASET_SOURCE_FILE);
     physicalDatasetConfig.setFullPathList(filePath.toPathList());
     sourceService.createPhysicalDataset(filePath, physicalDatasetConfig);
-    fileFormat.setVersion(physicalDatasetConfig.getVersion());
+    fileFormat.setVersion(physicalDatasetConfig.getTag());
     return new FileFormatUI(fileFormat, filePath);
   }
 
@@ -317,15 +317,10 @@ public class SourceResource {
   @DELETE
   @Path("/file_format/{path: .*}")
   public void deleteFileFormat(@PathParam("path") String path,
-                               @QueryParam("version") Long version) throws PhysicalDatasetNotFoundException {
+                               @QueryParam("version") String version) throws PhysicalDatasetNotFoundException {
     SourceFilePath filePath = SourceFilePath.fromURLPath(sourceName, path);
     if (version == null) {
       throw new ClientErrorException("missing version parameter");
-    }
-
-    Iterable<ReflectionGoal> reflections = reflectionService.get().getReflectionsByDatasetPath(new NamespaceKey(filePath.toPathList()));
-    for (ReflectionGoal reflection : reflections) {
-      reflectionService.get().remove(reflection);
     }
 
     sourceService.deletePhysicalDataset(sourceName, new PhysicalDatasetPath(filePath), version);
@@ -349,7 +344,7 @@ public class SourceResource {
     try {
       final PhysicalDatasetConfig physicalDatasetConfig = sourceService.getFilesystemPhysicalDataset(sourceName, folderPath);
       fileFormat = FileFormat.getForFolder(physicalDatasetConfig.getFormatSettings());
-      fileFormat.setVersion(physicalDatasetConfig.getVersion());
+      fileFormat.setVersion(physicalDatasetConfig.getTag());
     } catch (PhysicalDatasetNotFoundException nfe) {
       fileFormat = sourceService.getDefaultFileFormat(sourceName, folderPath, securityContext.getUserPrincipal().getName());
     }
@@ -371,9 +366,9 @@ public class SourceResource {
     physicalDatasetConfig.setFormatSettings(fileFormat.asFileConfig());
     physicalDatasetConfig.setType(DatasetType.PHYSICAL_DATASET_SOURCE_FOLDER);
     physicalDatasetConfig.setFullPathList(folderPath.toPathList());
-    physicalDatasetConfig.setVersion(fileFormat.getVersion());
+    physicalDatasetConfig.setTag(fileFormat.getVersion());
     sourceService.createPhysicalDataset(folderPath, physicalDatasetConfig);
-    fileFormat.setVersion(physicalDatasetConfig.getVersion());
+    fileFormat.setVersion(physicalDatasetConfig.getTag());
     return new FileFormatUI(fileFormat, folderPath);
   }
 
@@ -381,17 +376,12 @@ public class SourceResource {
   @Path("/folder_format/{path: .*}")
   @Produces(MediaType.APPLICATION_JSON)
   public void deleteFolderFormat(@PathParam("path") String path,
-                                 @QueryParam("version") Long version) throws PhysicalDatasetNotFoundException {
+                                 @QueryParam("version") String version) throws PhysicalDatasetNotFoundException {
     if (version == null) {
       throw new ClientErrorException("missing version parameter");
     }
 
     SourceFolderPath folderPath = SourceFolderPath.fromURLPath(sourceName, path);
-    Iterable<ReflectionGoal> reflections = reflectionService.get().getReflectionsByDatasetPath(new NamespaceKey(folderPath.toPathList()));
-    for (ReflectionGoal reflection : reflections) {
-      reflectionService.get().remove(reflection);
-    }
-
     sourceService.deletePhysicalDataset(sourceName, new PhysicalDatasetPath(folderPath), version);
   }
 
@@ -399,27 +389,33 @@ public class SourceResource {
   @Path("new_untitled_from_file/{path: .*}")
   @Produces(MediaType.APPLICATION_JSON)
   @Consumes(MediaType.APPLICATION_JSON)
-  public InitialPreviewResponse createUntitledFromSourceFile(@PathParam("path") String path)
+  public InitialPreviewResponse createUntitledFromSourceFile(
+      @PathParam("path") String path,
+      @QueryParam("limit") Integer limit)
     throws DatasetNotFoundException, DatasetVersionNotFoundException, NamespaceException, NewDatasetQueryException {
-    return datasetsResource.createUntitledFromSourceFile(sourceName, path);
+    return datasetsResource.createUntitledFromSourceFile(sourceName, path, limit);
   }
 
   @POST
   @Path("new_untitled_from_folder/{path: .*}")
   @Produces(MediaType.APPLICATION_JSON)
   @Consumes(MediaType.APPLICATION_JSON)
-  public InitialPreviewResponse createUntitledFromSourceFolder(@PathParam("path") String path)
+  public InitialPreviewResponse createUntitledFromSourceFolder(
+      @PathParam("path") String path,
+      @QueryParam("limit") Integer limit)
     throws DatasetNotFoundException, DatasetVersionNotFoundException, NamespaceException, NewDatasetQueryException {
-    return datasetsResource.createUntitledFromSourceFolder(sourceName, path);
+    return datasetsResource.createUntitledFromSourceFolder(sourceName, path, limit);
   }
 
   @POST
   @Path("new_untitled_from_physical_dataset/{path: .*}")
   @Produces(MediaType.APPLICATION_JSON)
   @Consumes(MediaType.APPLICATION_JSON)
-  public InitialPreviewResponse createUntitledFromPhysicalDataset(@PathParam("path") String path)
+  public InitialPreviewResponse createUntitledFromPhysicalDataset(
+      @PathParam("path") String path,
+      @QueryParam("limit") Integer limit)
     throws DatasetNotFoundException, DatasetVersionNotFoundException, NamespaceException, NewDatasetQueryException {
-    return datasetsResource.createUntitledFromPhysicalDataset(sourceName, path);
+    return datasetsResource.createUntitledFromPhysicalDataset(sourceName, path, limit);
   }
 
 }

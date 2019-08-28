@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,43 +13,43 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { Component } from 'react';
+import { PureComponent, Fragment } from 'react';
 import { connect } from 'react-redux';
 import moment from 'moment';
-import { Link } from 'react-router';
-import pureRender from 'pure-render-decorator';
 import PropTypes from 'prop-types';
 import Radium from 'radium';
 import { injectIntl } from 'react-intl';
 
-import AllSpacesViewMixin from 'dyn-load/pages/HomePage/subpages/AllSpaces/AllSpacesViewMixin';
-import { removeSpace } from 'actions/resources/spaces';
-import { showConfirmationDialog } from 'actions/confirmation';
+import EntityLink from '@app/pages/HomePage/components/EntityLink';
+import SpacesLoader from '@app/pages/HomePage/components/SpacesLoader';
+import { RestrictedArea } from '@app/components/Auth/RestrictedArea';
+import { manageSpaceRule } from '@app/utils/authUtils';
+import { EntityIcon } from '@app/pages/HomePage/components/EntityIcon';
+import { EntityName } from '@app/pages/HomePage/components/EntityName';
 
 import * as allSpacesAndAllSources from 'uiTheme/radium/allSpacesAndAllSources';
 
-import EllipsedText from 'components/EllipsedText';
+import { getSpaces, getNameFromRootEntity } from 'selectors/home';
 
 import LinkButton from 'components/Buttons/LinkButton';
 import ResourcePin from 'components/ResourcePin';
-import { AllSpacesMenu } from 'components/Menus/HomePage/AllSpacesMenu';
-import FontIcon from 'components/Icon/FontIcon';
+import AllSpacesMenu from 'components/Menus/HomePage/AllSpacesMenu';
+
 import SettingsBtn from 'components/Buttons/SettingsBtn';
 import { SortDirection } from 'components/VirtualizedTableViewer';
 
 import BrowseTable from '../../components/BrowseTable';
 import { tableStyles } from '../../tableStyles';
 
+const mapStateToProps = (state) => ({
+  spaces: getSpaces(state)
+});
+
 @Radium
-@pureRender
 @injectIntl
-@AllSpacesViewMixin
-export class AllSpacesView extends Component {
+export class AllSpacesView extends PureComponent {
   static propTypes = {
     spaces: PropTypes.object,
-    removeSpace: PropTypes.func,
-    toggleActivePin: PropTypes.func.isRequired,
-    showConfirmationDialog: PropTypes.func,
     intl: PropTypes.object.isRequired
   };
 
@@ -60,33 +60,30 @@ export class AllSpacesView extends Component {
   getTableData = () => {
     const [ name, created, action ] = this.getTableColumns();
     return this.props.spaces.toList().sort((a, b) => b.get('isActivePin') - a.get('isActivePin')).map((item) => {
-      const icon = <FontIcon type={item.get('iconClass')}/>;
+      const entityId = item.get('id');
+      const itemName = getNameFromRootEntity(item);
       return {
-        rowClassName: item.get('name'),
+        rowClassName: itemName,
         data: {
           [name.key]: {
             node: () => (
               <div style={allSpacesAndAllSources.listItem}>
-                {icon}
-                <Link style={allSpacesAndAllSources.link} to={item.getIn(['links', 'self'])}>
-                  <EllipsedText text={item.get('name')} />
-                </Link>
-                <ResourcePin
-                  name={item.get('name')}
-                  isActivePin={item.get('isActivePin') || false}
-                  toggleActivePin={this.props.toggleActivePin}
-                />
+                <EntityIcon entityId={entityId} />
+                <EntityLink entityId={entityId}>
+                  <EntityName entityId={entityId} />
+                </EntityLink>
+                <ResourcePin entityId={entityId} />
               </div>
             ),
             value(sortDirection = null) { // todo: DRY
-              if (!sortDirection) return item.get('name');
+              if (!sortDirection) return itemName;
               const activePrefix = sortDirection === SortDirection.ASC ? 'a' : 'z';
               const inactivePrefix = sortDirection === SortDirection.ASC ? 'z' : 'a';
-              return (item.get('isActivePin') ? activePrefix : inactivePrefix) + item.get('name');
+              return (item.get('isActivePin') ? activePrefix : inactivePrefix) + itemName;
             }
           },
           [created.key]: {
-            node: () => moment(item.get('ctime')).format('MM/DD/YYYY'),
+            node: () => (item.get('ctime')) ? moment(item.get('ctime')).format('MM/DD/YYYY') : '—',
             value: new Date(item.get('ctime'))
           },
           [action.key]: {
@@ -94,8 +91,8 @@ export class AllSpacesView extends Component {
               <span className='action-wrap'>
                 <SettingsBtn
                   routeParams={this.context.location.query}
-                  menu={<AllSpacesMenu space={item} removeSpace={this.removeSpace}/>}
-                  dataQa={item.get('name')}
+                  menu={<AllSpacesMenu spaceId={item.get('id')}/>}
+                  dataQa={itemName}
                 />
               </span>
             )
@@ -120,42 +117,30 @@ export class AllSpacesView extends Component {
     ];
   }
 
-  removeSpace = (spaceToRemove) => {
-    const { intl } = this.props;
-    this.props.showConfirmationDialog({
-      text: intl.formatMessage({id: 'Space.WantToRemoveSpace'}),
-      title: intl.formatMessage({id: 'Space.RemoveSpace'}),
-      confirmText: intl.formatMessage({id: 'Common.Remove'}),
-      confirm: () => this.props.removeSpace(spaceToRemove)
-    });
-  }
-
-  renderAddButton() {
-    return (
-      <LinkButton
-        buttonStyle='primary'
-        to={{ ...this.context.location, state: { modal: 'SpaceModal' }}}
-        style={allSpacesAndAllSources.addButton}>
-        {this.props.intl.formatMessage({ id: 'Space.AddSpace' })}
-      </LinkButton>
-    );
-  }
-
   render() {
     const { spaces, intl } = this.props;
     const numberOfSpaces = spaces ? spaces.size : 0;
     return (
-      <BrowseTable
-        title={`${intl.formatMessage({ id: 'Space.AllSpaces' })} (${numberOfSpaces})`}
-        buttons={this.renderAddButton()}
-        tableData={this.getTableData()}
-        columns={this.getTableColumns()}
-      />
+      <Fragment>
+        <SpacesLoader />
+        <BrowseTable
+          title={`${intl.formatMessage({ id: 'Space.AllSpaces' })} (${numberOfSpaces})`}
+          buttons={
+            <RestrictedArea rule={manageSpaceRule}>
+              <LinkButton
+                buttonStyle='primary'
+                to={{ ...this.context.location, state: { modal: 'SpaceModal' }}}
+                style={allSpacesAndAllSources.addButton}>
+                {this.props.intl.formatMessage({ id: 'Space.AddSpace' })}
+              </LinkButton>
+            </RestrictedArea>
+          }
+          tableData={this.getTableData()}
+          columns={this.getTableColumns()}
+        />
+      </Fragment>
     );
   }
 }
 
-export default connect(null, {
-  removeSpace,
-  showConfirmationDialog
-})(AllSpacesView);
+export default connect(mapStateToProps)(AllSpacesView);

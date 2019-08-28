@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ public class EmptyValuesCreator implements ProducerOperator.Creator<EmptyValues>
 
   @Override
   public ProducerOperator create(FragmentExecutionContext fec, OperatorContext context, EmptyValues config) throws ExecutionSetupException {
-    return new ScanOperator(fec.getSchemaUpdater(), config, context, Iterators.<RecordReader>singletonIterator(new EmptyRecordReader(context)));
+    return new ScanOperator(config, context, Iterators.<RecordReader>singletonIterator(new EmptyRecordReader(context)));
   }
 
   public static class EmptyRecordReader extends AbstractRecordReader {

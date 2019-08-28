@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,12 +43,13 @@ export class SpaceForm extends Component {
     const description = intl.formatMessage({ id: 'Space.AddSpaceModalDescription' });
     return (
       <ModalForm {...modalFormProps(this.props)} onSubmit={handleSubmit(onFormSubmit)}>
-        <FormBody style={{padding: '20px 5px 20px 15px'}}>
+        <FormBody style={{padding: '20px 15px'}}>
           <General
             showAccelerationSection={false}
             fields={fields}
             editing={editing}
-            sectionDescription={description}/>
+            sectionDescription={description}
+          />
         </FormBody>
       </ModalForm>
     );

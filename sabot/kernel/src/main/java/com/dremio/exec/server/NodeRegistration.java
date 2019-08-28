@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import com.dremio.exec.work.protector.ForemenWorkManager;
 import com.dremio.sabot.exec.FragmentWorkManager;
 import com.dremio.service.Service;
 import com.dremio.service.coordinator.ClusterCoordinator;
-import com.dremio.service.coordinator.ServiceSet.RegistrationHandle;
+import com.dremio.service.coordinator.RegistrationHandle;
 
 /**
  * Register node to cluster.

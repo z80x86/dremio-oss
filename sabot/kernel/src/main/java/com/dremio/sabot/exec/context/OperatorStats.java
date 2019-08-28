@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,8 +31,9 @@ import com.dremio.exec.ops.OperatorMetricRegistry;
 import com.dremio.exec.proto.UserBitShared.CoreOperatorType;
 import com.dremio.exec.proto.UserBitShared.MetricValue;
 import com.dremio.exec.proto.UserBitShared.OperatorProfile;
-import com.dremio.exec.proto.UserBitShared.StreamProfile;
 import com.dremio.exec.proto.UserBitShared.OperatorProfile.Builder;
+import com.dremio.exec.proto.UserBitShared.OperatorProfileDetails;
+import com.dremio.exec.proto.UserBitShared.StreamProfile;
 
 import de.vandermeer.asciitable.v2.V2_AsciiTable;
 import de.vandermeer.asciitable.v2.render.V2_AsciiTableRenderer;
@@ -67,8 +68,23 @@ public class OperatorStats {
   private long[] stateNanos = new long[State.Size];
   private long[] stateMark = new long[State.Size];
 
-  private long schemas;
   private int inputCount;
+
+  // misc operator details that are saved in the profile.
+  private OperatorProfileDetails profileDetails;
+
+  // Need this wrapper so that the caller don't have to handle exception from close().
+  public interface WaitRecorder extends AutoCloseable {
+    @Override
+    void close();
+  }
+
+  // No-op implementation of WaitRecorder.
+  static final WaitRecorder NO_OP_RECORDER = () -> {};
+
+  // Recorder that does a stopWait() on close. This can be used in try-with-resources context.
+  // Note that the close for this not idempotent.
+  private WaitRecorder recorder = () -> { stopWait(); };
 
   public OperatorStats(OpProfileDef def, BufferAllocator allocator){
     this(def.getOperatorId(), def.getOperatorType(), def.getIncomingCount(), allocator);
@@ -202,6 +218,21 @@ public class OperatorStats {
     savedState = State.NONE;
   }
 
+  /*
+   * starts wait only if it's not already in the wait mode.
+   *
+   * Returns true if this call started the wait mode. In that case, the caller should do a
+   * stopWait() too.
+   */
+  public boolean checkAndStartWait() {
+    if (currentState == State.WAIT) {
+      return false;
+    } else {
+      startWait();
+      return true;
+    }
+  }
+
   public void batchReceived(int inputIndex, long records, long size) {
     recordsReceivedByInput[inputIndex] += records;
     batchesReceivedByInput[inputIndex]++;
@@ -209,6 +240,10 @@ public class OperatorStats {
   }
 
   public OperatorProfile getProfile() {
+    return getProfile(false);
+  }
+
+  public OperatorProfile getProfile(boolean withDetails) {
     final OperatorProfile.Builder b = OperatorProfile //
         .newBuilder() //
         .setOperatorType(operatorType) //
@@ -217,14 +252,13 @@ public class OperatorStats {
         .setProcessNanos(getProcessingNanos())
         .setWaitNanos(getWaitNanos());
 
-    if(allocator != null){
+    if (allocator != null) {
       b.setPeakLocalMemoryAllocated(allocator.getPeakMemoryAllocation());
     }
-
-
-
+    if (withDetails && (profileDetails != null)) {
+      b.setDetails(profileDetails);
+    }
     addAllMetrics(b);
-
     return b.build();
   }
 
@@ -331,6 +365,10 @@ public class OperatorStats {
     this.stateNanos[State.WAIT.ordinal()] += waitNanosOffset;
   }
 
+  public void setProfileDetails(OperatorProfileDetails details) {
+    this.profileDetails = details;
+  }
+
   @Override
   public String toString(){
     String[] names = OperatorMetricRegistry.getMetricNames(operatorType);
@@ -378,6 +416,17 @@ public class OperatorStats {
     sb.append("\n");
 
     return sb.toString();
+  }
+
+
+
+  public static WaitRecorder getWaitRecorder(OperatorStats operatorStats) {
+    if (operatorStats == null || !operatorStats.checkAndStartWait()) {
+      // If the operatorStats is missing, or if already in wait recording mode, return NO_OP.
+      return NO_OP_RECORDER;
+    } else {
+      return operatorStats.recorder;
+    }
   }
 
 }

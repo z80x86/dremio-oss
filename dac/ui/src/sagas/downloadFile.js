@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,7 @@ import FileUtils from 'utils/FileUtils';
 const DOWNLOAD_FILE = 'DOWNLOAD_FILE';
 
 export default function* download() {
-  yield [
-    takeEvery(DOWNLOAD_FILE, handleDownloadFile)
-  ];
+  yield takeEvery(DOWNLOAD_FILE, handleDownloadFile);
 }
 
 export function* handleDownloadFile(action) {

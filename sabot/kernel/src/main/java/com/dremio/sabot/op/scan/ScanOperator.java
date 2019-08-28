@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.dremio.sabot.op.scan;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import java.io.FileNotFoundException;
 import java.security.PrivilegedExceptionAction;
 import java.util.Collection;
 import java.util.Iterator;
@@ -27,16 +28,21 @@ import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.vector.AllocationHelper;
 import org.apache.arrow.vector.SchemaChangeCallBack;
 import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.util.CallBack;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.AutoCloseables.RollbackCloseable;
+import com.dremio.common.exceptions.ErrorHelper;
+import com.dremio.common.exceptions.InvalidMetadataErrorContext;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.exec.exception.SchemaChangeException;
+import com.dremio.exec.exception.SchemaChangeExceptionContext;
 import com.dremio.exec.expr.TypeHelper;
 import com.dremio.exec.physical.base.SubScan;
 import com.dremio.exec.record.BatchSchema;
@@ -49,7 +55,6 @@ import com.dremio.exec.testing.ControlsInjector;
 import com.dremio.exec.testing.ControlsInjectorFactory;
 import com.dremio.exec.util.ImpersonationUtil;
 import com.dremio.exec.util.VectorUtil;
-import com.dremio.sabot.driver.SchemaChangeListener;
 import com.dremio.sabot.exec.context.MetricDef;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.exec.context.OperatorStats;
@@ -69,7 +74,7 @@ import io.netty.buffer.ArrowBuf;
  * Record batch used for a particular scan. Operators against one or more
  */
 public class ScanOperator implements ProducerOperator {
-  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ScanOperator.class);
+  private static final Logger logger = LoggerFactory.getLogger(ScanOperator.class);
   private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(ScanOperator.class);
 
   /** Main collection of fields' value vectors. */
@@ -87,7 +92,16 @@ public class ScanOperator implements ProducerOperator {
     FILTER_MS,
     PARQUET_EXEC_PATH, // type of readers (vectorized, non-vectorized or combination used) in parquet
     FILTER_EXISTS, // Is there a filter pushed into scan?
-    PARQUET_BYTES_READ // Represents total number of actual bytes (uncompressed) read while parquet scan.
+    PARQUET_BYTES_READ, // Represents total number of actual bytes (uncompressed) read while parquet scan.
+    NUM_ASYNC_STREAMS,  // Represents number of async streams created
+    NUM_ASYNC_READS,    // Total number of async read requests made
+    NUM_ASYNC_BYTES_READ, // Total number of bytes read
+    NUM_EXTENDING_READS, // Total number of extending chunks
+    EXTENDING_READ_BYTES, // Size of the extending chunks.
+    TOTAL_BYTES_READ,     // Total bytes read
+    LOCAL_BYTES_READ,     // Total number of local bytes read using local I/O
+    SHORT_CIRCUIT_BYTES_READ, // Total number of bytes read using short circuit reads
+    PRELOADED_BYTES           // Number of bytes pre-loaded
     ;
 
     @Override
@@ -98,7 +112,7 @@ public class ScanOperator implements ProducerOperator {
 
   /** Fields' value vectors indexed by fields' keys. */
   private final Map<String, ValueVector> fieldVectorMap = Maps.newHashMap();
-  private ProducerOperator.State state = State.NEEDS_SETUP;
+  private State state = State.NEEDS_SETUP;
   private final OperatorContext context;
   private Iterator<RecordReader> readers;
   private RecordReader currentReader;
@@ -107,17 +121,21 @@ public class ScanOperator implements ProducerOperator {
   private final BatchSchema schema;
   private final ImmutableList<SchemaPath> selectedColumns;
   private final UserGroupInformation readerUGI;
-  private final SchemaChangeListener schemaUpdater;
   private final List<String> tableSchemaPath;
   private final SubScan config;
   private final GlobalDictionaries globalDictionaries;
   private final Stopwatch readTime = Stopwatch.createUnstarted();
 
-  public ScanOperator(SchemaChangeListener schemaUpdater, SubScan config, OperatorContext context, Iterator<RecordReader> readers) {
-    this(schemaUpdater, config, context, readers, null);
+  public ScanOperator(SubScan config, OperatorContext context, Iterator<RecordReader> readers) {
+    this(config, context, readers, null, ImpersonationUtil.getProcessUserUGI());
   }
 
-  public ScanOperator(SchemaChangeListener schemaUpdater, SubScan config, OperatorContext context, Iterator<RecordReader> readers, GlobalDictionaries globalDictionaries) {
+  public ScanOperator(SubScan config, OperatorContext context, Iterator<RecordReader> readers, UserGroupInformation readerUGI) {
+    this(config, context, readers, null, readerUGI);
+  }
+
+  public ScanOperator(SubScan config, OperatorContext context,
+                      Iterator<RecordReader> readers, GlobalDictionaries globalDictionaries, UserGroupInformation readerUGI) {
     if (!readers.hasNext()) {
       this.readers = ImmutableList.<RecordReader>of(new EmptyRecordReader(context)).iterator();
     } else {
@@ -125,14 +143,15 @@ public class ScanOperator implements ProducerOperator {
     }
     this.context = context;
     this.config = config;
-    this.schema = config.getSchema();
+    this.schema = config.getFullSchema();
     // Arbitrarily take the first element of the referenced tables list.
     // Currently, the only way to have multiple entries in the referenced table list is to write a
     // Join across multiple JDBC tables. This scenario doesn't use checkAndLearnSchema(). If a schema
     // change happens there, it gets corrected in the Foreman (when an InvalidMetadataError is thrown).
     this.tableSchemaPath = Iterables.getFirst(config.getReferencedTables(), null);
     this.selectedColumns = config.getColumns() == null ? null : ImmutableList.copyOf(config.getColumns());
-    this.schemaUpdater = schemaUpdater;
+
+    this.readerUGI = Preconditions.checkNotNull(readerUGI, "The reader UserGroupInformation is missing.");
 
     final OperatorStats stats = context.getStats();
     try {
@@ -146,8 +165,6 @@ public class ScanOperator implements ProducerOperator {
 
     this.outgoing = context.createOutputVectorContainer();
 
-    final String readerUserName = StringUtils.isEmpty(config.getUserName()) ? ImpersonationUtil.getProcessUserName() : config.getUserName();
-    this.readerUGI = ImpersonationUtil.createProxyUgi(readerUserName);
     this.globalDictionaries = globalDictionaries;
 
     this.mutator = new ScanMutator(outgoing, fieldVectorMap, context, callBack);
@@ -178,6 +195,25 @@ public class ScanOperator implements ProducerOperator {
       checkAndLearnSchema();
       Preconditions.checkArgument(initialSchema.equals(outgoing.getSchema()), "Schema changed but not detected.");
       commit.commit();
+    } catch (Exception e) {
+      if (ErrorHelper.findWrappedCause(e, FileNotFoundException.class) != null) {
+        if (e instanceof UserException) {
+          throw UserException.invalidMetadataError(e.getCause())
+              .addContext(((UserException)e).getOriginalMessage())
+              .setAdditionalExceptionContext(
+                  new InvalidMetadataErrorContext(
+                      ImmutableList.copyOf(config.getReferencedTables())))
+              .build(logger);
+        } else {
+          throw UserException.invalidMetadataError(e)
+            .setAdditionalExceptionContext(
+              new InvalidMetadataErrorContext(
+                ImmutableList.copyOf(config.getReferencedTables())))
+            .build(logger);
+        }
+      } else {
+        throw e;
+      }
     }
   }
 
@@ -216,7 +252,7 @@ public class ScanOperator implements ProducerOperator {
         // no need to close the reader (will be done when closing the operator)
         // but we might as well release any memory that we're holding.
         outgoing.zeroVectors();
-        state = ProducerOperator.State.DONE;
+        state = State.DONE;
         outgoing.setRecordCount(0);
         stats.batchReceived(0, 0, 0);
         return 0;
@@ -249,22 +285,13 @@ public class ScanOperator implements ProducerOperator {
       outgoing.buildSchema(SelectionVectorMode.NONE);
       final BatchSchema newSchema = mutator.transformFunction.apply(outgoing.getSchema());
       if (config.mayLearnSchema() && tableSchemaPath != null) {
-        try {
-          schemaUpdater.observedSchemaChange(tableSchemaPath, config.getSchema(), newSchema, currentReader.getSchemaChangeMutator());
-        } catch(Exception ex){
-          throw UserException.schemaChangeError(ex)
-            .addContext("Original schema", config.getSchema())
-            .addContext("New schema", newSchema)
-            .message("Schema change detected but unable to learn schema, query failed. A full table scan may be necessary to fully learn the schema.")
-            .build(logger);
-        }
         throw UserException.schemaChangeError()
-          .addContext("Original Schema", config.getSchema().toString())
-          .addContext("New Schema", newSchema.toString())
-          .message("New schema found and recorded. Please reattempt the query. Multiple attempts may be necessary to fully learn the schema.").build(logger);
+            .message("New schema found. Please reattempt the query. Multiple attempts may be necessary to fully learn the schema.")
+            .setAdditionalExceptionContext(new SchemaChangeExceptionContext(tableSchemaPath, newSchema))
+            .build(logger);
       } else {
         // TODO: change error if we can't update. No reason to re-run if we didn't update.
-        throw UserException.schemaChangeError().message("Schema change detected but unable to learn schema, query failed. Original: %s, New: %s.", config.getSchema(), newSchema).build(logger);
+        throw UserException.schemaChangeError().message("Schema change detected but unable to learn schema, query failed. Original: %s, New: %s.", config.getFullSchema(), newSchema).build(logger);
       }
     }
   }
@@ -294,7 +321,7 @@ public class ScanOperator implements ProducerOperator {
                                               Class<T> clazz) throws SchemaChangeException {
       // Check if the field exists.
       final ValueVector v = fieldVectorMap.get(field.getName().toLowerCase());
-      if (v == null || !clazz.isAssignableFrom(v.getClass())) {
+      if (v == null || !clazz.isAssignableFrom(v.getClass()) || checkIfDecimalsTypesAreDifferent(v, field)) {
         // Field does not exist--add it to the map and the output container.
         ValueVector newVector = TypeHelper.getNewVector(field, context.getAllocator(), callBack);
         if (!clazz.isAssignableFrom(newVector.getClass())) {
@@ -316,6 +343,13 @@ public class ScanOperator implements ProducerOperator {
       }
 
       return clazz.cast(v);
+    }
+
+    private <T extends ValueVector> boolean checkIfDecimalsTypesAreDifferent(ValueVector v, Field field) {
+      if (field.getType().getTypeID() != ArrowType.ArrowTypeID.Decimal) {
+        return false;
+      }
+      return !v.getField().getType().equals(field.getType());
     }
 
     @Override
@@ -353,7 +387,7 @@ public class ScanOperator implements ProducerOperator {
 
   @Override
   public void close() throws Exception {
-    AutoCloseables.close(outgoing, currentReader, globalDictionaries);
+    AutoCloseables.close(outgoing, currentReader, globalDictionaries, readers instanceof AutoCloseable ? (AutoCloseable) readers : null);
   }
 
 }

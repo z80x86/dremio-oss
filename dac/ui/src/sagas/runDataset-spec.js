@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,19 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { put, call, select } from 'redux-saga/effects';
-import socket from 'utils/socket';
+import { put, call, select, take, race } from 'redux-saga/effects';
+import socket, { WS_CONNECTION_OPEN } from 'utils/socket';
+import { testWithHooks } from 'testUtil';
 import Immutable from 'immutable';
 
-import { updateViewState } from 'actions/resources';
 import { updateHistoryWithJobState } from 'actions/explore/history';
-import { addNotification } from 'actions/notification';
+import { LOGOUT_USER_SUCCESS } from '@app/actions/account';
+import { getTableDataRaw } from '@app/selectors/explore';
 
 import {
   waitForRunToComplete,
   handleResumeRunDataset,
-  getLocation,
-  getEntities
+  DataLoadError
 } from './runDataset';
 
 describe('runDataset saga', () => {
@@ -39,92 +39,108 @@ describe('runDataset saga', () => {
   const paginationUrl = 'pagination';
   const datasetVersion = '123';
 
-  const successPayload = Immutable.fromJS({
-    result: datasetVersion,
-    entities: {
-      fullDataset: {
-        [datasetVersion]: {
-          jobId: {
-            id: jobId
-          },
-          paginationUrl
-        }
-      },
-      datasetUI: {
-        [datasetVersion]: {
-          datasetVersion
-        }
-      }
-    }
-  });
-
-  const fullDataset = successPayload.getIn(['entities', 'fullDataset', datasetVersion]);
-  const datasetUI = successPayload.getIn(['entities', 'datasetUI', datasetVersion]);
-
   describe('handleResumeRunDataset', () => {
-    let location;
     beforeEach(() => {
-      location = { query: { jobId }};
-      gen = handleResumeRunDataset({ datasetId: datasetVersion });
+      gen = handleResumeRunDataset(datasetVersion, jobId, false, paginationUrl);
     });
-    it('should waitForRunToComplete if tableData is empty and paginationUrl exists', () => {
+    const customTest = testWithHooks({
+      afterFn: () => {
+        // check that generator is done and not empty view state is returned
+        expect(next.done).to.be.true;
+      }
+    });
+    customTest('should waitForRunToComplete if tableData.rows is not presented', () => {
+      // get table data
       next = gen.next();
-      expect(next.value).to.eql(select(getEntities));
-      next = gen.next(successPayload.get('entities'));
-      expect(next.value).to.eql(select(getLocation));
-      next = gen.next(location);  // waitForRunToComplete
+      expect(next.value).to.eql(select(getTableDataRaw, datasetVersion));
+      next = gen.next(Immutable.fromJS({ rows: null }));
       expect(next.value).to.eql(call(
         waitForRunToComplete,
-        datasetUI,
-        fullDataset.get('paginationUrl'),
-        location.query.jobId
+        datasetVersion,
+        paginationUrl,
+        jobId
       ));
       next = gen.next();
-      expect(next.done).to.be.true;
     });
 
-    it('should not waitForRunToComplete if has data', () => {
+    customTest('should waitForRunToComplete if tableData.rows is presented, but data reload is forced', () => {
+      gen = handleResumeRunDataset(datasetVersion, jobId, true, paginationUrl);
+      // get table data
       next = gen.next();
-      next = gen.next(successPayload.get('entities').setIn(['tableData', datasetVersion, {data: []}]));
-      next = gen.next(location);
-      expect(next.done).to.be.true;
+      expect(next.value).to.eql(select(getTableDataRaw, datasetVersion));
+      next = gen.next(Immutable.fromJS({ rows: [] }));
+      expect(next.value).to.eql(call(
+        waitForRunToComplete,
+        datasetVersion,
+        paginationUrl,
+        jobId
+      ));
+      next = gen.next();
     });
 
-    it('should not waitForRunToComplete if no jobId in location', () => {
+    customTest('should not waitForRunToComplete if has rows', () => {
       next = gen.next();
-      next = gen.next(successPayload.get('entities'));
-      next = gen.next({...location, query: {}});
-      expect(next.done).to.be.true;
-    });
-
-    it('should not waitForRunToComplete if no paginationUrl', () => {
-      next = gen.next();
-      next = gen.next(successPayload.get('entities').deleteIn(['fullDataset', datasetVersion, 'paginationUrl']));
-      expect(next.value).to.eql(select(getLocation));
-      next = gen.next(location);
-      expect(next.done).to.be.true;
+      next = gen.next(Immutable.fromJS({ rows: [] }));
     });
   });
 
   describe('waitForRunToComplete', () => {
-    it('should succeed', () => {
+
+    const goToResponse = () => {
       gen = waitForRunToComplete(dataset, paginationUrl, jobId);
-      next = gen.next();
+      // wait for socket to be open
+      expect(gen.next().value).to.be.eql(race({
+        socketOpen: take(WS_CONNECTION_OPEN),
+        stop: take(LOGOUT_USER_SUCCESS)
+      }));
+      const socketOpenRaceResult = {
+        socketOpen: true
+      };
+      // register web socket listener
+      next = gen.next(socketOpenRaceResult);
       expect(next.value).to.eql(call([socket, socket.startListenToJobProgress], jobId, true));
-      next = gen.next();
-      expect(next.value).to.eql(put(updateViewState('run-' + jobId, {isInProgress: true})));
-      next = gen.next();
-      expect(next.value).to.eql(put(addNotification(Immutable.Map({code: 'WS_CLOSED'}), 'error')));
+      // race between jobCompletion listener and location change listener
       next = gen.next();
       expect(typeof next.value.RACE.jobDone).to.not.be.undefined;
       expect(typeof next.value.RACE.locationChange).to.not.be.undefined;
+      // initiate data loading
       next = gen.next({jobDone: {payload: {update: {state: true}}}});
       expect(next.value.PUT).to.not.be.undefined; // loadNextRows
-      gen.next(); // yield promise of loadNextRows
-      next = gen.next();
-      expect(next.value).to.eql(put(updateHistoryWithJobState(dataset, true)));
-      next = gen.next();
+      gen.next();
+    };
+    const checkFinallyBlock = (response) => {
+      // remove job listener
+      next = gen.next(response);
       expect(next.value).to.eql(call([socket, socket.stopListenToJobProgress], jobId));
+      next = gen.next();
+      expect(next.done).to.be.true;
+    };
+    it('should succeed', () => {
+      goToResponse();
+      // change history item status to completed
+      const resultViewState = { someProp: 'someProp' };
+      next = gen.next(resultViewState);
+      expect(next.value).to.eql(put(updateHistoryWithJobState(dataset, true)));
+      checkFinallyBlock();
+    });
+
+    it('should throw an exception if a response is empty or has an error', () => {
+      [null, { error: true }].map(response => {
+        goToResponse();
+        // throw an exceotion
+        expect(() => {
+          checkFinallyBlock(response);
+        }).to.throw(DataLoadError);
+      });
+    });
+  });
+
+  describe('DataLoadError', () => {
+    it('instanceof works for DataLoadError', () => {
+      //it is important that new DataLoadError() instanceof DataLoadError was true
+      // with babel that may not work if we try to inherit DataLoadError from Error class
+      expect(new DataLoadError() instanceof DataLoadError).to.be.true;
+
     });
   });
 });

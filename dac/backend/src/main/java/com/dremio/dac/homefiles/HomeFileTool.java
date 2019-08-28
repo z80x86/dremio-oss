@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ public class HomeFileTool {
     StoragePlugin plugin = catalog.getSource(HomeFileSystemStoragePlugin.HOME_PLUGIN_NAME);
     Preconditions.checkNotNull(plugin, "Plugin [%s] not found.", HomeFileSystemStoragePlugin.HOME_PLUGIN_NAME);
     HomeFileSystemStoragePlugin homePlugin = (HomeFileSystemStoragePlugin) plugin;
-    this.fs = homePlugin.getProcessFs();
+    this.fs = homePlugin.getSystemUserFS();
     this.config = homePlugin.getConfig();
     this.hostname = context.getDremioConfig().getThisNode();
   }

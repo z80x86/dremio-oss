@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,53 +33,6 @@ public class ErrorHelper {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ErrorHelper.class);
 
   private final static Pattern IGNORE = Pattern.compile("^(sun|com\\.sun|java).*");
-
-  private static final ObjectMapper additionalContextMapper = new ObjectMapper();
-
-  static {
-    // for backward compatibility
-    additionalContextMapper.enable(JsonGenerator.Feature.IGNORE_UNKNOWN);
-
-    // register subtypes
-    // TODO: use classpath scanning to register subtypes; that way impls can import classes without bringing
-    // dependencies to "common" module
-    additionalContextMapper.registerSubtypes(InvalidMetadataErrorContext.class);
-  }
-
-  /**
-   * Deserialize type specific additional context information.
-   *
-   * @param byteString serialized byte string
-   * @return additional exception context
-   */
-  public static AdditionalExceptionContext deserializeAdditionalContext(final ByteString byteString) {
-    try {
-      if (byteString == null || byteString.isEmpty()) {
-        return null;
-      }
-      return ProtobufByteStringSerDe.readValue(additionalContextMapper.readerFor(AdditionalExceptionContext.class),
-          byteString, ProtobufByteStringSerDe.Codec.NONE, logger);
-    } catch (IOException ignored) {
-      logger.debug("unable to deserialize additional exception context", ignored);
-      return null;
-    }
-  }
-
-  /**
-   * Serialize type specific additional context information.
-   *
-   * @param typeContext additional exception context
-   * @return serialized bytes
-   */
-  public static ByteString serializeAdditionalContext(final AdditionalExceptionContext typeContext) {
-    try {
-      return ProtobufByteStringSerDe.writeValue(additionalContextMapper, typeContext,
-          ProtobufByteStringSerDe.Codec.NONE);
-    } catch (JsonProcessingException ignored) {
-      logger.debug("unable to serialize additional exception context", ignored);
-      return null;
-    }
-  }
 
   /**
    * Constructs the root error message in the form [root exception class name]: [root exception message]

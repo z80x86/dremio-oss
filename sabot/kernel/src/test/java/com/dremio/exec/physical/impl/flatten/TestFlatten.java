@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import org.apache.arrow.vector.util.JsonStringHashMap;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -38,8 +39,8 @@ import com.dremio.TestBuilder;
 import com.dremio.common.util.FileUtils;
 import com.dremio.common.util.TestTools;
 import com.dremio.exec.fn.interp.TestConstantFolding;
-import com.dremio.exec.proto.UserBitShared.QueryType;
 import com.dremio.exec.proto.UserBitShared.DremioPBError.ErrorType;
+import com.dremio.exec.proto.UserBitShared.QueryType;
 import com.google.common.collect.Lists;
 
 public class TestFlatten extends PlanTestBase {
@@ -63,6 +64,12 @@ public class TestFlatten extends PlanTestBase {
   public static void setupTest() throws Exception {
     String query = "create table dfs_test.parquetTable as select * from cp.\"/jsoninput/input_for_parquet.json\"";
     test(query);
+  }
+
+  @Before
+  public void resetSession() throws Exception {
+    test("ALTER SESSION RESET ALL");
+    test("ALTER SESSION SET \"planner.experimental.tpf_logical\"= true");
   }
 
   @Test
@@ -538,8 +545,13 @@ public class TestFlatten extends PlanTestBase {
 
   }
 
+
   @Test // see DRILL-2146
+  @Ignore("DX-17846")
   public void testFlattenWithStar() throws Exception {
+    // Push down of filter does not work if pclean is not enabled
+    // May be solved later by fixing DX-11163
+    test("SET planner.experimental.pclean_logical=true");
     String root = FileUtils.getResourceAsFile("/store/text/sample.json").toURI().toString();
     String q1 = String.format("select *, flatten(j.topping) tt, flatten(j.batters.batter) bb, j.id " +
         "from dfs_test.\"%s\" j " +
@@ -593,7 +605,7 @@ public class TestFlatten extends PlanTestBase {
     String query = "select flatten(sub1.events) flat_events  from "+
       "(select t1.events events from cp.\"complex/json/flatten_join.json\" t1 "+
       "inner join cp.\"complex/json/flatten_join.json\" t2 on t1.id=t2.id) sub1";
-    testPlanSubstrPatterns(query, new String[] {"columns=[`id`, `events`]", "columns=[`id`]"}, null);
+    testPlanSubstrPatterns(query, new String[] {"columns=[`events`, `id`]", "columns=[`id`]"}, null);
     testBuilder()
       .sqlQuery(query)
       .unOrdered()
@@ -605,7 +617,7 @@ public class TestFlatten extends PlanTestBase {
   public void testFlattenAfterJoin2() throws Exception {
     String query = "select flatten(t1.events) flat_events from cp.\"complex/json/flatten_join.json\" t1 " +
       "inner join cp.\"complex/json/flatten_join.json\" t2 on t1.id=t2.id";
-    testPlanSubstrPatterns(query, new String[] {"columns=[`id`, `events`]", "columns=[`id`]"}, null);
+    testPlanSubstrPatterns(query, new String[] {"columns=[`events`, `id`]", "columns=[`id`]"}, null);
     testBuilder()
       .sqlQuery(query)
       .unOrdered()
@@ -619,7 +631,7 @@ public class TestFlatten extends PlanTestBase {
       "(select t1.lst_lst lst_lst from cp.\"complex/json/flatten_join.json\" t1 "+
       "inner join cp.\"complex/json/flatten_join.json\" t2 on t1.id=t2.id) sub1";
 
-    testPlanSubstrPatterns(query, new String[] {"columns=[`id`, `lst_lst`]", "columns=[`id`]"}, null);
+    testPlanSubstrPatterns(query, new String[] {"columns=[`lst_lst`, `id`]", "columns=[`id`]"}, null);
     testBuilder()
       .sqlQuery(query)
       .unOrdered()
@@ -812,6 +824,36 @@ public class TestFlatten extends PlanTestBase {
       .baselineValues(2001L)
       .baselineValues(6005L)
       .go();
+  }
+
+  @Test //DX-9579
+  public void testFlattenInJoinCondition1() throws Exception {
+    try {
+      String query = "select t1.id id from cp.\"complex/json/flatten_join.json\" t1 "+
+        "inner join cp.\"complex/json/flatten_join.json\" t2 on flatten(t1.lst_lst) = t2.id";
+      testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .jsonBaselineFile("complex/drill-2268-3-result.json")
+        .go();
+    } catch (Exception e) {
+      assertTrue(e.getMessage().contains("Flatten is not supported as part of join condition"));
+    }
+  }
+
+  @Test //DX-9579
+  public void testFlattenInJoinCondition2() throws Exception {
+    try {
+      String query = "select t1.id id from cp.\"complex/json/flatten_join.json\" t1 "+
+        "inner join cp.\"complex/json/flatten_join.json\" t2 on flatten(t1.lst_lst) + 1 = t2.id";
+      testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .jsonBaselineFile("complex/drill-2268-3-result.json")
+        .go();
+    } catch (Exception e) {
+      assertTrue(e.getMessage().contains("Flatten is not supported as part of join condition"));
+    }
   }
 }
 

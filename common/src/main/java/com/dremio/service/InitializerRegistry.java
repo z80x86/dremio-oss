@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ public class InitializerRegistry implements Service {
           builder.put(functionClass, inited);
         }
       } catch (Exception e) {
-        logger.warn("Unable to load Initializer {}", functionClass.getSimpleName(), e);
+        logger.error("Unable to load Initializer {}", functionClass.getSimpleName(), e);
       }
     }
 

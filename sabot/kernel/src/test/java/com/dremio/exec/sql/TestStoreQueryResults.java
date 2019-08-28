@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -310,7 +310,7 @@ public class TestStoreQueryResults extends BaseTestQuery {
         .build();
 
     TestQueryObserver queryObserver = new TestQueryObserver(checkWriterDistributionTrait);
-    localQueryExecutor.submitLocalQuery(ExternalIdHelper.generateExternalId(), queryObserver, queryCmd, false, config);
+    localQueryExecutor.submitLocalQuery(ExternalIdHelper.generateExternalId(), queryObserver, queryCmd, false, config, false);
 
     queryObserver.waitForCompletion();
 

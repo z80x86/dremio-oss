@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ public class TestLocalSchedulerService {
   @Test
   public void close() throws Exception {
     final CloseableSchedulerThreadPool executorService = mock(CloseableSchedulerThreadPool.class);
-    final LocalSchedulerService service = new LocalSchedulerService(executorService);
+    final LocalSchedulerService service = new LocalSchedulerService(executorService, null, null, false);
 
     service.close();
 
@@ -171,7 +171,7 @@ public class TestLocalSchedulerService {
     };
 
     @SuppressWarnings("resource")
-    final SchedulerService service = new LocalSchedulerService(executorService);
+    final SchedulerService service = new LocalSchedulerService(executorService, null, null, false);
     @SuppressWarnings("unused")
     final Cancellable cancellable = service.schedule(Schedule.Builder.everyHours(1).build(), runnable);
 
@@ -216,7 +216,7 @@ public class TestLocalSchedulerService {
     };
 
     @SuppressWarnings("resource")
-    final SchedulerService service = new LocalSchedulerService(executorService);
+    final SchedulerService service = new LocalSchedulerService(executorService, null, null, false);
     final Cancellable cancellable = service.schedule(Schedule.Builder.everyHours(1).build(), runnable);
     cancellable.cancel(true);
 
@@ -273,7 +273,7 @@ public class TestLocalSchedulerService {
     };
 
     @SuppressWarnings("resource")
-    final SchedulerService service = new LocalSchedulerService(executorService);
+    final SchedulerService service = new LocalSchedulerService(executorService, null, null, false);
     final Cancellable cancellable = service.schedule(Schedule.Builder.everyHours(1).build(), runnable);
 
     // Making a copy as running pending future will alter the list

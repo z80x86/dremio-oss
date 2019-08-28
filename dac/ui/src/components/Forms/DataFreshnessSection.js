@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,8 @@ import DurationField from 'components/Fields/DurationField';
 import FieldWithError from 'components/Fields/FieldWithError';
 import Checkbox from 'components/Fields/Checkbox';
 import Button from 'components/Buttons/Button';
-import config from 'utils/config';
+import config from 'dyn-load/utils/config';
 import ApiUtils from 'utils/apiUtils/apiUtils';
-import Immutable from 'immutable';
 import NotificationSystem from 'react-notification-system';
 import Message from 'components/Message';
 
@@ -36,7 +35,7 @@ export default class DataFreshnessSection extends Component {
   static propTypes = {
     fields: PropTypes.object,
     entityType: PropTypes.string,
-    dataset: PropTypes.instanceOf(Immutable.Map),
+    datasetId: PropTypes.string,
     elementConfig: PropTypes.object,
     editing: PropTypes.bool
   };
@@ -70,7 +69,8 @@ export default class DataFreshnessSection extends Component {
       } else {
         errors.accelerationGracePeriod = la('Reflection expiry must be at least 1 hour.');
       }
-    } else if (!values.accelerationNeverExpire && values.accelerationRefreshPeriod > values.accelerationGracePeriod) {
+    } else if (!values.accelerationNeverRefresh && !values.accelerationNeverExpire
+      && values.accelerationRefreshPeriod > values.accelerationGracePeriod) {
       errors.accelerationGracePeriod = la('Reflections cannot be configured to expire faster than they refresh.');
     }
 
@@ -82,7 +82,7 @@ export default class DataFreshnessSection extends Component {
   };
 
   refreshAll = () => {
-    ApiUtils.fetch(`catalog/${encodeURIComponent(this.props.dataset.get('id'))}/refresh`, {method: 'POST'}).then().catch();
+    ApiUtils.fetch(`catalog/${encodeURIComponent(this.props.datasetId)}/refresh`, {method: 'POST'}).then().catch();
 
     const message = la('All dependent reflections will be refreshed.');
     const level = 'success';

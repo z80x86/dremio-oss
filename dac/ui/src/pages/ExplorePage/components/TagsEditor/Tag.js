@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,8 @@ export class Tag extends Component {
     title: PropTypes.oneOfType([PropTypes.string, PropTypes.bool]),
     //handlers
     onClick: PropTypes.func,
-    deleteHandler: PropTypes.func
+    deleteHandler: PropTypes.func,
+    onRef: PropTypes.func
   };
 
   static defaultProps = {
@@ -63,7 +64,8 @@ export class Tag extends Component {
       className,
       isSelected,
       daqa,
-      title
+      title,
+      onRef
     } = this.props;
     const isDeletable = !readonly && !!deleteHandler;
 
@@ -83,7 +85,7 @@ export class Tag extends Component {
     }
 
     return (
-      <div {...props}>
+      <div {...props} ref={onRef}>
         <span className={textWrapper}>
           <span className={textClass}>
             {text}

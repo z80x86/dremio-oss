@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ import com.dremio.common.scanner.persistence.ScanResult;
 import com.dremio.common.util.FileUtils;
 import com.dremio.common.util.TestTools;
 import com.dremio.exec.client.DremioClient;
-import com.dremio.exec.pop.PopUnitTestBase;
 import com.dremio.exec.record.RecordBatchLoader;
 import com.dremio.exec.server.SabotNode;
 import com.dremio.sabot.rpc.user.QueryDataBatch;

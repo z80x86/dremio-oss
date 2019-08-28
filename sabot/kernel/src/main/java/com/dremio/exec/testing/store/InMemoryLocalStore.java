@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,12 +37,6 @@ public class InMemoryLocalStore<V> implements PersistentStore<V> {
   @Override
   public void put(final String key, final V value) {
     store.put(key, value);
-  }
-
-  @Override
-  public boolean putIfAbsent(final String key, final V value) {
-    final V old = store.putIfAbsent(key, value);
-    return value != old;
   }
 
   @Override

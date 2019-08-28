@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package com.dremio.exec.planner.physical.visitor;
 
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -52,13 +51,13 @@ import com.dremio.exec.planner.physical.ScreenPrel;
 import com.dremio.exec.planner.physical.UnionExchangePrel;
 import com.dremio.exec.planner.types.JavaTypeFactoryImpl;
 import com.dremio.exec.server.ClusterResourceInformation;
-import com.dremio.options.OptionManager;
-import com.dremio.options.OptionValue;
-import com.dremio.options.OptionValue.OptionType;
 import com.dremio.exec.store.TableMetadata;
 import com.dremio.exec.store.sys.SystemPluginConf;
 import com.dremio.exec.store.sys.SystemScanPrel;
 import com.dremio.exec.store.sys.SystemTable;
+import com.dremio.options.OptionManager;
+import com.dremio.options.OptionValue;
+import com.dremio.options.OptionValue.OptionType;
 import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.capabilities.SourceCapabilities;
 import com.dremio.service.namespace.source.proto.SourceConfig;
@@ -249,17 +248,17 @@ public class TestSimpleLimitExchangeRemover {
   }
 
   private Prel newProject(List<RexNode> exprs, RelDataType rowType, Prel child) {
-    return new ProjectPrel(cluster, traits, child, exprs, rowType);
+    return ProjectPrel.create(cluster, traits, child, exprs, rowType);
   }
 
   private Prel newHardScan(RelDataType rowType) {
     TableMetadata metadata = Mockito.mock(TableMetadata.class);
     when(metadata.getName()).thenReturn(new NamespaceKey(ImmutableList.of("sys", "memory")));
-    when(metadata.getSchema()).thenReturn(SystemTable.MEMORY.getSchema());
+    when(metadata.getSchema()).thenReturn(SystemTable.MEMORY.getRecordSchema());
     StoragePluginId pluginId = new StoragePluginId(new SourceConfig().setConfig(new SystemPluginConf().toBytesString()), new SystemPluginConf(), SourceCapabilities.NONE);
     when(metadata.getStoragePluginId()).thenReturn(pluginId);
 
-    List<SchemaPath> columns = FluentIterable.from(SystemTable.MEMORY.getSchema()).transform(new Function<Field, SchemaPath>(){
+    List<SchemaPath> columns = FluentIterable.from(SystemTable.MEMORY.getRecordSchema()).transform(new Function<Field, SchemaPath>(){
       @Override
       public SchemaPath apply(Field input) {
         return SchemaPath.getSimplePath(input.getName());
@@ -270,10 +269,10 @@ public class TestSimpleLimitExchangeRemover {
   private Prel newSoftScan(RelDataType rowType) {
     TableMetadata metadata = Mockito.mock(TableMetadata.class);
     when(metadata.getName()).thenReturn(new NamespaceKey(ImmutableList.of("sys", "version")));
-    when(metadata.getSchema()).thenReturn(SystemTable.VERSION.getSchema());
+    when(metadata.getSchema()).thenReturn(SystemTable.VERSION.getRecordSchema());
     StoragePluginId pluginId = new StoragePluginId(new SourceConfig().setConfig(new SystemPluginConf().toBytesString()), new SystemPluginConf(), SourceCapabilities.NONE);
     when(metadata.getStoragePluginId()).thenReturn(pluginId);
-    List<SchemaPath> columns = FluentIterable.from(SystemTable.VERSION.getSchema()).transform(new Function<Field, SchemaPath>(){
+    List<SchemaPath> columns = FluentIterable.from(SystemTable.VERSION.getRecordSchema()).transform(new Function<Field, SchemaPath>(){
       @Override
       public SchemaPath apply(Field input) {
         return SchemaPath.getSimplePath(input.getName());
@@ -307,11 +306,6 @@ public class TestSimpleLimitExchangeRemover {
   }
 
   private Prel newJoin(Prel left, Prel right) {
-    try {
-      return new HashJoinPrel(cluster, traits, left, right, rexBuilder.makeLiteral(true), JoinRelType.INNER);
-    } catch (Exception e) {
-      fail();
-    }
-    return null;
+    return HashJoinPrel.create(cluster, traits, left, right, rexBuilder.makeLiteral(true), JoinRelType.INNER);
   }
 }

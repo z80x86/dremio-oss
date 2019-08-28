@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,10 @@ package com.dremio.exec.store;
 
 import java.util.Map;
 
-import javax.annotation.Nonnull;
-
 import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.vector.ValueVector;
 
 import com.dremio.common.exceptions.ExecutionSetupException;
-import com.dremio.sabot.driver.SchemaChangeMutator;
 import com.dremio.sabot.op.scan.OutputMutator;
 
 public interface RecordReader extends AutoCloseable {
@@ -48,12 +45,4 @@ public interface RecordReader extends AutoCloseable {
    * @return The number of additional records added to the output.
    */
   int next();
-
-  /**
-   * Get the schema change mutator to be used when a schema change is observed.
-   *
-   * @return
-   */
-  @Nonnull
-  SchemaChangeMutator getSchemaChangeMutator();
 }

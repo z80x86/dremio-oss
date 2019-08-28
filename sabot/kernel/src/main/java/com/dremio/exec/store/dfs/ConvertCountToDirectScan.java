@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.dremio.exec.store.dfs;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
+
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelOptRuleOperand;
 import org.apache.calcite.rel.core.AggregateCall;
@@ -32,6 +33,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.type.SqlTypeName;
 
 import com.dremio.common.JSONOptions;
+import com.dremio.datastore.LegacyProtobufSerializer;
 import com.dremio.exec.catalog.conf.SourceType;
 import com.dremio.exec.physical.base.GroupScan;
 import com.dremio.exec.planner.logical.AggregateRel;
@@ -42,18 +44,19 @@ import com.dremio.exec.planner.physical.Prel;
 import com.dremio.exec.planner.physical.ProjectPrel;
 import com.dremio.exec.planner.physical.Prule;
 import com.dremio.exec.planner.physical.ValuesPrel;
-import com.dremio.exec.store.parquet.ParquetDatasetXAttrSerDe;
 import com.dremio.exec.vector.complex.fn.ExtendedJsonOutput;
 import com.dremio.exec.vector.complex.fn.JsonOutput;
-import com.dremio.service.namespace.dataset.proto.DatasetSplit;
-import com.dremio.service.namespace.file.proto.ColumnValueCount;
+import com.dremio.sabot.exec.store.parquet.proto.ParquetProtobuf.ColumnValueCount;
+import com.dremio.sabot.exec.store.parquet.proto.ParquetProtobuf.ParquetDatasetSplitXAttr;
+import com.dremio.service.namespace.PartitionChunkMetadata;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.DatasetSplit;
 import com.dremio.service.namespace.file.proto.FileType;
-import com.dremio.service.namespace.file.proto.ParquetDatasetSplitXAttr;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.util.TokenBuffer;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
+import com.google.protobuf.InvalidProtocolBufferException;
 
 /**
  * This rule will convert
@@ -116,29 +119,35 @@ public class ConvertCountToDirectScan extends Prule {
     return scan.getPluginId().getType().equals(type) && scan.getTableMetadata().getFormatSettings().getType() == FileType.PARQUET;
   }
 
-  private static long getAccurateRowCount(Iterator<DatasetSplit> splits){
+  private static long getAccurateRowCount(Iterator<PartitionChunkMetadata> splits){
     long def = 0;
     while(splits.hasNext()){
-      DatasetSplit split = splits.next();
+      PartitionChunkMetadata split = splits.next();
       def += split.getRowCount();
     }
     return def;
   }
 
-  private static long getAccurateColumnCount(String name, Iterator<DatasetSplit> splits){
+  private static long getAccurateColumnCount(String name, Iterator<PartitionChunkMetadata> partitionChunks){
     long def = 0;
     int splitCount = 0;
     int columnObservation = 0;
-    while(splits.hasNext()){
-      DatasetSplit split = splits.next();
-      splitCount++;
-      ParquetDatasetSplitXAttr xattr = ParquetDatasetXAttrSerDe.PARQUET_DATASET_SPLIT_XATTR_SERIALIZER.deserialize(split.getExtendedProperty().toByteArray());
-      List<ColumnValueCount> counts = xattr.getColumnValueCountsList();
-      for(ColumnValueCount c : counts){
-        if(c.getColumn().equalsIgnoreCase(name)){
-          def += c.getCount();
-          columnObservation++;
-          continue;
+    while(partitionChunks.hasNext()){
+      PartitionChunkMetadata partitionChunk = partitionChunks.next();
+      for (DatasetSplit split : partitionChunk.getDatasetSplits()) {
+        splitCount++;
+        ParquetDatasetSplitXAttr xattr;
+        try {
+          xattr = LegacyProtobufSerializer.parseFrom(ParquetDatasetSplitXAttr.PARSER, split.getSplitExtendedProperty());
+        } catch (InvalidProtocolBufferException e) {
+          throw new RuntimeException("Could not deserialize Parquet split info", e);
+        }
+        for (ColumnValueCount c : xattr.getColumnValueCountsList()) {
+          if (c.getColumn().equalsIgnoreCase(name)) {
+            def += c.getCount();
+            columnObservation++;
+            break;
+          }
         }
       }
     }
@@ -210,11 +219,11 @@ public class ConvertCountToDirectScan extends Prule {
       }
 
       RelDataType scanRowType = getCountRowType(agg.getCluster().getTypeFactory());
-      final ValuesPrel values = new ValuesPrel(agg.getCluster(), scan.getTraitSet().plus(Prel.PHYSICAL).plus(DistributionTrait.SINGLETON), scanRowType, new JSONOptions(getResultsNode(cnt)));
+      final ValuesPrel values = new ValuesPrel(agg.getCluster(), scan.getTraitSet().plus(Prel.PHYSICAL).plus(DistributionTrait.SINGLETON), scanRowType, new JSONOptions(getResultsNode(cnt)), 1);
       List<RexNode> exprs = Lists.newArrayList();
       exprs.add(RexInputRef.of(0, scanRowType));
 
-      final ProjectPrel newProj = new ProjectPrel(agg.getCluster(), agg.getTraitSet().plus(Prel.PHYSICAL)
+      final ProjectPrel newProj = ProjectPrel.create(agg.getCluster(), agg.getTraitSet().plus(Prel.PHYSICAL)
           .plus(DistributionTrait.SINGLETON), values, exprs, agg.getRowType());
       call.transformTo(newProj);
     }

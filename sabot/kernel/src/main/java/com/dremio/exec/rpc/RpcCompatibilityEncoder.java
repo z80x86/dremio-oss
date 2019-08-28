@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.util.List;
 import com.dremio.common.exceptions.ErrorCompatibility;
 import com.dremio.exec.proto.GeneralRPCProtos.RpcMode;
 import com.dremio.exec.proto.UserBitShared.DremioPBError;
-import com.dremio.exec.rpc.OutboundRpcMessage;
 import com.google.protobuf.MessageLite;
 
 import io.netty.channel.ChannelHandlerContext;

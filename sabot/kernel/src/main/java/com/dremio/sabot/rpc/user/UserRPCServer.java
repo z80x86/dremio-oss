@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import com.dremio.exec.planner.sql.handlers.commands.PreparedStatementProvider;
 import com.dremio.exec.planner.sql.handlers.commands.ServerMetaProvider;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
 import com.dremio.exec.proto.GeneralRPCProtos.RpcMode;
+import com.dremio.exec.proto.UserBitShared.ExternalId;
 import com.dremio.exec.proto.UserBitShared.QueryId;
 import com.dremio.exec.proto.UserBitShared.QueryResult;
 import com.dremio.exec.proto.UserBitShared.RpcEndpointInfos;
@@ -153,9 +154,9 @@ public class UserRPCServer extends BasicServer<RpcType, UserRPCServer.UserClient
       try {
         final RunQuery query = RunQuery.PARSER.parseFrom(pBody);
         UserRequest request = new UserRequest(RpcType.RUN_QUERY, query);
-        final QueryId queryId = ExternalIdHelper.toQueryId(worker.submitWork(connection.getSession(),
-            new UserConnectionResponseHandler(connection), request, registry));
-        responseSender.send(new Response(RpcType.QUERY_HANDLE, queryId));
+        final ExternalId externalId = ExternalIdHelper.generateExternalId();
+        worker.submitWork(externalId, connection.getSession(), new UserConnectionResponseHandler(connection), request, registry);
+        responseSender.send(new Response(RpcType.QUERY_HANDLE, ExternalIdHelper.toQueryId(externalId)));
         break;
       } catch (InvalidProtocolBufferException e) {
         throw new RpcException("Failure while decoding RunQuery body.", e);
@@ -164,7 +165,8 @@ public class UserRPCServer extends BasicServer<RpcType, UserRPCServer.UserClient
     case RpcType.CANCEL_QUERY_VALUE:
       try {
         final QueryId queryId = QueryId.PARSER.parseFrom(pBody);
-        final Ack ack = worker.cancelQuery(ExternalIdHelper.toExternal(queryId));
+        final Ack ack = worker.cancelQuery(ExternalIdHelper.toExternal(queryId),
+            connection.getSession().getCredentials().getUserName());
         responseSender.send(new Response(RpcType.ACK, ack));
         break;
       } catch (InvalidProtocolBufferException e) {

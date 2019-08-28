@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,12 +30,13 @@ package io.airlift.tpch;
 
 import static java.util.Locale.ENGLISH;
 
+import java.time.LocalDate;
+
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.VarCharVector;
-import io.airlift.tpch.GenerationDefinition.TpchTable;
 
-import java.time.LocalDate;
+import io.airlift.tpch.GenerationDefinition.TpchTable;
 
 class CustomerGenerator extends TpchGenerator {
   public static final int SCALE_BASE = 150_000;
@@ -65,9 +66,11 @@ class CustomerGenerator extends TpchGenerator {
   private final VarCharVector marketSegment;
   private final VarCharVector comment;
   private final VarCharVector date;
+  private final VarCharVector time;
 
-  public CustomerGenerator(BufferAllocator allocator, GenerationDefinition def, int partitionIndex, String...includedColumns) {
-    super(TpchTable.CUSTOMER, allocator, def, partitionIndex, includedColumns);
+  public CustomerGenerator(BufferAllocator allocator, GenerationDefinition def, int
+    partitionIndex, TpchTable table, String...includedColumns) {
+    super(table, allocator, def, partitionIndex, includedColumns);
 
     // setup fields.
     this.customerKey = int8("c_custkey");
@@ -79,13 +82,33 @@ class CustomerGenerator extends TpchGenerator {
     this.marketSegment = varChar("c_mktsegment");
     this.comment = varChar("c_comment");
     this.date = varChar("c_date");
+    this.time = varChar("c_time");
 
     finalizeSetup();
+  }
+
+  private String getRandomTime(int seed) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(seed); //Year
+    sb.append("-");
+    sb.append(String.format("%02d",  1 + (seed % 11))); //Month
+    sb.append("-");
+    sb.append(String.format("%02d", 1 + (seed % 27))); //Day
+    sb.append(" ");
+    sb.append(String.format("%02d", seed % 24)); //Hours
+    sb.append(":");
+    sb.append(String.format("%02d", seed % 60)); //Minutes
+    sb.append(":");
+    sb.append(String.format("%02d", seed % 60)); //Seconds
+    sb.append(".");
+    sb.append(String.format("%03d", seed % 1000)); //Milliseconds
+    return sb.toString();
   }
 
   protected void generateRecord(long globalRecordIndex, int outputIndex){
     final long customerKey = globalRecordIndex;
     final long nationKey = nationKeyRandom.nextValue();
+    final int randomYear = yearRandom.nextValue();
 
     this.customerKey.setSafe(outputIndex, customerKey);
     this.nationKey.setSafe(outputIndex, nationKey);
@@ -96,7 +119,8 @@ class CustomerGenerator extends TpchGenerator {
     set(outputIndex, phone, phoneRandom.nextValue(nationKey));
     set(outputIndex, marketSegment, marketSegmentRandom.nextValue());
     set(outputIndex, comment, commentRandom.nextValue());
-    set(outputIndex, date, LocalDate.of(yearRandom.nextValue(),1,1).toString());
+    set(outputIndex, date, LocalDate.of(randomYear,1,1).toString());
+    set(outputIndex, time, getRandomTime(randomYear));
   }
 
 }

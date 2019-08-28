@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,13 +36,13 @@ describe('TextFieldList', () => {
   });
 
   it('should render all passed fields from arrayField', () => {
-    const arrayField = [{value: '1'}, {value: '2'}];
+    const arrayField = [{value: '1', readOnly: true}, {value: '2', readOnly: true}];
     const wrapper = mount(<TextFieldList {...minimalProps} arrayField={arrayField} />);
     expect(wrapper.find('TextField')).to.have.length(2);
   });
 
   it('should render text fields which values found with fieldKey when fieldKey passed to props', () => {
-    const arrayField = [{some: {nested: {value: 'fieldValue'}}}];
+    const arrayField = [{some: {nested: {value: 'fieldValue', readOnly: true}}}];
     const wrapper = mount(<TextFieldList {...minimalProps} arrayField={arrayField} fieldKey={'some.nested'} />);
     expect(wrapper.find('TextField').props()).to.have.property('value', 'fieldValue');
   });

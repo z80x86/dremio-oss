@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.store.CatalogService;
 import com.dremio.exec.store.StoragePlugin;
-import com.dremio.sabot.driver.SchemaChangeListener;
 import com.google.common.util.concurrent.ListenableFuture;
 
 /**
@@ -29,24 +28,18 @@ import com.google.common.util.concurrent.ListenableFuture;
 public class FragmentExecutionContext {
 
   private final NodeEndpoint foreman;
-  private final SchemaChangeListener schemaUpdater;
   private final CatalogService sources;
   private final ListenableFuture<Boolean> cancelled;
 
-  public FragmentExecutionContext(NodeEndpoint foreman, SchemaChangeListener schemaUpdater, CatalogService sources, ListenableFuture<Boolean> cancelled) {
+  public FragmentExecutionContext(NodeEndpoint foreman, CatalogService sources, ListenableFuture<Boolean> cancelled) {
     super();
     this.foreman = foreman;
-    this.schemaUpdater = schemaUpdater;
     this.sources = sources;
     this.cancelled = cancelled;
   }
 
   public NodeEndpoint getForemanEndpoint(){
     return foreman;
-  }
-
-  public SchemaChangeListener getSchemaUpdater(){
-    return schemaUpdater;
   }
 
   public ListenableFuture<Boolean> cancelled() {

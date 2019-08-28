@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,10 @@ package com.dremio.exec.planner.physical;
 import java.io.IOException;
 import java.util.List;
 
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.plan.RelOptCost;
+import org.apache.calcite.plan.RelOptPlanner;
+import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 
@@ -25,13 +29,17 @@ import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.planner.cost.DremioCost;
 import com.dremio.exec.planner.cost.DremioCost.Factory;
 import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
+import com.dremio.options.Options;
+import com.dremio.options.TypeValidators.LongValidator;
+import com.dremio.options.TypeValidators.PositiveLongValidator;
 
-import org.apache.calcite.plan.RelOptCluster;
-import org.apache.calcite.plan.RelOptCost;
-import org.apache.calcite.plan.RelOptPlanner;
-import org.apache.calcite.plan.RelTraitSet;
-
+@Options
 public class OrderedPartitionExchangePrel extends ExchangePrel {
+
+  public static final LongValidator SENDER_RESERVE = new PositiveLongValidator("planner.op.orderedpartition.sender.reserve_bytes", Long.MAX_VALUE, DEFAULT_RESERVE);
+  public static final LongValidator SENDER_LIMIT = new PositiveLongValidator("planner.op.orderedpartition.sender.limit_bytes", Long.MAX_VALUE, DEFAULT_LIMIT);
+  public static final LongValidator RECEIVER_RESERVE = new PositiveLongValidator("planner.op.orderedpartition.receiver.reserve_bytes", Long.MAX_VALUE, DEFAULT_RESERVE);
+  public static final LongValidator RECEIVER_LIMIT = new PositiveLongValidator("planner.op.orderedpartition.receiver.limit_bytes", Long.MAX_VALUE, DEFAULT_LIMIT);
 
   public OrderedPartitionExchangePrel(RelOptCluster cluster, RelTraitSet traitSet, RelNode input) {
     super(cluster, traitSet, input);

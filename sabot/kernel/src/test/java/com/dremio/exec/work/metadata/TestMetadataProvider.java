@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -203,9 +203,9 @@ public class TestMetadataProvider extends BaseTestQuery {
     verifyTable("sys", "memory", iterator.next());
     verifyTable("sys", "nodes", iterator.next());
     verifyTable("sys", "options", iterator.next());
-    verifyTable("sys", "queries", iterator.next());
     verifyTable("sys", "reflections", iterator.next());
     verifyTable("sys", "refreshes", iterator.next());
+    verifyTable("sys", "services", iterator.next());
     verifyTable("sys", "slicing_threads", iterator.next());
     verifyTable("sys", "threads", iterator.next());
     verifyTable("sys", "version", iterator.next());
@@ -248,9 +248,9 @@ public class TestMetadataProvider extends BaseTestQuery {
     verifyTable("sys", "memory", iterator.next());
     verifyTable("sys", "nodes", iterator.next());
     verifyTable("sys", "options", iterator.next());
-    verifyTable("sys", "queries", iterator.next());
     verifyTable("sys", "reflections", iterator.next());
     verifyTable("sys", "refreshes", iterator.next());
+    verifyTable("sys", "services", iterator.next());
     verifyTable("sys", "slicing_threads", iterator.next());
     verifyTable("sys", "threads", iterator.next());
     verifyTable("sys", "version", iterator.next());
@@ -306,7 +306,7 @@ public class TestMetadataProvider extends BaseTestQuery {
     assertEquals(RequestStatus.OK, resp1.getStatus());
 
     final List<ColumnMetadata> columns1 = resp1.getColumnsList();
-    assertEquals(163, columns1.size());
+    assertEquals(162, columns1.size());
     assertTrue("incremental update column shouldn't be returned",
       columns1.stream().noneMatch(input -> input.getColumnName().equals(IncrementalUpdateUtils.UPDATE_COLUMN)));
   }
@@ -320,7 +320,7 @@ public class TestMetadataProvider extends BaseTestQuery {
 
     assertEquals(RequestStatus.OK, resp.getStatus());
     List<ColumnMetadata> columns = resp.getColumnsList();
-    assertEquals(14, columns.size());
+    assertEquals(16, columns.size());
 
 
     Iterator<ColumnMetadata> iterator = columns.iterator();
@@ -338,6 +338,8 @@ public class TestMetadataProvider extends BaseTestQuery {
     verifyColumn("sys", "memory", "fabric_port", iterator.next());
     verifyColumn("sys", "nodes", "user_port", iterator.next());
     verifyColumn("sys", "nodes", "fabric_port", iterator.next());
+    verifyColumn("sys", "services", "user_port", iterator.next());
+    verifyColumn("sys", "services", "fabric_port", iterator.next());
     verifyColumn("sys", "slicing_threads", "fabric_port", iterator.next());
     verifyColumn("sys", "threads", "fabric_port", iterator.next());
   }

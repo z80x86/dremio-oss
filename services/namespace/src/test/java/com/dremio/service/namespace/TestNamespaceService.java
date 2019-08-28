@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 package com.dremio.service.namespace;
 
 import static com.dremio.service.namespace.dataset.proto.DatasetType.PHYSICAL_DATASET;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -27,6 +29,7 @@ import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -48,12 +51,12 @@ import com.dremio.datastore.LocalKVStoreProvider;
 import com.dremio.datastore.SearchQueryUtils;
 import com.dremio.datastore.SearchTypes.SearchQuery;
 import com.dremio.service.namespace.dataset.DatasetVersion;
-import com.dremio.service.namespace.dataset.proto.Affinity;
 import com.dremio.service.namespace.dataset.proto.DatasetConfig;
-import com.dremio.service.namespace.dataset.proto.DatasetSplit;
 import com.dremio.service.namespace.dataset.proto.DatasetType;
-import com.dremio.service.namespace.dataset.proto.PartitionValue;
-import com.dremio.service.namespace.dataset.proto.PartitionValueType;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.Affinity;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.PartitionChunk;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.PartitionValue;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.PartitionValueType;
 import com.dremio.service.namespace.dataset.proto.PhysicalDataset;
 import com.dremio.service.namespace.dataset.proto.ReadDefinition;
 import com.dremio.service.namespace.dataset.proto.VirtualDataset;
@@ -67,11 +70,11 @@ import com.dremio.service.namespace.space.proto.HomeConfig;
 import com.dremio.service.namespace.space.proto.SpaceConfig;
 import com.dremio.test.DremioTest;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.flatbuffers.FlatBufferBuilder;
-
-import io.protostuff.ByteString;
+import com.google.protobuf.ByteString;
 
 /**
  * Test driver for spaces service.
@@ -92,6 +95,7 @@ public class TestNamespaceService {
 
       final SourceConfig src1 = addSource(namespaceService, "src1");
       Assert.assertEquals(src1, namespaceService.getSource((new NamespaceKey(src1.getName()))));
+      Assert.assertEquals(src1.getConfigOrdinal().longValue(), 0L);
 
       // Add some entries under "src1"
       addFolder(namespaceService, "src1.fld1");
@@ -112,22 +116,23 @@ public class TestNamespaceService {
       // updates
       src1.setCtime(2001L);
       src2.setCtime(2001L);
-      namespaceService.addOrUpdateSource(new NamespaceKey(src1.getName()), src1.setVersion(0L));
-      namespaceService.addOrUpdateSource(new NamespaceKey(src2.getName()), src2.setVersion(0L));
+      namespaceService.addOrUpdateSource(new NamespaceKey(src1.getName()), src1.setTag("0"));
+      namespaceService.addOrUpdateSource(new NamespaceKey(src2.getName()), src2.setTag("0"));
 
       SourceConfig newSrc1 = namespaceService.getSource(new NamespaceKey(src1.getName()));
       SourceConfig newSrc2 = namespaceService.getSource(new NamespaceKey(src2.getName()));
       Assert.assertEquals(src1, newSrc1);
       Assert.assertEquals(src2, newSrc2);
+      Assert.assertEquals(newSrc1.getConfigOrdinal().longValue(), 1L);
 
       // deletes
       try {
-        namespaceService.deleteSource(new NamespaceKey("src2"), 1234L);
+        namespaceService.deleteSource(new NamespaceKey("src2"), "1234");
         fail("deleteSource didn't throw exception");
       } catch (ConcurrentModificationException nfe) {
       }
 
-      namespaceService.deleteSource(new NamespaceKey("src1"), newSrc1.getVersion());
+      namespaceService.deleteSource(new NamespaceKey("src1"), newSrc1.getTag());
 
       verifySourceNotInNamespace(namespaceService, new NamespaceKey("src1"));
       // Check entries under "src1" no longer exists in namespace
@@ -135,7 +140,7 @@ public class TestNamespaceService {
       verifyDSNotInNamespace(namespaceService, new NamespaceKey("src1.ds1"));
       verifyDSNotInNamespace(namespaceService, new NamespaceKey("src1.fld1.ds2"));
 
-      namespaceService.deleteSource(new NamespaceKey("src2"), newSrc2.getVersion());
+      namespaceService.deleteSource(new NamespaceKey("src2"), newSrc2.getTag());
       verifySourceNotInNamespace(namespaceService, new NamespaceKey("src2"));
 
       // Re-add a source with name "src1" and make sure it contains no child entries
@@ -182,20 +187,16 @@ public class TestNamespaceService {
       space1.setName("space1");
       space1.setCtime(1000L);
       namespaceService.addOrUpdateSpace(new NamespaceKey(space1.getName()), space1);
-      Assert.assertEquals(0L, space1.getVersion().longValue());
 
       SpaceConfig newSpace1 = namespaceService.getSpace(new NamespaceKey(space1.getName()));
       Assert.assertEquals(space1, newSpace1);
-      Assert.assertEquals(0L, space1.getVersion().longValue());
 
       space2.setName("space2");
       space2.setCtime(2000L);
       namespaceService.addOrUpdateSpace(new NamespaceKey(space2.getName()), space2);
-      Assert.assertEquals(0L, space2.getVersion().longValue());
 
       SpaceConfig newSpace2 = namespaceService.getSpace(new NamespaceKey(space2.getName()));
       Assert.assertEquals(space2, newSpace2);
-      Assert.assertEquals(0L, space2.getVersion().longValue());
 
       // no match
       try {
@@ -209,27 +210,25 @@ public class TestNamespaceService {
       space1.setCtime(2001L);
       space2.setCtime(2001L);
       namespaceService.addOrUpdateSpace(new NamespaceKey(space1.getName()), space1);
-      Assert.assertEquals(1L, space1.getVersion().longValue());
       namespaceService.addOrUpdateSpace(new NamespaceKey(space2.getName()), space2);
-      Assert.assertEquals(1L, space2.getVersion().longValue());
 
       assertEquals(space1, namespaceService.getSpace(new NamespaceKey("space1")));
       assertEquals(space2, namespaceService.getSpace(new NamespaceKey("space2")));
 
       // deletes
       try {
-        namespaceService.deleteSpace(new NamespaceKey("space1"), 1234L);
+        namespaceService.deleteSpace(new NamespaceKey("space1"), "1234");
         fail("deleteSpace didn't throw exception");
       } catch (ConcurrentModificationException nfe) {
       }
 
-      namespaceService.deleteSpace(new NamespaceKey("space1"), space1.getVersion());
+      namespaceService.deleteSpace(new NamespaceKey("space1"), space1.getTag());
       try {
         namespaceService.getSpace(new NamespaceKey("space1"));
         fail("getSpace didn't throw exception");
       } catch (NamespaceNotFoundException nfe) {
       }
-      namespaceService.deleteSpace(new NamespaceKey("space2"), space2.getVersion());
+      namespaceService.deleteSpace(new NamespaceKey("space2"), space2.getTag());
       try {
         namespaceService.getSpace(new NamespaceKey("space2"));
         fail("getSpace didn't throw exception");
@@ -578,12 +577,12 @@ public class TestNamespaceService {
 
       assertEquals(3, ns.getAllDatasets(new NamespaceKey("src1")).size());
       // delete folder datasets so that the dataset underneath them are now visible
-      ns.deleteDataset(new NamespaceKey(asList("src1", "foo")), ns.getDataset(new NamespaceKey(asList("src1", "foo"))).getVersion());
+      ns.deleteDataset(new NamespaceKey(asList("src1", "foo")), ns.getDataset(new NamespaceKey(asList("src1", "foo"))).getLegacyTag());
       assertEquals(3, ns.getAllDatasets(new NamespaceKey("src1")).size());
       //Make sure datasets under "src1.foo" are uncovered
       assertEquals(1, ns.getAllDatasets(new NamespaceKey(PathUtils.parseFullPath("src1.foo"))).size());
 
-      ns.deleteDataset(new NamespaceKey(asList("src1", "foo", "bar")), ns.getDataset(new NamespaceKey(asList("src1", "foo", "bar"))).getVersion());
+      ns.deleteDataset(new NamespaceKey(asList("src1", "foo", "bar")), ns.getDataset(new NamespaceKey(asList("src1", "foo", "bar"))).getLegacyTag());
       assertEquals(3, ns.getAllDatasets(new NamespaceKey("src1")).size());
 
       final List<NamespaceKey> sourceTwoDatasets = ns.getAllDatasets(new NamespaceKey("src2"));
@@ -722,10 +721,15 @@ public class TestNamespaceService {
       assertTrue(items.containsKey("s1.b.ds2"));
       */
 
-      ns.renameDataset(new NamespaceKey(PathUtils.parseFullPath("s.b.ds2")), new NamespaceKey(PathUtils.parseFullPath("s.b.ds22")));
+      final NamespaceKey namespaceKey = new NamespaceKey(PathUtils.parseFullPath("s.b.ds2"));
+
+      final DatasetConfig oldConfig = ns.getDataset(namespaceKey);
+      final DatasetConfig newConfig = ns.renameDataset(namespaceKey, new NamespaceKey(PathUtils.parseFullPath("s.b.ds22")));
       items = listFolder(ns, "s.b");
       assertEquals(1, items.size());
       assertTrue(items.containsKey("s.b.ds22"));
+      assertTrue(newConfig.getLastModified() > oldConfig.getLastModified());
+      assertEquals(newConfig.getCreatedAt(), oldConfig.getCreatedAt());
 
       ns.renameDataset(new NamespaceKey(PathUtils.parseFullPath("s.a.c.ds3")), new NamespaceKey(PathUtils.parseFullPath("s.a.c.ds33")));
       items = listFolder(ns, "s.a.c");
@@ -803,7 +807,7 @@ public class TestNamespaceService {
       readDefinition.setSplitVersion(lastSplitVersion);
 
       datasetConfig.setType(PHYSICAL_DATASET);
-      datasetConfig.setVersion(null);
+      datasetConfig.setTag(null);
       datasetConfig.setId(new EntityId().setId(UUID.randomUUID().toString()));
       datasetConfig.setName("testDatasetSplitsInsert");
       datasetConfig.setFullPathList(Lists.newArrayList("test", "testDatasetSplitsInsert"));
@@ -811,85 +815,106 @@ public class TestNamespaceService {
       datasetConfig.setOwner("dremio");
       datasetConfig.setReadDefinition(readDefinition);
 
-      List<DatasetSplit> splits = Lists.newArrayList();
+      List<PartitionChunk> partitionChunks = Lists.newArrayList();
 
       for (int i = 0; i < 10; i++) {
-        splits.add(new DatasetSplit()
-          .setRowCount((long) i)
-          .setVersion(0L)
-          .setSize((long) i)
-          .setAffinitiesList(Lists.<Affinity>newArrayList(new Affinity().setHost("node" + i)))
-          .setPartitionValuesList(Lists.newArrayList(new PartitionValue().setColumn("column" + i).setIntValue(i).setType(PartitionValueType.IMPLICIT)))
-          .setExtendedProperty(ByteString.copyFrom(String.valueOf(i).getBytes()))
+        partitionChunks.add(PartitionChunk.newBuilder()
+          .setRowCount(i)
+          .setSize(i)
+          .addAffinities(Affinity.newBuilder().setHost("node" + i))
+          .addPartitionValues(PartitionValue.newBuilder().setColumn("column" + i).setIntValue(i).setType(PartitionValueType.IMPLICIT))
+          .setPartitionExtendedProperty(ByteString.copyFromUtf8(String.valueOf(i)))
           .setSplitKey(String.valueOf(i))
-          .setSplitVersion(1L));
+          .build());
       }
 
       addSource(ns, "test");
-      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, splits);
+      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, partitionChunks);
 
-      assertEquals(10, ns.getSplitCount(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig))));
-      assertTrue(!NamespaceServiceImpl.compareSplits(datasetConfig, splits,
-        ns.findSplits(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig)))));
+      assertEquals(10, ns.getPartitionChunkCount(new IndexedStore.FindByCondition().setCondition(PartitionChunkId.getSplitsQuery(datasetConfig))));
+      expectSplits(partitionChunks, ns, datasetConfig);
       Long newSplitVersion = datasetConfig.getReadDefinition().getSplitVersion();
       assertTrue(newSplitVersion > lastSplitVersion);
       lastSplitVersion = newSplitVersion;
 
       // insert same splits again and make sure version does't change
-      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, splits);
-      assertEquals(10, ns.getSplitCount(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig))));
-      assertTrue(!NamespaceServiceImpl.compareSplits(datasetConfig, splits,
-        ns.findSplits(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig)))));
+      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, partitionChunks);
+      assertEquals(10, ns.getPartitionChunkCount(new IndexedStore.FindByCondition().setCondition(PartitionChunkId.getSplitsQuery(datasetConfig))));
+      expectSplits(partitionChunks, ns, datasetConfig);
       assertEquals(newSplitVersion, datasetConfig.getReadDefinition().getSplitVersion());
 
       // change row count for the first split
-      splits.get(0).setRowCount(11L);
-      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, splits);
-      assertEquals(10, ns.getSplitCount(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig))));
-      assertTrue(!NamespaceServiceImpl.compareSplits(datasetConfig, splits,
-        ns.findSplits(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig)))));
+      partitionChunks.set(0, partitionChunks.get(0).toBuilder().setRowCount(11L).build());
+      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, partitionChunks);
+      assertEquals(10, ns.getPartitionChunkCount(new IndexedStore.FindByCondition().setCondition(PartitionChunkId.getSplitsQuery(datasetConfig))));
+      expectSplits(partitionChunks, ns, datasetConfig);
       newSplitVersion = datasetConfig.getReadDefinition().getSplitVersion();
       assertTrue(newSplitVersion > lastSplitVersion);
       lastSplitVersion = newSplitVersion;
 
       // remove 8th split
-      splits.remove(8);
-      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, splits);
-      assertEquals(9, ns.getSplitCount(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig))));
-      assertTrue(!NamespaceServiceImpl.compareSplits(datasetConfig, splits,
-        ns.findSplits(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig)))));
+      partitionChunks.remove(8);
+      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, partitionChunks);
+      assertEquals(9, ns.getPartitionChunkCount(new IndexedStore.FindByCondition().setCondition(PartitionChunkId.getSplitsQuery(datasetConfig))));
+      expectSplits(partitionChunks, ns, datasetConfig);
       newSplitVersion = datasetConfig.getReadDefinition().getSplitVersion();
       assertTrue(newSplitVersion > lastSplitVersion);
       lastSplitVersion = newSplitVersion;
 
       // add another split
-      splits.add(new DatasetSplit()
+      partitionChunks.add(PartitionChunk.newBuilder()
         .setRowCount(11L)
-        .setVersion(0L)
         .setSize(11L)
-        .setAffinitiesList(Lists.<Affinity>newArrayList(new Affinity().setHost("node" + 11)))
-        .setPartitionValuesList(Lists.newArrayList(new PartitionValue().setColumn("column" + 11).setIntValue(11).setType(PartitionValueType.IMPLICIT)))
-        .setExtendedProperty(ByteString.copyFrom(String.valueOf(11).getBytes()))
+        .addAffinities(Affinity.newBuilder().setHost("node" + 11))
+        .addPartitionValues(PartitionValue.newBuilder().setColumn("column" + 11).setIntValue(11).setType(PartitionValueType.IMPLICIT))
+        .setPartitionExtendedProperty(com.google.protobuf.ByteString.copyFrom(String.valueOf(11).getBytes(UTF_8)))
         .setSplitKey(String.valueOf(11))
-        .setSplitVersion(lastSplitVersion));
+        .build());
 
-      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, splits);
-      assertEquals(10, ns.getSplitCount(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig))));
-      assertTrue(!NamespaceServiceImpl.compareSplits(datasetConfig, splits,
-        ns.findSplits(new IndexedStore.FindByCondition().setCondition(DatasetSplitId.getSplitsQuery(datasetConfig)))));
+      ns.addOrUpdateDataset(new NamespaceKey(datasetConfig.getFullPathList()), datasetConfig, partitionChunks);
+      assertEquals(10, ns.getPartitionChunkCount(new IndexedStore.FindByCondition().setCondition(PartitionChunkId.getSplitsQuery(datasetConfig))));
+      expectSplits(partitionChunks, ns, datasetConfig);
       newSplitVersion = datasetConfig.getReadDefinition().getSplitVersion();
       assertTrue(newSplitVersion > lastSplitVersion);
 
       // Checking that orphan splits get cleaned
       SearchQuery searchQuery = SearchQueryUtils.newTermQuery(DatasetSplitIndexKeys.DATASET_ID, datasetConfig.getId().getId());
-      int count = ns.getSplitCount(new IndexedStore.FindByCondition().setCondition(searchQuery));
-      int deleted = ns.deleteSplitOrphans(DatasetSplitId.SplitOrphansRetentionPolicy.KEEP_CURRENT_VERSION_ONLY);
-      int newCount = ns.getSplitCount(new IndexedStore.FindByCondition().setCondition(searchQuery));
+      int count = ns.getPartitionChunkCount(new IndexedStore.FindByCondition().setCondition(searchQuery));
+      int deleted = ns.deleteSplitOrphans(PartitionChunkId.SplitOrphansRetentionPolicy.KEEP_CURRENT_VERSION_ONLY);
+      int newCount = ns.getPartitionChunkCount(new IndexedStore.FindByCondition().setCondition(searchQuery));
 
       // Only 10 splits should be left in the kvstore for that dataset
       assertEquals(10, newCount);
       assertEquals(count, deleted + newCount);
     }
+  }
+
+  private void expectSplits(List<PartitionChunk> expectedSplits, NamespaceService ns, DatasetConfig datasetConfig) {
+    Iterable<PartitionChunkMetadata> nsSplits = ns.findSplits(new IndexedStore.FindByCondition().setCondition(PartitionChunkId.getSplitsQuery(datasetConfig)));
+
+    final ImmutableMap.Builder<PartitionChunkId, PartitionChunkMetadata> builder = ImmutableMap.builder();
+    for (PartitionChunkMetadata nsSplit: nsSplits) {
+      final PartitionChunkId splitId = PartitionChunkId.of(datasetConfig, nsSplit, datasetConfig.getReadDefinition().getSplitVersion());
+      builder.put(splitId, nsSplit);
+    }
+    final ImmutableMap<PartitionChunkId, PartitionChunkMetadata> newSplitsMap = builder.build();
+    assert(newSplitsMap.size() == expectedSplits.size());
+
+    for (PartitionChunk partitionChunk : expectedSplits) {
+      final PartitionChunkId splitId = PartitionChunkId.of(datasetConfig, partitionChunk, datasetConfig.getReadDefinition().getSplitVersion());
+      final PartitionChunkMetadata newSplit = newSplitsMap.get(splitId);
+      assertNotNull(newSplit);
+      assertTrue(comparePartitionChunk(partitionChunk, newSplit, datasetConfig.getReadDefinition().getSplitVersion()));
+    }
+  }
+
+  boolean comparePartitionChunk(PartitionChunk partitionChunkProto, PartitionChunkMetadata partitionChunkMetadata, long splitVersion) {
+    return partitionChunkProto.getSize() == partitionChunkMetadata.getSize()
+      && partitionChunkProto.getRowCount() == partitionChunkMetadata.getRowCount()
+      && Objects.equals(partitionChunkProto.getAffinitiesList(), ImmutableList.copyOf(partitionChunkMetadata.getAffinities()))
+      && Objects.equals(partitionChunkProto.getPartitionValuesList(), ImmutableList.copyOf(partitionChunkMetadata.getPartitionValues()))
+      && partitionChunkProto.getSplitKey().equals(partitionChunkMetadata.getSplitKey())
+      && Objects.equals(partitionChunkProto.getPartitionExtendedProperty(), partitionChunkMetadata.getPartitionExtendedProperty());
   }
 
   @Test
@@ -899,11 +924,35 @@ public class TestNamespaceService {
       final NamespaceServiceImpl ns = new NamespaceServiceImpl(kvstore);
 
       try {
-        ns.deleteEntity(new NamespaceKey(Arrays.asList("does", "not", "exist")), NameSpaceContainer.Type.FOLDER, 123L, true);
+        ns.deleteEntity(new NamespaceKey(Arrays.asList("does", "not", "exist")), NameSpaceContainer.Type.FOLDER, "123", true);
         fail("deleteEntity should have failed.");
       } catch(NamespaceNotFoundException e) {
         // Expected
       }
     }
+  }
+
+  @Test
+  public void testNamespaceContainerVersionExtractor() throws Exception {
+    NameSpaceContainerVersionExtractor versionExtractor = new NameSpaceContainerVersionExtractor();
+
+    NameSpaceContainer container = new NameSpaceContainer();
+    container.setType(NameSpaceContainer.Type.SOURCE);
+
+    SourceConfig config = new SourceConfig();
+    container.setSource(config);
+
+    // test precommit for sources, which increments the version
+    versionExtractor.preCommit(container);
+    assertEquals(0, config.getConfigOrdinal().longValue());
+
+    versionExtractor.preCommit(container);
+    assertEquals(1, config.getConfigOrdinal().longValue());
+
+    // test preCommit rollback
+    AutoCloseable autoCloseable = versionExtractor.preCommit(container);
+    assertEquals(2, config.getConfigOrdinal().longValue());
+    autoCloseable.close();
+    assertEquals(1, config.getConfigOrdinal().longValue());
   }
 }

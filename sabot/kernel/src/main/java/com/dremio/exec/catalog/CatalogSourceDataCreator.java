@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,18 +46,23 @@ public class CatalogSourceDataCreator implements StoreCreationFunction<KVStore<N
    */
   public static class SourceInternalDataVersionExtractor implements VersionExtractor<SourceInternalData> {
     @Override
+    public String getTag(SourceInternalData value) {
+      return value.getTag();
+    }
+
+    @Override
+    public void setTag(SourceInternalData value, String tag) {
+      value.setTag(tag);
+    }
+
+    @Override
     public Long getVersion(SourceInternalData value) {
       return value.getVersion();
     }
+
     @Override
     public void setVersion(SourceInternalData value, Long version) {
       value.setVersion(version);
-    }
-    @Override
-    public Long incrementVersion(SourceInternalData value) {
-      Long version = getVersion(value);
-      setVersion(value, version == null ? 0 : version + 1);
-      return version;
     }
   }
 

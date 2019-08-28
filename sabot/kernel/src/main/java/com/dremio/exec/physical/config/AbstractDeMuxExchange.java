@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,26 @@
  */
 package com.dremio.exec.physical.config;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
 import com.dremio.common.expression.LogicalExpression;
-import com.dremio.exec.expr.fn.FunctionLookupContext;
 import com.dremio.exec.physical.EndpointAffinity;
-import com.dremio.exec.physical.MinorFragmentEndpoint;
 import com.dremio.exec.physical.base.AbstractExchange;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.Sender;
+import com.dremio.exec.planner.fragment.EndpointsIndex;
 import com.dremio.exec.planner.fragment.ParallelizationInfo;
+import com.dremio.exec.proto.CoordExecRPC.MinorFragmentIndexEndpoint;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
+import com.dremio.exec.record.BatchSchema;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
 import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -49,12 +54,19 @@ public abstract class AbstractDeMuxExchange extends AbstractExchange {
   protected final LogicalExpression expr;
 
   // Ephemeral info used when creating execution fragments.
-  protected Map<Integer, MinorFragmentEndpoint> receiverToSenderMapping;
-  protected ArrayListMultimap<Integer, MinorFragmentEndpoint> senderToReceiversMapping;
+  protected Map<Integer, MinorFragmentIndexEndpoint> receiverToSenderMapping;
+  protected ArrayListMultimap<Integer, MinorFragmentIndexEndpoint> senderToReceiversMapping;
   private boolean isSenderReceiverMappingCreated;
 
-  public AbstractDeMuxExchange(PhysicalOperator child, LogicalExpression expr) {
-    super(child);
+  public AbstractDeMuxExchange(
+      OpProps props,
+      OpProps senderProps,
+      OpProps receiverProps,
+      BatchSchema schema,
+      PhysicalOperator child,
+      LogicalExpression expr
+      ) {
+    super(props, senderProps, receiverProps, schema, child);
     this.expr = expr;
   }
 
@@ -64,37 +76,53 @@ public abstract class AbstractDeMuxExchange extends AbstractExchange {
   }
 
   @Override
-  public ParallelizationInfo getSenderParallelizationInfo(List<NodeEndpoint> receiverFragmentEndpoints) {
-    Preconditions.checkArgument(receiverFragmentEndpoints != null && receiverFragmentEndpoints.size() > 0,
+  public ParallelizationInfo.WidthConstraint getSenderParallelizationWidthConstraint() {
+    return ParallelizationInfo.WidthConstraint.AFFINITY_LIMITED;
+  }
+
+  /**
+   * Provide the node affinity for the sender side of the exchange
+   */
+  @Override
+  public Supplier<Collection<EndpointAffinity>> getSenderEndpointffinity(Supplier<Collection<NodeEndpoint>> receiverFragmentEndpointsSupplier) {
+    return () -> {
+      Collection<NodeEndpoint> receiverFragmentEndpoints = receiverFragmentEndpointsSupplier.get();
+      Preconditions.checkArgument(receiverFragmentEndpoints != null && receiverFragmentEndpoints.size() > 0,
         "Receiver fragment endpoint list should not be empty");
 
-    // We want to run one demux sender per SabotNode endpoint.
-    // Identify the number of unique SabotNode endpoints in receiver fragment endpoints.
-    List<NodeEndpoint> nodeEndpoints = ImmutableSet.copyOf(receiverFragmentEndpoints).asList();
+      // We want to run one demux sender per SabotNode endpoint.
+      // Identify the number of unique SabotNode endpoints in receiver fragment endpoints.
+      List<NodeEndpoint> nodeEndpoints = ImmutableSet.copyOf(receiverFragmentEndpoints).asList();
 
-    List<EndpointAffinity> affinities = Lists.newArrayList();
-    for(NodeEndpoint ep : nodeEndpoints) {
-      affinities.add(new EndpointAffinity(ep, Double.POSITIVE_INFINITY));
-    }
-
-    return ParallelizationInfo.create(affinities.size(), affinities.size(), affinities);
+      List<EndpointAffinity> affinities = Lists.newArrayList();
+      for(NodeEndpoint ep : nodeEndpoints) {
+        affinities.add(new EndpointAffinity(ep, Double.POSITIVE_INFINITY));
+      }
+      return affinities;
+    };
   }
 
   @Override
-  public ParallelizationInfo getReceiverParallelizationInfo(List<NodeEndpoint> senderFragmentEndpoints) {
-    return ParallelizationInfo.UNLIMITED_WIDTH_NO_ENDPOINT_AFFINITY;
+  public ParallelizationInfo.WidthConstraint getReceiverParallelizationWidthConstraint() {
+    return ParallelizationInfo.WidthConstraint.UNLIMITED;
   }
 
   @Override
-  public Sender getSender(int minorFragmentId, PhysicalOperator child, FunctionLookupContext context) {
-    createSenderReceiverMapping();
+  public Supplier<Collection<EndpointAffinity>> getReceiverEndpointAffinity(Supplier<Collection<NodeEndpoint>> senderFragmentEndpointsSupplier) {
+    return () -> ImmutableList.of();
+  }
 
-    List<MinorFragmentEndpoint> receivers = senderToReceiversMapping.get(minorFragmentId);
+
+  @Override
+  public Sender getSender(int minorFragmentId, PhysicalOperator child, EndpointsIndex.Builder indexBuilder) {
+    createSenderReceiverMapping(indexBuilder);
+
+    List<MinorFragmentIndexEndpoint> receivers = senderToReceiversMapping.get(minorFragmentId);
     if (receivers == null || receivers.size() <= 0) {
       throw new IllegalStateException(String.format("Failed to find receivers for sender [%d]", minorFragmentId));
     }
 
-    return new HashPartitionSender(receiverMajorFragmentId, child, expr, receivers, getSchema(context));
+    return new HashPartitionSender(senderProps, schema, child, receiverMajorFragmentId, receivers, expr);
   }
 
   /**
@@ -106,7 +134,7 @@ public abstract class AbstractDeMuxExchange extends AbstractExchange {
     return ParallelizationDependency.SENDER_DEPENDS_ON_RECEIVER;
   }
 
-  protected void createSenderReceiverMapping() {
+  protected void createSenderReceiverMapping(EndpointsIndex.Builder indexBuilder) {
     if (isSenderReceiverMappingCreated) {
       return;
     }
@@ -128,10 +156,10 @@ public abstract class AbstractDeMuxExchange extends AbstractExchange {
       final List<Integer> receiverMinorFragmentIds = endpointReceiverList.get(senderLocation);
 
       for(Integer receiverId : receiverMinorFragmentIds) {
-        receiverToSenderMapping.put(receiverId, new MinorFragmentEndpoint(senderFragmentId, senderLocation));
+        receiverToSenderMapping.put(receiverId, indexBuilder.addFragmentEndpoint(senderFragmentId, senderLocation));
 
         senderToReceiversMapping.put(senderFragmentId,
-            new MinorFragmentEndpoint(receiverId, receiverLocations.get(receiverId)));
+            indexBuilder.addFragmentEndpoint(receiverId, receiverLocations.get(receiverId)));
       }
       senderFragmentId++;
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,23 @@
  * limitations under the License.
  */
 import Immutable from 'immutable';
-import { Component } from 'react';
+import { Component, Fragment } from 'react';
+import { compose } from 'redux';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
-import HTML5Backend from 'react-dnd-html5-backend';
-import { DragDropContext } from 'react-dnd';
-import MuiThemeProvider from 'material-ui/styles/MuiThemeProvider';
-import getMuiTheme from 'material-ui/styles/getMuiTheme';
+import { MuiThemeProvider, createMuiTheme } from '@material-ui/core/styles';
 import { replace } from 'react-router-redux';
 import DocumentTitle from 'react-document-title';
 import urlParse from 'url-parse';
-import { showProdError } from 'actions/prodError';
-import { boot } from 'actions/app';
+import { showAppError } from 'actions/prodError';
+import { DnDContextDecorator } from '@app/components/DragComponents/DnDContextDecorator';
+import { ErrorBoundary } from '@app/components/ErrorBoundary';
 
 import socket from 'utils/socket';
 import sentryUtil from 'utils/sentryUtil';
 
 import { SERVER_STATUS_OK } from 'constants/serverStatus';
-import config from 'utils/config';
+import config from 'dyn-load/utils/config';
 import enableFatalPropTypes from 'enableFatalPropTypes';
 
 import ModalsContainer from 'components/Modals/ModalsContainer';
@@ -41,30 +40,38 @@ import ConfirmationContainer from 'containers/Confirmation';
 import ProdErrorContainer from 'containers/ProdError';
 import DevErrorContainer from 'containers/DevError';
 import { LocationProvider } from 'containers/dremioLocation';
+import { withHookProvider } from '@app/containers/RouteLeave';
 import { formatMessage } from '../utils/locale';
 
 DocumentTitle.join = (tokens) => {
   return [...tokens, formatMessage('App.Dremio')].filter(Boolean).join(' - ');
 };
 
-function getError(e) {
-  if (e instanceof Error) {
-    return e;
+const theme = createMuiTheme({
+  palette: {
+    primary: {
+      main: 'rgb(0, 188, 212)'
+    }
+  },
+  overrides: {
+    MuiSwitch: {
+      switchBase: {
+        height: 'auto'
+      }
+    }
   }
-  if (e.message) {
-    return new Error(e.message + '\n\n' + e.stack + '\n\n(non-Error instance)');
-  }
-  return new Error(e); // error components expect objects
-}
+});
 
 export class App extends Component {
 
   static propTypes = {
-    user: PropTypes.object,
     location: PropTypes.object,
     params: PropTypes.object,
-    dispatch: PropTypes.func,
-    serverStatus: PropTypes.instanceOf(Immutable.Map)
+    //connected
+    user: PropTypes.object,
+    serverStatus: PropTypes.instanceOf(Immutable.Map),
+    shouldEnableRSOD: PropTypes.bool,
+    dispatch: PropTypes.func.isRequired
   };
 
   static childContextTypes = {
@@ -86,20 +93,12 @@ export class App extends Component {
   constructor(props) {
     super(props);
 
-    socket.dispatch = props.dispatch;
-
-    props.dispatch(boot());
-
-    this.state = {
-      hasShownError: false,
-      rsodError: undefined
-    };
     // use window.onerror here instead of addEventListener('error') because ErrorEvent.error is
     // experimental according to mdn. Can get both file url and error from either.
     window.onerror = this.handleGlobalError.bind(this, window.onerror);
     window.onunhandledrejection = this.handleUnhandledRejection;
 
-    if (config.shouldEnableBugFiling || config.shouldEnableRSOD) {
+    if (config.shouldEnableBugFiling || props.shouldEnableRSOD) {
       enableFatalPropTypes();
     }
   }
@@ -111,6 +110,10 @@ export class App extends Component {
       username: this.props.user.userName,
       loggedInUser: this.props.user
     };
+  }
+
+  componentDidMount() {
+    socket.dispatch = this.props.dispatch;
   }
 
   componentWillReceiveProps(props) {
@@ -141,20 +144,7 @@ export class App extends Component {
   };
 
   displayError(error) {
-    // once we've shown one error, the app is unstable - don't bother showing more
-    // also prevents render feedback loop from re-triggering the error because we re-render
-    if (this.state.hasShownError) return;
-    this.setState({hasShownError: true});
-
-    const errorObject = getError(error);
-
-    if (config.shouldEnableRSOD) return this.setState({rsodError: errorObject});
-
-    this.props.dispatch(showProdError(errorObject));
-  }
-
-  handleDismissError = () => {
-    this.setState({rsodError: undefined});
+    this.props.dispatch(showAppError(error));
   }
 
   _getWindowOrigin() {
@@ -190,23 +180,27 @@ export class App extends Component {
   }
 
   render() {
-    const { children } = this.props;
+    const { children, shouldEnableRSOD } = this.props;
     return (
-      <LocationProvider location={this.props.location}>
-        <div style={{height: '100%'}}>
-          <MuiThemeProvider muiTheme={getMuiTheme()}>
-            {children}
-          </MuiThemeProvider>
-          {
-            config.shouldEnableRSOD &&
-              <DevErrorContainer error={this.state.rsodError} onDismiss={this.handleDismissError}/>
-          }
-          <NotificationContainer/>
-          <ConfirmationContainer/>
-          <ProdErrorContainer/>
-          <ModalsContainer modals={{AboutModal}} style={{height: 0}}/>
-        </div>
-      </LocationProvider>
+      <Fragment>
+        <ErrorBoundary>
+          <LocationProvider location={this.props.location}>
+            <div style={{height: '100%'}}>
+              <MuiThemeProvider theme={theme}>
+                {children}
+              </MuiThemeProvider>
+              <NotificationContainer/>
+              <ConfirmationContainer/>
+              <ModalsContainer modals={{AboutModal}} />
+            </div>
+          </LocationProvider>
+        </ErrorBoundary>
+        {
+          shouldEnableRSOD ?
+            <DevErrorContainer /> :
+            <ProdErrorContainer />
+        }
+      </Fragment>
     );
   }
 }
@@ -224,9 +218,13 @@ function mapStateToProps(state) {
 
   return {
     user,
-    serverStatus: state.serverStatus
+    serverStatus: state.serverStatus,
+    shouldEnableRSOD: config.shouldEnableRSOD
   };
 }
 
-// don't add mapDispatchToProps, because we require to have dispatch in component props
-export default connect(mapStateToProps)(DragDropContext(HTML5Backend)(App));
+export default compose(
+  withHookProvider,
+  connect(mapStateToProps),
+  DnDContextDecorator
+)(App);

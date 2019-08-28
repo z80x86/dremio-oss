@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,15 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.types.SerializedFieldHelper;
 import org.apache.arrow.vector.types.pojo.Field;
-import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.parquet.hadoop.util.CompatibilityUtil;
+import org.apache.parquet.io.SeekableInputStream;
 import org.xerial.snappy.Snappy;
 
 import com.codahale.metrics.MetricRegistry;
@@ -286,7 +287,11 @@ public class VectorAccessibleSerializable extends AbstractStreamSerializable {
     Preconditions.checkNotNull(output);
     final Timer.Context timerContext = metrics.timer(WRITER_TIMER).time();
 
-    final ArrowBuf[] incomingBuffers = batch.getBuffers();
+    ArrowBuf[] buffers = new ArrowBuf[batch.getBuffers().length];
+    final ArrowBuf[] incomingBuffers = Arrays.stream(batch.getBuffers())
+                                             .map(buf -> buf.arrowBuf())
+                                             .collect(Collectors.toList())
+                                             .toArray(buffers);
     final UserBitShared.RecordBatchDef batchDef = batch.getDef();
 
     /* ArrowBuf associated with the selection vector */
@@ -461,16 +466,9 @@ public class VectorAccessibleSerializable extends AbstractStreamSerializable {
     return array;
   }
 
-  public static void readFromStream(FSDataInputStream input, final ArrowBuf outputBuffer, final int bytesToRead) throws IOException{
+  public static void readFromStream(SeekableInputStream input, final ArrowBuf outputBuffer, final int bytesToRead) throws IOException{
     final ByteBuffer directBuffer = outputBuffer.nioBuffer(0, bytesToRead);
-    int lengthLeftToRead = bytesToRead;
-    while (lengthLeftToRead > 0) {
-      final int bytesRead = CompatibilityUtil.getBuf(input, directBuffer, lengthLeftToRead);;
-      if (bytesRead == -1 && lengthLeftToRead > 0) {
-        throw new EOFException("Unexpected end of stream while reading.");
-      }
-      lengthLeftToRead -= bytesRead;
-    }
+    input.readFully(directBuffer);
     outputBuffer.writerIndex(bytesToRead);
   }
 }

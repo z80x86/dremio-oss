@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,27 @@ public class TestConvertCountToDirectScan extends PlanTestBase {
   }
 
   @Test
+  public void testConvertToDirectScanWithNoColStats() throws Exception {
+    try {
+      //Bug 9548
+      String sql = "select count(l_orderkey) as cnt from dfs.\"${WORKING_PATH}/src/test/resources/dremio-no-column-stats.parquet\"";
+      testPlanMatchingPatterns(
+        sql,
+        new String[]{},
+        new String[]{"Values"});
+
+      testBuilder()
+        .sqlQuery(sql)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(60175L)
+        .go();
+    } catch (Exception e) {
+      assert (false);
+    }
+  }
+
+  @Test
   public void ensureConvertSimpleCountToDirectScan() throws Exception {
     final String sql = "select count(*) as cnt from cp.\"tpch/nation.parquet\"";
     testPlanMatchingPatterns(
@@ -44,7 +65,6 @@ public class TestConvertCountToDirectScan extends PlanTestBase {
         .baselineColumns("cnt")
         .baselineValues(25L)
         .go();
-
   }
 
   @Test
@@ -61,7 +81,6 @@ public class TestConvertCountToDirectScan extends PlanTestBase {
         .baselineColumns("cnt")
         .baselineValues(25L)
         .go();
-
   }
 
   @Test
@@ -78,7 +97,6 @@ public class TestConvertCountToDirectScan extends PlanTestBase {
         .baselineColumns("cnt")
         .baselineValues(25L)
         .go();
-
   }
 
 }

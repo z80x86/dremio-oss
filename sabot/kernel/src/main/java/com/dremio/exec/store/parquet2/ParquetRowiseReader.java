@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.dremio.exec.store.parquet2;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -30,6 +29,7 @@ import org.apache.arrow.vector.SimpleIntVector;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.complex.impl.VectorContainerWriter;
 import org.apache.arrow.vector.types.Types.MinorType;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.commons.collections.CollectionUtils;
@@ -46,6 +46,7 @@ import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.io.ColumnIOFactory;
+import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.MessageColumnIO;
 import org.apache.parquet.io.RecordReader;
 import org.apache.parquet.schema.GroupType;
@@ -61,6 +62,7 @@ import com.dremio.common.expression.SchemaPath;
 import com.dremio.exec.expr.TypeHelper;
 import com.dremio.exec.store.parquet.AbstractParquetReader;
 import com.dremio.exec.store.parquet.InputStreamProvider;
+import com.dremio.exec.store.parquet.ParquetReaderUtility;
 import com.dremio.exec.store.parquet.SchemaDerivationHelper;
 import com.dremio.parquet.reader.ParquetDirectByteBufferAllocator;
 import com.dremio.sabot.exec.context.OperatorContext;
@@ -120,29 +122,8 @@ public class ParquetRowiseReader extends AbstractParquetReader {
     this(context, footer, rowGroupIndex, path, columns, fileSystem, schemaHelper, null, inputStreamProvider);
   }
 
-  /**
-   * Converts {@link ColumnDescriptor} to {@link SchemaPath} and converts any parquet LOGICAL LIST to something
-   * the execution engine can understand (removes the extra 'list' and 'element' fields from the name)
-   */
-  private static SchemaPath convertColumnDescriptor(final MessageType schema, final ColumnDescriptor columnDescriptor) {
-    List<String> path = Lists.newArrayList(columnDescriptor.getPath());
-
-    // go through the path and find all logical lists
-    int index = 0;
-    Type type = schema;
-    while (!type.isPrimitive()) { // don't bother checking the last element in the path as it is a primitive type
-      type = type.asGroupType().getType(path.get(index));
-      if (type.getOriginalType() == OriginalType.LIST && LogicalListL1Converter.isSupportedSchema(type.asGroupType())) {
-        // remove 'list'
-        type = type.asGroupType().getType(path.get(index+1));
-        path.remove(index+1);
-        // remove 'element'
-        type = type.asGroupType().getType(path.get(index+1));
-        path.remove(index+1);
-      }
-      index++;
-    }
-
+  public static SchemaPath convertColumnDescriptor(final MessageType schema, final ColumnDescriptor columnDescriptor) {
+    List<String> path = ParquetReaderUtility.convertColumnDescriptor(schema, columnDescriptor);
     String[] schemaColDesc = new String[path.size()];
     path.toArray(schemaColDesc);
     return SchemaPath.getCompoundPath(schemaColDesc);
@@ -229,6 +210,9 @@ public class ParquetRowiseReader extends AbstractParquetReader {
         arrowSchema = null;
         logger.warn("Invalid Arrow Schema", e);
       }
+
+      verifyDecimalTypesAreSame(output);
+
       MessageType projection;
 
       if (isStarQuery()) {
@@ -247,6 +231,10 @@ public class ParquetRowiseReader extends AbstractParquetReader {
                               MinorType.INT.getType(), null),
                       (Class<? extends ValueVector>) TypeHelper.getValueVectorClass(MinorType.INT)));
           }
+          if (output.isSchemaChanged()) {
+            logger.info("Detected schema change. Not initializing further readers.");
+            return;
+          }
         }
         if(columnsNotFound.size()==getColumns().size()){
           noColumnsFound=true;
@@ -255,27 +243,28 @@ public class ParquetRowiseReader extends AbstractParquetReader {
 
       logger.debug("Requesting schema {}", projection);
 
-      Map<ColumnPath, ColumnChunkMetaData> paths = new HashMap<>();
-
-      for (ColumnChunkMetaData md : footer.getBlocks().get(rowGroupIndex).getColumns()) {
-        paths.put(md.getPath(), md);
-      }
-
-      Path filePath = new Path(path);
-
-      BlockMetaData blockMetaData = footer.getBlocks().get(rowGroupIndex);
-
-      recordCount = blockMetaData.getRowCount();
-
-      boolean schemaOnly = operatorContext == null;
+      boolean schemaOnly = (operatorContext == null) || (footer.getBlocks().size() == 0);
 
       if (!schemaOnly) {
-        pageReadStore = new ColumnChunkIncReadStore(recordCount,
-                CodecFactory.createDirectCodecFactory(fileSystem.getConf(),
-                        new ParquetDirectByteBufferAllocator(operatorContext.getAllocator()), 0), operatorContext.getAllocator(),
-                fileSystem, filePath, inputStreamProvider);
 
-        for (String[] path : schema.getPaths()) {
+        Map<ColumnPath, ColumnChunkMetaData> paths = new HashMap<>();
+
+        for (ColumnChunkMetaData md : footer.getBlocks().get(rowGroupIndex).getColumns()) {
+          paths.put(md.getPath(), md);
+        }
+
+        Path filePath = new Path(path);
+
+        BlockMetaData blockMetaData = footer.getBlocks().get(rowGroupIndex);
+
+        recordCount = blockMetaData.getRowCount();
+
+        pageReadStore = new ColumnChunkIncReadStore(recordCount,
+          CodecFactory.createDirectCodecFactory(fileSystem.getConf(),
+            new ParquetDirectByteBufferAllocator(operatorContext.getAllocator()), 0), operatorContext.getAllocator(),
+          fileSystem, filePath, inputStreamProvider);
+
+        for (String[] path : projection.getPaths()) {
           Type type = schema.getType(path);
           if (type.isPrimitive()) {
             ColumnChunkMetaData md = paths.get(ColumnPath.get(path));
@@ -284,6 +273,7 @@ public class ParquetRowiseReader extends AbstractParquetReader {
         }
 
       }
+
       if(!noColumnsFound) {
         ColumnIOFactory factory = new ColumnIOFactory(false);
         MessageColumnIO columnIO = factory.getColumnIO(projection, schema);
@@ -306,6 +296,40 @@ public class ParquetRowiseReader extends AbstractParquetReader {
       }
     } catch (Exception e) {
       handleAndRaise("Failure in setting up reader", e);
+    }
+  }
+
+  private void verifyDecimalTypesAreSame(OutputMutator output) {
+    for (ValueVector vector : output.getVectors()) {
+      Field fieldInSchema = vector.getField();
+      if (fieldInSchema.getType().getTypeID() == ArrowType.ArrowTypeID.Decimal) {
+        ArrowType.Decimal typeInTable = (ArrowType.Decimal) fieldInSchema.getType();
+        Type typeInParquet = null;
+        // the field in arrow schema may not be present in hive schema
+        try {
+          typeInParquet  = schema.getType(fieldInSchema.getName());
+        } catch (InvalidRecordException e) {
+        }
+        if (typeInParquet == null) {
+          continue;
+        }
+        boolean schemaMisMatch = true;
+        OriginalType originalType = typeInParquet.getOriginalType();
+        if (originalType.equals(OriginalType.DECIMAL) ) {
+          int precision = typeInParquet
+            .asPrimitiveType().getDecimalMetadata().getPrecision();
+          int scale = typeInParquet.asPrimitiveType().getDecimalMetadata().getScale();
+          ArrowType decimalType = new ArrowType.Decimal(precision, scale);
+          if (decimalType.equals(typeInTable)) {
+            schemaMisMatch = false;
+          }
+        }
+        if (schemaMisMatch) {
+          throw UserException.schemaChangeError().message("Mixed types "+ fieldInSchema.getType()
+            + " , " + typeInParquet + " is not supported.")
+            .build(logger);
+        }
+      }
     }
   }
 
@@ -392,8 +416,7 @@ public class ParquetRowiseReader extends AbstractParquetReader {
         pageReadStore.close();
         pageReadStore = null;
       }
-      inputStreamProvider.close();
-    } catch (IOException e) {
+    } catch (Exception e) {
       logger.warn("Failure while closing PageReadStore", e);
     }
   }

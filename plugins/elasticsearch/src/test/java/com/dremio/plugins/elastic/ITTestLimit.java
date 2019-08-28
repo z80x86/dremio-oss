@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -519,7 +519,7 @@ public class ITTestLimit extends ElasticBaseTestQuery {
       .build();
 
     ProfileGrabber grabber = new ProfileGrabber();
-    getLocalQueryExecutor().submitLocalQuery(ExternalIdHelper.generateExternalId(), grabber, queryCmd, false, config);
+    getLocalQueryExecutor().submitLocalQuery(ExternalIdHelper.generateExternalId(), grabber, queryCmd, false, config, false);
     QueryProfile profile = grabber.getProfile();
 
     Optional<OperatorProfile> scanProfile = FluentIterable.from(profile.getFragmentProfile(0).getMinorFragmentProfile(0).getOperatorProfileList())

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -307,6 +307,7 @@ public abstract class BaseFunctionHolder extends AbstractFunctionHolder {
     return this.parameters[i].isFieldReader;
   }
 
+  @Override
   public CompleteType getReturnType(final List<LogicalExpression> args) {
     return derivation.getOutputType(returnValue.type, args);
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,8 +118,10 @@ public class ParquetGroupScanUtils {
     this.formatPlugin = formatPlugin;
     this.conditions = conditions;
     this.columns = columns;
-    this.fs = ImpersonationUtil.createFileSystem(userName, plugin.getFsConf());
     this.plugin = plugin;
+    this.fs = ImpersonationUtil.createFileSystem(plugin.getContext(), plugin.getId().getName(), plugin.getConfig(), null,
+      ImpersonationUtil.createProxyUgi(userName), plugin.getFsConf(), plugin.getConfig().getConnectionUniqueProperties(),
+      false);
     this.selectionRoot = selectionRoot;
     this.entries = selection.getStatuses();
 
@@ -226,17 +228,17 @@ public class ParquetGroupScanUtils {
         case UTF8:
           return Types.optional(MinorType.VARCHAR);
         case UINT_8:
-          return Types.optional(MinorType.UINT1);
+          return Types.optional(MinorType.INT);
         case UINT_16:
-          return Types.optional(MinorType.UINT2);
+          return Types.optional(MinorType.INT);
         case UINT_32:
-          return Types.optional(MinorType.UINT4);
+          return Types.optional(MinorType.BIGINT);
         case UINT_64:
-          return Types.optional(MinorType.UINT8);
+          return Types.optional(MinorType.BIGINT);
         case INT_8:
-          return Types.optional(MinorType.TINYINT);
+          return Types.optional(MinorType.INT);
         case INT_16:
-          return Types.optional(MinorType.SMALLINT);
+          return Types.optional(MinorType.INT);
       }
     }
 
@@ -352,9 +354,9 @@ public class ParquetGroupScanUtils {
 
     // TODO: do we need this code path?
     if (entries.size() == 1) {
-      parquetTableMetadata = Metadata.getParquetTableMetadata(entries.get(0), fs, formatPlugin.getConfig(), plugin.getFsConf());
+      parquetTableMetadata = Metadata.getParquetTableMetadata(entries.get(0), fs, formatPlugin.getConfig(), plugin);
     } else {
-      parquetTableMetadata = Metadata.getParquetTableMetadata(entries, formatPlugin.getConfig(), plugin.getFsConf());
+      parquetTableMetadata = Metadata.getParquetTableMetadata(entries, formatPlugin.getConfig(), plugin);
     }
 
     ListMultimap<String, NodeEndpoint> hostEndpointMap = FluentIterable.from(plugin.getContext().getExecutors())
@@ -486,9 +488,9 @@ public class ParquetGroupScanUtils {
 
     // DX-14064: don't consider columns that are all null partition columns.
     if (optionManager.getOption(ExecConstants.PARQUET_ELIMINATE_NULL_PARTITIONS)) {
-    // filter out only those columns who we know have zero count i.e. all the row groups
-    // have stats for this column and they are all null.
-    columnTypeMap = columnTypeMap.entrySet()
+      // filter out only those columns who we know have zero count i.e. all the row groups
+      // have stats for this column and they are all null.
+      columnTypeMap = columnTypeMap.entrySet()
         .stream()
         .filter(e -> e.getKey().getAsUnescapedPath().equals(IncrementalUpdateUtils.UPDATE_COLUMN)
           || columnValueCounts.get(e.getKey()) != 0)
@@ -504,11 +506,16 @@ public class ParquetGroupScanUtils {
       Map<SchemaPath, MajorType> prunedColumnTypeMap = Maps.newLinkedHashMap();
       int i = 0;
       for(Map.Entry<SchemaPath, MajorType> columnTypeMapEntry : columnTypeMap.entrySet()) {
-        prunedColumnTypeMap.put(columnTypeMapEntry.getKey(), columnTypeMapEntry.getValue());
-        i++;
         if (i == maxPartitionColumns) {
           break;
         }
+        prunedColumnTypeMap.put(columnTypeMapEntry.getKey(), columnTypeMapEntry.getValue());
+        i++;
+      }
+      // handle case where partition identification is turned off.
+      // this is needed to correctly handle incremental reflection refresh.
+      if (prunedColumnTypeMap.size() == 0 ) {
+        prunedColumnTypeMap.put(SchemaPath.getSimplePath(UPDATE_COLUMN), Types.optional(MinorType.BIGINT));
       }
       columnTypeMap = prunedColumnTypeMap;
     }

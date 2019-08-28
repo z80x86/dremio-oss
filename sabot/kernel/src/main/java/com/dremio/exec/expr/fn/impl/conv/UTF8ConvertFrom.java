@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import org.apache.arrow.vector.holders.VarCharHolder;
 
 import com.dremio.exec.expr.SimpleFunction;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
-import com.dremio.exec.expr.annotations.Output;
-import com.dremio.exec.expr.annotations.Param;
 import com.dremio.exec.expr.annotations.FunctionTemplate.FunctionScope;
 import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
+import com.dremio.exec.expr.annotations.Output;
+import com.dremio.exec.expr.annotations.Param;
 
 @FunctionTemplate(name = "convert_fromUTF8", scope = FunctionScope.SIMPLE, nulls = NullHandling.NULL_IF_NULL)
 public class UTF8ConvertFrom implements SimpleFunction {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,11 +35,35 @@ export default class RunMenu extends Component {
   }
 
   render() {
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const runKbdShortTxt = (isMac) ? '⌘+Shift+Enter' : 'Ctrl+Shift+Enter';
+    const previewKbdShortTxt = (isMac) ? '⌘+Enter' : 'Ctrl+Enter';
     return (
       <Menu>
-        <MenuItem onClick={this.props.action.bind(this, {name: 'run', label: 'Run'})}>Run</MenuItem>
-        <MenuItem onClick={this.props.action.bind(this, {name: 'preview', label: 'Preview'})}>Preview</MenuItem>
+        <MenuItem onClick={this.props.action.bind(this, {name: 'run', label: 'Run'})}>
+          <div style={styles.menuItemWrap}>
+            <span>Run</span>
+            <div style={styles.shortcut}>{runKbdShortTxt}</div>
+          </div>
+        </MenuItem>
+        <MenuItem onClick={this.props.action.bind(this, {name: 'preview', label: 'Preview'})}>
+          <div style={styles.menuItemWrap}>
+            <span>Preview</span>
+            <div style={styles.shortcut}>{previewKbdShortTxt}</div>
+          </div>
+        </MenuItem>
       </Menu>
     );
   }
 }
+
+const styles = {
+  menuItemWrap: {
+    display: 'flex',
+    width: 140
+  },
+  shortcut: {
+    marginLeft: 'auto',
+    opacity: '0.6'
+  }
+};

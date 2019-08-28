@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,42 +16,55 @@
 
 package com.dremio.exec.physical.config;
 
+import java.util.Collection;
 import java.util.List;
 
 import com.dremio.common.logical.data.Order.Ordering;
-import com.dremio.exec.expr.fn.FunctionLookupContext;
+import com.dremio.exec.physical.EndpointAffinity;
 import com.dremio.exec.physical.PhysicalOperatorSetupException;
 import com.dremio.exec.physical.base.AbstractExchange;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.PhysicalOperatorUtil;
 import com.dremio.exec.physical.base.Receiver;
 import com.dremio.exec.physical.base.Sender;
+import com.dremio.exec.planner.fragment.EndpointsIndex;
 import com.dremio.exec.planner.fragment.ParallelizationInfo;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
-import com.fasterxml.jackson.annotation.JsonCreator;
+import com.dremio.exec.record.BatchSchema;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
 
-@JsonTypeName("single-merge-exchange")
 public class SingleMergeExchange extends AbstractExchange {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(SingleMergeExchange.class);
 
   private final List<Ordering> orderExpr;
 
-  @JsonCreator
-  public SingleMergeExchange(@JsonProperty("child") PhysicalOperator child,
-                             @JsonProperty("orderings") List<Ordering> orderExpr) {
-    super(child);
+  public SingleMergeExchange(
+      OpProps props,
+      OpProps senderProps,
+      OpProps receiverProps,
+      BatchSchema schema,
+      PhysicalOperator child,
+      List<Ordering> orderExpr) {
+    super(props, senderProps, receiverProps, schema, child);
     this.orderExpr = orderExpr;
   }
 
   @Override
-  public ParallelizationInfo getReceiverParallelizationInfo(List<NodeEndpoint> senderFragmentEndpoints) {
-    Preconditions.checkArgument(senderFragmentEndpoints != null && senderFragmentEndpoints.size() > 0,
-        "Sender fragment endpoint list should not be empty");
+  public ParallelizationInfo.WidthConstraint getReceiverParallelizationWidthConstraint() {
+    return ParallelizationInfo.WidthConstraint.SINGLE;
+  }
 
-    return ParallelizationInfo.create(1, 1, getDefaultAffinityMap(senderFragmentEndpoints));
+  @Override
+  public Supplier<Collection<EndpointAffinity>> getReceiverEndpointAffinity(Supplier<Collection<NodeEndpoint>> senderFragmentEndpointsSupplier) {
+    return () -> {
+      Collection<NodeEndpoint> senderFragmentEndpoints = senderFragmentEndpointsSupplier.get();
+      Preconditions.checkArgument(senderFragmentEndpoints != null && senderFragmentEndpoints.size() > 0,
+        "Sender fragment endpoint list should not be empty");
+      return getDefaultAffinityMap(senderFragmentEndpoints);
+    };
   }
 
   @Override
@@ -64,18 +77,19 @@ public class SingleMergeExchange extends AbstractExchange {
   }
 
   @Override
-  public Sender getSender(int minorFragmentId, PhysicalOperator child, FunctionLookupContext context) {
-    return new SingleSender(receiverMajorFragmentId, child, receiverLocations.iterator().next(), getSchema(context));
+  public Sender getSender(int minorFragmentId, PhysicalOperator child, EndpointsIndex.Builder indexBuilder) {
+    return new SingleSender(senderProps, schema, child, receiverMajorFragmentId,
+      indexBuilder.addFragmentEndpoint(0, receiverLocations.iterator().next()));
   }
 
   @Override
-  public Receiver getReceiver(int minorFragmentId, FunctionLookupContext context) {
-    return new MergingReceiverPOP(senderMajorFragmentId, PhysicalOperatorUtil.getIndexOrderedEndpoints(senderLocations), orderExpr, false, getSchema(context));
+  public Receiver getReceiver(int minorFragmentId, EndpointsIndex.Builder indexBuilder) {
+    return new MergingReceiverPOP(receiverProps, schema, senderMajorFragmentId, PhysicalOperatorUtil.getIndexOrderedEndpoints(senderLocations, indexBuilder), false, orderExpr);
   }
 
   @Override
   protected PhysicalOperator getNewWithChild(PhysicalOperator child) {
-    return new SingleMergeExchange(child, orderExpr);
+    return new SingleMergeExchange(props, senderProps, receiverProps, schema, child, orderExpr);
   }
 
   @JsonProperty("orderings")

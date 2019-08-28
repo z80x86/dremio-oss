@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,15 +31,10 @@ package com.dremio.exec.store.easy.text.compliant;
  * limitations under the License.
  ******************************************************************************/
 
-import com.dremio.common.exceptions.UserException;
-import io.netty.buffer.ArrowBuf;
-import io.netty.util.internal.PlatformDependent;
-
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 import org.apache.arrow.memory.BoundsChecking;
 import org.apache.commons.io.ByteOrderMark;
@@ -48,8 +43,12 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.Seekable;
 import org.apache.hadoop.io.compress.CompressionInputStream;
 
+import com.dremio.common.exceptions.UserException;
 import com.google.common.base.Preconditions;
 import com.univocity.parsers.common.Format;
+
+import io.netty.buffer.ArrowBuf;
+import io.netty.util.internal.PlatformDependent;
 
 /**
  * Class that fronts an InputStream to provide a byte consumption interface.
@@ -71,9 +70,6 @@ final class TextInput {
    */
   private final long startPos;
   private final long endPos;
-
-  private int bufferMark;
-  private long streamMark;
 
   private long streamPos;
 
@@ -169,7 +165,7 @@ final class TextInput {
           skipLines(1);
         } catch (StreamFinishedPseudoException sfpe) {
           // just stop parsing - as end of the input reached
-          throw new IllegalArgumentException("Only one data line detected. Please consider changing line delimter.");
+          throw new IllegalArgumentException("Only one data line detected. Please consider changing line delimiter.");
         }
       }
     }
@@ -188,11 +184,6 @@ final class TextInput {
 
   long getPos(){
     return streamPos + bufferPtr;
-  }
-
-  public void mark(){
-    streamMark = streamPos;
-    bufferMark = bufferPtr;
   }
 
   /**
@@ -234,7 +225,7 @@ final class TextInput {
     streamPos = seekable.getPos();
     underlyingBuffer.clear();
 
-    if(endFound){
+    if(endFound || streamPos > endPos){
       length = -1;
       return;
     }

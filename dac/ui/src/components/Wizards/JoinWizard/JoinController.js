@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,10 +30,9 @@ import Message from 'components/Message';
 
 import { loadExploreEntities } from 'actions/explore/dataset/get';
 import { loadJoinDataset, setJoinTab, resetJoins, setJoinStep } from 'actions/explore/join';
-import { runTableTransform } from 'actions/explore/dataset/transform';
 import { loadRecommendedJoin } from 'actions/explore/join';
 
-import { getTableColumns, getJoinTable } from 'selectors/explore';
+import { getTableColumns, getJoinTable, getExploreState } from 'selectors/explore';
 import { getLocation } from 'selectors/routing';
 
 import { RECOMMENDED_JOIN, CUSTOM_JOIN} from 'constants/explorePage/joinTabs';
@@ -76,7 +75,6 @@ export class JoinController extends Component {
 
     // actions
     loadExploreEntities: PropTypes.func,
-    runTableTransform: PropTypes.func,
     loadJoinDataset: PropTypes.func,
     loadRecommendedJoin: PropTypes.func,
     setJoinTab: PropTypes.func,
@@ -305,12 +303,13 @@ export class JoinController extends Component {
 
 function mapStateToProps(state, ownProps) {
   const location = getLocation(state);
-  const joinDatasetPathList = state.explore.join.getIn(['custom', 'joinDatasetPathList']);
+  const explorePageState = getExploreState(state);
+  const joinDatasetPathList = explorePageState.join.getIn(['custom', 'joinDatasetPathList']);
   return {
-    joinTab: state.explore.join.get('joinTab'),
+    joinTab: explorePageState.join.get('joinTab'),
     leftColumns: getTableColumns(state, ownProps.dataset.get('datasetVersion'), location),
     rightColumns: getJoinTable(state, ownProps).get('columns'),
-    joinStep: state.explore.join.get('step'),
+    joinStep: explorePageState.join.get('step'),
     initialValues: {
       joinType: 'Inner',
       activeDataset: joinDatasetPathList,
@@ -327,7 +326,6 @@ export default connectComplexForm({
   overwriteOnInitialValuesChange: false
 }, [], mapStateToProps, {
   loadExploreEntities,
-  runTableTransform,
   loadRecommendedJoin,
   loadJoinDataset,
   setJoinTab,

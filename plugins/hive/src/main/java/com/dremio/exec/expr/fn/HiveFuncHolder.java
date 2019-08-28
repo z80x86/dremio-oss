@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import org.apache.hadoop.hive.ql.udf.generic.GenericUDF;
 import org.apache.hadoop.hive.ql.udf.generic.GenericUDFBridge;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.PrimitiveObjectInspector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.dremio.common.expression.CompleteType;
 import com.dremio.common.expression.FunctionHolderExpression;
@@ -47,6 +49,8 @@ import com.sun.codemodel.JVar;
 
 public class HiveFuncHolder extends AbstractFunctionHolder {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(FunctionImplementationRegistry.class);
+  static final Logger DEPRECATED_FUNCTION_WARNING_LOGGER =
+    LoggerFactory.getLogger("hive.deprecated.function.warning.logger");
 
   private CompleteType[] argTypes;
   private ObjectInspector returnOI;
@@ -137,6 +141,11 @@ public class HiveFuncHolder extends AbstractFunctionHolder {
   }
 
   @Override
+  public CompleteType getReturnType(List<LogicalExpression> args) {
+    return returnType;
+  }
+
+  @Override
   public FunctionTemplate.NullHandling getNullHandling() {
     throw new UnsupportedOperationException("Hive Functions do not support these.");
   }
@@ -184,6 +193,7 @@ public class HiveFuncHolder extends AbstractFunctionHolder {
 
   @Override
   public FunctionHolderExpression getExpr(String name, List<LogicalExpression> args) {
+    DEPRECATED_FUNCTION_WARNING_LOGGER.warn("Deprecated Hive function used: {}", name);
     return new HiveFuncHolderExpr(name, this, args);
   }
 

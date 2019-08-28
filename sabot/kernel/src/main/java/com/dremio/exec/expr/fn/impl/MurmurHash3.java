@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -257,21 +257,20 @@ public final class MurmurHash3 extends HashBase{
     return (int)lh1;
   }
 
-  public static long hash64(double val, long seed){
-    return murmur3_64(Double.doubleToLongBits(val), (int)seed);
+  public static long hash64(double val, long seed) {
+    return murmur3_64(Double.doubleToLongBits(val), (int) seed);
   }
 
-  public static long hash64(long start, long end, ArrowBuf buffer, long seed){
-    return murmur3_64(start, end, buffer, (int)seed);
+  public static long hash64(long start, long end, ArrowBuf buffer, long seed) {
+    return murmur3_64(start, end, buffer, (int) seed);
   }
 
   public static int hash32(double val, long seed) {
-    //return com.google.common.hash.Hashing.murmur3_128().hashLong(Double.doubleToLongBits(val)).asInt();
-    return (int)murmur3_64(Double.doubleToLongBits(val), (int)seed);
+    return murmur3_32(Double.doubleToLongBits(val), (int) seed);
   }
 
-  public static int hash32(int start, int end, ArrowBuf buffer, int seed){
-    return (int)murmur3_64(start, end, buffer, seed);
+  public static int hash32(int start, int end, ArrowBuf buffer, int seed) {
+    return murmur3_32(start, end, buffer, seed);
   }
 
 }

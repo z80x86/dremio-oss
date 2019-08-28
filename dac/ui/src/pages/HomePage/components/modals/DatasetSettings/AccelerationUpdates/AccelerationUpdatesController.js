@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,7 +70,7 @@ export class AccelerationUpdatesController extends Component {
       const id = entity.get('id');
       this.loadDataset(id).then((dataset) => {
         this.setState({dataset});
-        this.props.loadDatasetAccelerationSettings(entity, VIEW_ID);
+        this.props.loadDatasetAccelerationSettings(entity.get('fullPathList'), VIEW_ID);
       });
     }
   }
@@ -110,7 +110,7 @@ export class AccelerationUpdatesController extends Component {
 
   submit = (form) => {
     return ApiUtils.attachFormSubmitHandlers(
-      this.props.updateDatasetAccelerationSettings(this.props.entity, form)
+      this.props.updateDatasetAccelerationSettings(this.props.entity.get('fullPathList'), form)
     ).then(() => this.props.onDone(null, true));
   }
 
@@ -129,7 +129,7 @@ export class AccelerationUpdatesController extends Component {
           accelerationSettings={accelerationSettings}
           datasetFields={this.schemaToColumns(this.state.dataset)}
           entityType={entity.get('entityType')}
-          entity={entity}
+          entityId={entity.get('id')}
           onCancel={onCancel}
           updateFormDirtyState={updateFormDirtyState}
           submit={this.submit} />}

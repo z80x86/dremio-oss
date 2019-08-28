@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,10 @@ export default function notification(state = {}, action) {
       message: action.message,
       level: action.level,
       autoDismiss: action.autoDismiss
+    };
+  case ActionTypes.REMOVE_NOTIFICATION:
+    return {
+      removeMessageType: action.messageType
     };
   default:
     return state;

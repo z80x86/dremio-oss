@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,8 @@ public class UpgradeContext {
   private final LogicalPlanPersistence lpPersistence;
   private final ConnectionReader connectionReader;
 
-  UpgradeContext(KVStoreProvider kvStoreProvider, LogicalPlanPersistence lpPersistence, ConnectionReader connectionReader) {
+  UpgradeContext(KVStoreProvider kvStoreProvider, LogicalPlanPersistence lpPersistence,
+                 ConnectionReader connectionReader) {
     this.kvStoreProvider = kvStoreProvider;
     this.lpPersistence = lpPersistence;
     this.connectionReader = connectionReader;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.dremio.exec.proto.ExecRPC.FragmentStreamComplete;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
 import com.dremio.exec.record.FragmentWritableBatch;
 import com.dremio.exec.rpc.RpcOutcomeListener;
+import com.dremio.sabot.exec.fragment.OutOfBandMessage;
 import com.dremio.sabot.threads.SendingMonitor;
 
 /**
@@ -50,6 +51,11 @@ public class AccountingExecTunnel {
   public void informReceiverFinished(FinishedReceiver finishedReceiver) {
     monitor.increment();
     tunnel.informReceiverFinished(statusHandler, finishedReceiver);
+  }
+
+  public void sendOOBMessage(OutOfBandMessage message) {
+    monitor.increment();
+    tunnel.sendOOBMessage(statusHandler, message);
   }
 
 }

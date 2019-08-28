@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,17 +30,18 @@ import com.dremio.exec.compile.sig.MappingSet;
 import com.dremio.exec.exception.ClassTransformationException;
 import com.dremio.exec.exception.SchemaChangeException;
 import com.dremio.exec.expr.ClassGenerator;
+import com.dremio.exec.expr.ClassGenerator.HoldingContainer;
 import com.dremio.exec.expr.ClassProducer;
 import com.dremio.exec.expr.CodeGenerator;
 import com.dremio.exec.expr.TypeHelper;
 import com.dremio.exec.expr.ValueVectorReadExpression;
 import com.dremio.exec.expr.ValueVectorWriteExpression;
-import com.dremio.exec.expr.ClassGenerator.HoldingContainer;
 import com.dremio.exec.expr.fn.FunctionGenerationHelper;
 import com.dremio.exec.planner.physical.HashPrelUtil;
 import com.dremio.exec.record.TypedFieldId;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorContainer;
+import com.dremio.options.OptionManager;
 import com.dremio.sabot.op.common.hashtable.HashTable.BatchAddedListener;
 import com.dremio.sabot.op.join.JoinUtils;
 import com.sun.codemodel.JConditional;
@@ -131,8 +132,8 @@ public class ChainedHashTable {
     this.listener = listener;
   }
 
-  public HashTable createAndSetupHashTable(TypedFieldId[] outKeyFieldIds) throws ClassTransformationException,
-      IOException, SchemaChangeException {
+  public HashTable createAndSetupHashTable(TypedFieldId[] outKeyFieldIds, OptionManager optionManager) throws
+    ClassTransformationException, IOException, SchemaChangeException {
     final CodeGenerator<HashTable> codeGenerator = producer.createGenerator(HashTable.TEMPLATE_DEFINITION);
     final ClassGenerator<HashTable> hashTableGen = codeGenerator.getRoot();
     final ClassGenerator<HashTable> batchHolderGen = hashTableGen.getInnerGenerator("BatchHolder");
@@ -170,7 +171,8 @@ public class ChainedHashTable {
         keyExprsProbe[i] = expr;
         i++;
       }
-      JoinUtils.addLeastRestrictiveCasts(keyExprsProbe, incomingProbe, keyExprsBuild, incomingBuild, producer);
+      JoinUtils.addLeastRestrictiveCasts(keyExprsProbe, incomingProbe, keyExprsBuild,
+        incomingBuild, producer, optionManager);
     }
 
     i = 0;

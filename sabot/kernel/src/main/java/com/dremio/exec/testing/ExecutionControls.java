@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,12 @@ import java.util.Map;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.exec.ExecConstants;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
+import com.dremio.exec.testing.InjectionSite.InjectionSiteKeyDeserializer;
+import com.dremio.exec.util.AssertionUtil;
 import com.dremio.options.OptionManager;
 import com.dremio.options.OptionValue;
 import com.dremio.options.OptionValue.OptionType;
 import com.dremio.options.TypeValidators.TypeValidator;
-import com.dremio.exec.testing.InjectionSite.InjectionSiteKeyDeserializer;
-import com.dremio.exec.util.AssertionUtil;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonSubTypes.Type;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;

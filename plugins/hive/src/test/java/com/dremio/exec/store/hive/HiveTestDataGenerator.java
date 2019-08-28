@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+
+import com.dremio.exec.ExecConstants;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -66,8 +68,9 @@ public class HiveTestDataGenerator {
       final String dbDir = getTempDir("metastore_db");
       final String whDir = getTempDir("warehouse");
 
-      instance = new HiveTestDataGenerator(dbDir, whDir);
-      instance.generateTestData();
+      HiveTestDataGenerator localInstance = new HiveTestDataGenerator(dbDir, whDir);
+      localInstance.generateTestData();
+      instance = localInstance;
     }
 
     return instance;
@@ -239,19 +242,175 @@ public class HiveTestDataGenerator {
     final File file = new File(regionDir, "region.parquet");
     file.deleteOnExit();
     regionDir.deleteOnExit();
-    Files.copy(Paths.get(url.toURI()), Paths.get(file.toURI()));
+    Files.write(Paths.get(file.toURI()), Resources.toByteArray(url));
 
     final String parquetUpperSchemaTable = "create external table parquet_region(R_REGIONKEY bigint, R_NAME string, R_COMMENT string) " +
       "stored as parquet location '" + file.getParent() + "'";
     executeQuery(hiveDriver, parquetUpperSchemaTable);
 
+    final String parquetschemalearntest = "create external table parquetschemalearntest(R_REGIONKEY bigint) " +
+      "stored as parquet location '" + file.getParent() + "'";
+    executeQuery(hiveDriver, parquetschemalearntest);
+
+    // create Parquet format based table, with two files.
+    final File regionWithTwoDir = new File(getWhDir(), "parquet_with_two_files");
+    regionWithTwoDir.mkdirs();
+    final File file1Of2 = new File(regionWithTwoDir, "region1.parquet");
+    file1Of2.deleteOnExit();
+    Files.write(Paths.get(file1Of2.toURI()), Resources.toByteArray(url));
+    final File file2Of2 = new File(regionWithTwoDir, "region2.parquet");
+    file2Of2.deleteOnExit();
+    Files.write(Paths.get(file2Of2.toURI()), Resources.toByteArray(url));
+    regionWithTwoDir.deleteOnExit();
+    final String parquetWithTwoFilesTable = "create external table parquet_with_two_files(R_REGIONKEY bigint, R_NAME string, R_COMMENT string) " +
+      "stored as parquet location '" + file1Of2.getParent() + "'";
+    executeQuery(hiveDriver, parquetWithTwoFilesTable);
+
+
     final String orcRegionTable = "create table orc_region stored as orc as SELECT * FROM parquet_region";
     executeQuery(hiveDriver, orcRegionTable);
+
+    byte[] fileData = Files.readAllBytes(new File(getWhDir(), "orc_region/000000_0").toPath());
+
+    // create ORC format based table, with two files.
+    final File regionOrcWithTwoDir = new File(getWhDir(), "orc_with_two_files");
+    regionOrcWithTwoDir.mkdirs();
+    final File fileOrc1Of2 = new File(regionOrcWithTwoDir, "region1.orc");
+    fileOrc1Of2.deleteOnExit();
+    Files.write(Paths.get(fileOrc1Of2.toURI()), fileData);
+    final File fileOrc2Of2 = new File(regionOrcWithTwoDir, "region2.orc");
+    fileOrc2Of2.deleteOnExit();
+    Files.write(Paths.get(fileOrc2Of2.toURI()), fileData);
+    regionOrcWithTwoDir.deleteOnExit();
+    final String orcWithTwoFilesTable = "create external table orc_with_two_files(R_REGIONKEY bigint, R_NAME string, R_COMMENT string) " +
+      "stored as orc location '" + fileOrc1Of2.getParent() + "'";
+    executeQuery(hiveDriver, orcWithTwoFilesTable);
+
+    final String orcStringsTable = "create table orc_strings (key int, country_char25 CHAR(25), " +
+      "country_string string, country_varchar VARCHAR(1000), continent_char25 CHAR(25)) stored as orc";
+    final String insert1 = "insert into orc_strings values (1, 'INDIA', 'CHINA', 'NEPAL', 'ASIA')";
+    final String insert2 = "insert into orc_strings values (2, 'INDONESIA', 'THAILAND', 'SINGAPORE', 'ASIA')";
+    final String insert3 = "insert into orc_strings values (3, 'FRANCE', 'ITALY', 'ROMANIA', 'EUROPE')";
+    executeQuery(hiveDriver, orcStringsTable);
+    executeQuery(hiveDriver, insert1);
+    executeQuery(hiveDriver, insert2);
+    executeQuery(hiveDriver, insert3);
+
+    final String[][] typeconversinoTables = {
+      {"tinyint", "", "90"},
+      {"smallint", "", "90"},
+      {"int", "", "90"},
+      {"bigint", "", "90"},
+      {"float", "", "90.0"},
+      {"double", "", "90.0"},
+      {"decimal", "", "90"},
+      {"string", "", "90"},
+      {"varchar", "(1024)", "90"},
+      {"timestamp", "", "'2019-03-14 11:17:31.119021'"},
+      {"date", "", "'2019-03-14'"}
+    };
+    for (int i=0; i<typeconversinoTables.length; ++i) {
+      createTypeConversionSourceTable(hiveDriver, typeconversinoTables[i][0],
+        typeconversinoTables[i][1], typeconversinoTables[i][2]);
+    }
+    final String[][] typeconversinoDestTables = {
+      //tinyint
+      {"tinyint", "", "smallint", ""},
+      {"tinyint", "", "int", ""},
+      {"tinyint", "", "bigint", ""},
+      {"tinyint", "", "float", ""},
+      {"tinyint", "", "double", ""},
+      {"tinyint", "", "decimal", ""},
+      {"tinyint", "", "string", ""},
+      {"tinyint", "", "varchar", "(1024)"},
+      //smallint
+      {"smallint", "", "int", ""},
+      {"smallint", "", "bigint", ""},
+      {"smallint", "", "float", ""},
+      {"smallint", "", "double", ""},
+      {"smallint", "", "decimal", ""},
+      {"smallint", "", "string", ""},
+      {"smallint", "", "varchar", "(1024)"},
+      //int
+      {"int", "", "bigint", ""},
+      {"int", "", "float", ""},
+      {"int", "", "double", ""},
+      {"int", "", "decimal", ""},
+      {"int", "", "string", ""},
+      {"int", "", "varchar", "(1024)"},
+      //bigint
+      {"bigint", "", "float", ""},
+      {"bigint", "", "double", ""},
+      {"bigint", "", "decimal", ""},
+      {"bigint", "", "string", ""},
+      {"bigint", "", "varchar", "(1024)"},
+      //float
+      {"float", "", "double", ""},
+      {"float", "", "decimal", ""},
+      {"float", "", "string", ""},
+      {"float", "", "varchar", "(1024)"},
+      //double
+      {"double", "", "decimal", ""},
+      {"double", "", "string", ""},
+      {"double", "", "varchar", "(1024)"},
+      //decimal
+      {"decimal", "", "string", ""},
+      {"decimal", "", "varchar", "(1024)"},
+      //string
+      {"string", "", "double", ""},
+      {"string", "", "decimal", ""},
+      {"string", "", "varchar", "(1024)"},
+      //varchar
+      {"varchar", "", "double", ""},
+      {"varchar", "", "decimal", ""},
+      {"varchar", "", "string", ""},
+      //timestamp
+      {"timestamp", "", "string", ""},
+      {"timestamp", "", "varchar", "(1024)"},
+      //date
+      {"date", "", "string", ""},
+      {"date", "", "varchar", "(1024)"}
+    };
+    for (int i=0; i<typeconversinoDestTables.length; ++i) {
+      createTypeConversionDestinationTable(hiveDriver,
+        typeconversinoDestTables[i][0],
+        typeconversinoDestTables[i][1],
+        typeconversinoDestTables[i][2],
+        typeconversinoDestTables[i][3]);
+    }
+
+    createDecimalConversionTable(hiveDriver, "decimal_conversion_test_orc");
+    createExtTableWithMoreColumnsThanOriginal(hiveDriver, "orc_more_columns");
 
     // create a Hive table that has columns with data types which are supported for reading in Dremio.
     createAllTypesTextTable(hiveDriver, "readtest");
     createAllTypesTable(hiveDriver, "parquet", "readtest");
     createAllTypesTable(hiveDriver, "orc", "readtest");
+    createTimestampToStringTable(hiveDriver, "timestamptostring");
+    createDoubleToStringTable(hiveDriver, "doubletostring");
+
+    createFieldSizeLimitTables(hiveDriver, "field_size_limit_test");
+
+    createComplexParquetExternal(hiveDriver, "parqcomplex");
+    createParquetSchemaChangeTestTable(hiveDriver, "parqschematest_table");
+    createParquetDecimalSchemaChangeTestTable(hiveDriver, "parqdecunion_table");
+
+    createComplexTypesTextTable(hiveDriver, "orccomplex");
+    createComplexTypesTable(hiveDriver, "orc", "orccomplex");
+
+    createListTypesTextTable(hiveDriver, "orclist");
+    createListTypesTable(hiveDriver, "orc", "orclist");
+
+    createStructTypesTextTable(hiveDriver, "orcstruct");
+    createStructTypesTable(hiveDriver, "orc", "orcstruct");
+
+    createUnionTypesTextTable(hiveDriver, "orcunion");
+    createUnionTypesTable(hiveDriver, "orc", "orcunion");
+
+    createMapTypesTextTable(hiveDriver, "orcmap");
+    createMapTypesTable(hiveDriver, "orc", "orcmap");
+
+    createORCDecimalCompareTestTable(hiveDriver, "orcdecimalcompare");
 
     // create a table that has all Hive types. This is to test how hive tables metadata is populated in
     // Dremio's INFORMATION_SCHEMA.
@@ -446,6 +605,238 @@ public class HiveTestDataGenerator {
 
     return file.getPath();
   }
+  private void createTypeConversionSourceTable(final Driver hiveDriver, final String source, final String sourcetypeargs, final String value) throws Exception {
+    String table = source + "_orc";
+    String datatable = "CREATE TABLE IF NOT EXISTS " + table + " (col1 " + source + sourcetypeargs + ") STORED AS ORC";
+    executeQuery(hiveDriver, datatable);
+    String intsert_datatable = "INSERT INTO " + table + " VALUES (" + value + ")";
+    executeQuery(hiveDriver, intsert_datatable);
+  }
+  private void createTypeConversionDestinationTable(final Driver hiveDriver, final String source,
+                                                    final String sourcetypeargs,
+                                                    final String destination,
+                                                    final String desttypeargs) throws Exception {
+    String table = source + "_to_" + destination + "_orc_ext";
+    String sourcetable = source + "_orc";
+    String ext_table = "CREATE EXTERNAL TABLE IF NOT EXISTS " + table +
+      " (col1 "+ destination + desttypeargs +") STORED AS ORC LOCATION 'FILE://" + this.getWhDir() + "/" + sourcetable + "'";
+    executeQuery(hiveDriver, ext_table);
+  }
+  private void createFieldSizeLimitTables(final Driver hiveDriver, final String table) throws Exception {
+    final int unsupportedCellSize = Math.toIntExact(ExecConstants.LIMIT_FIELD_SIZE_BYTES.getDefault().getNumVal()) + 1;
+    String createOrcTableCmd = "CREATE TABLE " + table + "_orc" + " (col1 string, col2 varchar(" + Integer.toString(unsupportedCellSize)+"), col3 binary) STORED AS ORC";
+    String createTextTableCmd = "CREATE TABLE " + table + " (col1 string, col2 varchar(" + Integer.toString(unsupportedCellSize)+ "), col3 binary)";
+
+    String stringVal = StringUtils.repeat("a", unsupportedCellSize);
+    String insertStrData = "INSERT INTO TABLE " + table + " VALUES('" + stringVal + "', '" + stringVal + "', '" + stringVal + "')";
+    String insertStrDataInOrc = "INSERT INTO TABLE " + table + "_orc" + " VALUES('" + stringVal + "', '" + stringVal + "', '" + stringVal + "')";
+    executeQuery(hiveDriver, createTextTableCmd);
+    executeQuery(hiveDriver, createOrcTableCmd);
+    executeQuery(hiveDriver, insertStrData);
+    executeQuery(hiveDriver, insertStrDataInOrc);
+  }
+  private void createParquetSchemaChangeTestTable(final Driver hiveDriver, final String table) throws Exception {
+    String createParqetTableCmd = "CREATE TABLE " + table + " (col1 int) STORED AS PARQUET";
+    String insertDataCmd = "INSERT INTO " + table + " VALUES (1)";
+    String alterTableCmd = "ALTER TABLE " + table + " CHANGE col1 col1 double";
+    executeQuery(hiveDriver, createParqetTableCmd);
+    executeQuery(hiveDriver, insertDataCmd);
+    executeQuery(hiveDriver, alterTableCmd);
+  }
+  private void createParquetDecimalSchemaChangeTestTable(final Driver hiveDriver, final String table)
+    throws Exception {
+    String createParqetTableCmd = "CREATE TABLE " + table + " (col1 decimal(5,2)) STORED AS " +
+      "PARQUET";
+    String insertDataCmd = "INSERT INTO " + table + " VALUES (123.45)";
+    String alterTableCmd = "ALTER TABLE " + table + " CHANGE col1 col1 decimal(3,0)";
+    executeQuery(hiveDriver, createParqetTableCmd);
+    executeQuery(hiveDriver, insertDataCmd);
+    executeQuery(hiveDriver, alterTableCmd);
+  }
+  private void createComplexParquetExternal(final Driver hiveDriver, final String table) throws Exception {
+    String createParqetTableCmd = "CREATE TABLE " + table + " (col1 int, col2 array<int>) STORED AS PARQUET";
+    String createArrayDataTable = "CREATE TABLE " + table + "_array_data" + " (col1 int)";
+    String insertArrayData = "INSERT INTO TABLE " + table + "_array_data" + " VALUES(90)";
+    String insertParquetData = "INSERT INTO TABLE " + table + " SELECT col1, array(col1) FROM " + table + "_array_data";
+    String createParquetExtTable = "CREATE EXTERNAL TABLE " + table + "_ext" + " (col1 int) STORED AS PARQUET LOCATION 'FILE://" + this.getWhDir() + "/" + table + "'";
+    executeQuery(hiveDriver, createParqetTableCmd);
+    executeQuery(hiveDriver, createArrayDataTable);
+    executeQuery(hiveDriver, insertArrayData);
+    executeQuery(hiveDriver, insertParquetData);
+    executeQuery(hiveDriver, createParquetExtTable);
+  }
+  private void createComplexTypesTextTable(final Driver hiveDriver, final String table) throws Exception {
+    String testDataFile = generateComplexTypesDataFile();
+    executeQuery(hiveDriver,
+      "CREATE TABLE IF NOT EXISTS " + table + " (" +
+        " rownum int," +
+        " list_field array<int>, " +
+        " struct_field struct<name:string, age:int>, " +
+        " struct_list_field struct<type:string, value:array<string>>, " +
+        " list_struct_field array<struct<name:string, age:int>>, " +
+        " map_field map<string, int>, " +
+        " map_struct_field map<string, struct<type:string>> " +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','" +
+        " MAP KEYS TERMINATED BY ':'");
+    executeQuery(hiveDriver,
+      String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table, testDataFile));
+  }
+  private void createComplexTypesTable(final Driver hiveDriver, final String format, final String table) throws Exception {
+    executeQuery(hiveDriver,
+      "CREATE TABLE " + table + format + "(" +
+        " rownum int," +
+        " list_field array<int>, " +
+        " struct_field struct<name:string, age:int>, " +
+        " struct_list_field struct<type:string, value:array<string>>, " +
+        " list_struct_field array<struct<name:string, age:int>>, " +
+        " map_field map<string, int>, " +
+        " map_struct_field map<string, struct<type:string>> " +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','" +
+        " MAP KEYS TERMINATED BY ':' STORED AS " + format);
+    executeQuery(hiveDriver, "INSERT OVERWRITE TABLE " + table + format + " SELECT * FROM " + table);
+  }
+  private void createListTypesTextTable(final Driver hiveDriver, final String table) throws Exception {
+    String testDataFile = generateListTypesDataFile();
+    executeQuery(hiveDriver,
+      "CREATE TABLE IF NOT EXISTS " + table + " (" +
+        " rownum int," +
+        " tinyint_field array<tinyint>, " +
+        " smallint_field array<smallint>, " +
+        " int_field array<int>, " +
+        " bigint_field array<bigint>, " +
+        " float_field array<float>, " +
+        " double_field array<double>, " +
+        " timestamp_field array<timestamp>, " +
+        " date_field array<date>, " +
+        " string_field array<string>, " +
+        " boolean_field array<boolean>, " +
+        " binary_field array<binary> " +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','");
+    // Load data into table 'readtest'
+    executeQuery(hiveDriver,
+      String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table, testDataFile));
+  }
+  private void createListTypesTable(final Driver hiveDriver, final String format, final String table) throws Exception {
+    executeQuery(hiveDriver,
+      "CREATE TABLE " + table + format + "(" +
+        " rownum int," +
+        " tinyint_field array<tinyint>, " +
+        " smallint_field array<smallint>, " +
+        " int_field array<int>, " +
+        " bigint_field array<bigint>, " +
+        " float_field array<float>, " +
+        " double_field array<double>, " +
+        " timestamp_field array<timestamp>, " +
+        " date_field array<date>, " +
+        " string_field array<string>, " +
+        " boolean_field array<boolean>, " +
+        " binary_field array<binary> " +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ',' STORED AS " + format);
+    executeQuery(hiveDriver, "INSERT OVERWRITE TABLE " + table + format + " SELECT * FROM " + table);
+  }
+  private void createMapTypesTextTable(final Driver hiveDriver, final String table) throws Exception {
+    String testDataFile = generateMapTypesDataFile();
+    executeQuery(hiveDriver,
+      "CREATE TABLE IF NOT EXISTS " + table + " (" +
+        " rownum int, " +
+        " map_field map<int, int>" +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','" +
+        "  MAP KEYS TERMINATED BY ':'");
+    executeQuery(hiveDriver,
+      String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table, testDataFile));
+  }
+  private void createMapTypesTable(final Driver hiveDriver, final String format, final String table) throws Exception {
+    executeQuery(hiveDriver,
+      "CREATE TABLE " + table + format + "(" +
+        " rownum int, " +
+        " map_field map<int, int>" +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ',' " +
+        "  MAP KEYS TERMINATED BY ':'" +
+        " STORED AS " + format);
+    executeQuery(hiveDriver, "INSERT OVERWRITE TABLE " + table + format + " SELECT * FROM " + table);
+  }
+
+  private void createORCDecimalCompareTestTable(final Driver hiveDriver, final String table) throws Exception {
+    String createTableCmd = "CREATE TABLE " + table + " (col1 float, col2 double, col3 decimal(1,1)) stored as orc";
+    String insertCmd = "INSERT INTO " + table + " values (0.1, 0.1, 0.1), (-0.1, -0.1, -0.1)";
+    executeQuery(hiveDriver, createTableCmd);
+    executeQuery(hiveDriver, insertCmd);
+  }
+
+  private void createStructTypesTextTable(final Driver hiveDriver, final String table) throws Exception {
+    String testDataFile = generateStructTypesDataFile();
+    executeQuery(hiveDriver,
+      "CREATE TABLE IF NOT EXISTS " + table + " (" +
+        " rownum int," +
+        " struct_field struct<" +
+        " tinyint_field: tinyint, " +
+        " smallint_field: smallint, " +
+        " int_field: int, " +
+        " bigint_field: bigint, " +
+        " float_field: float, " +
+        " double_field: double, " +
+        " string_field: string> " +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','");
+    executeQuery(hiveDriver,
+      String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table, testDataFile));
+  }
+  private void createStructTypesTable(final Driver hiveDriver, final String format, final String table) throws Exception {
+    executeQuery(hiveDriver,
+      "CREATE TABLE " + table + format + "(" +
+        " rownum int," +
+        " struct_field struct<" +
+        " tinyint_field: tinyint, " +
+        " smallint_field: smallint, " +
+        " int_field: int, " +
+        " bigint_field: bigint, " +
+        " float_field: float, " +
+        " double_field: double, " +
+        " string_field: string> " +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ',' STORED AS " + format);
+    executeQuery(hiveDriver, "INSERT OVERWRITE TABLE " + table + format + " SELECT * FROM " + table);
+  }
+  private void createUnionTypesTextTable(final Driver hiveDriver, final String table) throws Exception {
+    String testIntDataFile = generateUnionIntTypesDataFile();
+    String testDoubleDataFile = generateUnionDoubleTypesDataFile();
+    String testStringDataFile = generateUnionStringTypesDataFile();
+    executeQuery(hiveDriver,
+    "CREATE TABLE IF NOT EXISTS " + table + " (" +
+       " rownum int," +
+       " union_field uniontype<int, double, string>" +
+       ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','");
+    executeQuery(hiveDriver,
+    "CREATE TABLE IF NOT EXISTS " + table + "_int_input" + " (" +
+      " rownum int, int_field int" +
+      ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','");
+    executeQuery(hiveDriver,
+    "CREATE TABLE IF NOT EXISTS " + table + "_double_input" + " (" +
+       " rownum int, double_field double" +
+       ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','");
+    executeQuery(hiveDriver,
+      "CREATE TABLE IF NOT EXISTS " + table + "_string_input" + " (" +
+        " rownum int, string_field string" +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ','");
+    executeQuery(hiveDriver,
+      String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table + "_int_input", testIntDataFile));
+    executeQuery(hiveDriver,
+      String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table + "_double_input", testDoubleDataFile));
+    executeQuery(hiveDriver,
+      String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table + "_string_input", testStringDataFile));
+    executeQuery(hiveDriver,
+     String.format("INSERT INTO TABLE " + table + " SELECT rownum, CREATE_UNION(0, int_field, 0.0, \"\") FROM " + table + "_int_input"));
+    executeQuery(hiveDriver,
+      String.format("INSERT INTO TABLE " + table + " SELECT rownum, CREATE_UNION(1, 0, double_field, \"\") FROM " + table + "_double_input"));
+    executeQuery(hiveDriver,
+      String.format("INSERT INTO TABLE " + table + " SELECT rownum, CREATE_UNION(2, 0, 0.0, string_field) FROM " + table + "_string_input"));
+  }
+  private void createUnionTypesTable(final Driver hiveDriver, final String format, final String table) throws Exception {
+    executeQuery(hiveDriver,
+    "CREATE TABLE " + table + format + "(" +
+        " rownum int," +
+        " union_field uniontype<int, double, string>" +
+        ") ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' COLLECTION ITEMS TERMINATED BY ',' STORED AS " + format);
+    executeQuery(hiveDriver, "INSERT OVERWRITE TABLE " + table + format + " SELECT * FROM " + table);
+  }
 
   private void createAllTypesTextTable(final Driver hiveDriver, final String table) throws Exception {
     String testDataFile = generateAllTypesDataFile();
@@ -567,6 +958,77 @@ public class HiveTestDataGenerator {
             ")", testDataFile));
   }
 
+  private void createDecimalConversionTable(Driver hiveDriver, String table) throws Exception {
+    String datatable = "CREATE TABLE IF NOT EXISTS " + table + " (col1 decimal(30, 9), col2 decimal(23, 6), col3 decimal(16, 2)) STORED AS ORC";
+    executeQuery(hiveDriver, datatable);
+    String intsert_datatable = "INSERT INTO " + table + " VALUES (111111111111111111111.111111111, 22222222222222222.222222, 333.0)";
+    executeQuery(hiveDriver, intsert_datatable);
+    String exttable = table + "_ext";
+    String ext_table = "CREATE EXTERNAL TABLE IF NOT EXISTS " + exttable +
+      " (col1 decimal(25,2), col2 string, col3 varchar(32))" + "STORED AS ORC LOCATION 'FILE://" + this.getWhDir() + "/" + table + "'";
+    executeQuery(hiveDriver, ext_table);
+    String exttable2 = table + "_ext_2";
+    String ext_table2 = "CREATE EXTERNAL TABLE IF NOT EXISTS " + exttable2 +
+      " (col1 decimal(2,2), col2 decimal(16,7), col3 decimal(4,1))" + "STORED AS ORC LOCATION 'FILE://" + this.getWhDir() + "/" + table + "'";
+    executeQuery(hiveDriver, ext_table2);
+
+    String tablerev = table + "_rev";
+    String datatablerev = "CREATE TABLE IF NOT EXISTS " + tablerev + " (col1 int, col2 string, col3 double) STORED AS ORC";
+    executeQuery(hiveDriver, datatablerev);
+    String intsert_datatable_rev = "INSERT INTO " + tablerev + " VALUES (1234, 1234567, 1234567.123)";
+    executeQuery(hiveDriver, intsert_datatable_rev);
+    String exttable_rev = tablerev + "_ext";
+    String ext_table_rev = "CREATE EXTERNAL TABLE IF NOT EXISTS " + exttable_rev +
+      " (col1 decimal(3,2), col2 decimal(5,2), col3 decimal(5,2))" + "STORED AS ORC LOCATION 'FILE://" + this.getWhDir() + "/" + tablerev + "'";
+    executeQuery(hiveDriver, ext_table_rev);
+
+  }
+
+  private void createTimestampToStringTable(Driver hiveDriver, String table) throws Exception {
+    String testDataFile = generateTimestampsDataFile();
+    String datatabletxt = "CREATE TABLE IF NOT EXISTS " + table + " (col1 timestamp)";
+    String datatableorc = "CREATE TABLE IF NOT EXISTS " + table + "_orc" + " (col1 timestamp) STORED AS ORC";
+    executeQuery(hiveDriver, datatabletxt);
+    executeQuery(hiveDriver, datatableorc);
+
+    String insert_datatable = String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table, testDataFile);
+    executeQuery(hiveDriver, insert_datatable);
+    String insert_datatableorc = "INSERT OVERWRITE TABLE " + table + "_orc" + " SELECT * FROM " + table;
+    executeQuery(hiveDriver, insert_datatableorc);
+    String exttable = table + "_orc_ext";
+    String ext_table = "CREATE EXTERNAL TABLE IF NOT EXISTS " + exttable +
+      " (col1 string)" + "STORED AS ORC LOCATION 'FILE://" + this.getWhDir() + "/" + table + "_orc" + "'";
+    executeQuery(hiveDriver, ext_table);
+  }
+
+  private void createDoubleToStringTable(Driver hiveDriver, String table) throws Exception {
+    String testDataFile = generateDoubleDataFile();
+    String datatabletxt = "CREATE TABLE IF NOT EXISTS " + table + " (col1 double)";
+    String datatableorc = "CREATE TABLE IF NOT EXISTS " + table + "_orc" + " (col1 double) STORED AS ORC";
+    executeQuery(hiveDriver, datatabletxt);
+    executeQuery(hiveDriver, datatableorc);
+
+    String insert_datatable = String.format("LOAD DATA LOCAL INPATH '%s' INTO TABLE default." + table, testDataFile);
+    executeQuery(hiveDriver, insert_datatable);
+    String insert_datatableorc = "INSERT OVERWRITE TABLE " + table + "_orc" + " SELECT * FROM " + table;
+    executeQuery(hiveDriver, insert_datatableorc);
+    String exttable = table + "_orc_ext";
+    String ext_table = "CREATE EXTERNAL TABLE IF NOT EXISTS " + exttable +
+      " (col1 string)" + "STORED AS ORC LOCATION 'FILE://" + this.getWhDir() + "/" + table + "_orc" + "'";
+    executeQuery(hiveDriver, ext_table);
+  }
+
+  private void createExtTableWithMoreColumnsThanOriginal(Driver hiveDriver, String table) throws Exception {
+    String datatable = "CREATE TABLE IF NOT EXISTS " + table + " (col1 int, col2 int) STORED AS ORC";
+    executeQuery(hiveDriver, datatable);
+    String insert_datatable = "INSERT INTO " + table + " VALUES (1,2)";
+    executeQuery(hiveDriver, insert_datatable);
+    String exttable = table + "_ext";
+    String ext_table = "CREATE EXTERNAL TABLE IF NOT EXISTS " + exttable +
+      " (col1 int, col2 int, col3 int, col4 int)" + "STORED AS ORC LOCATION 'FILE://" + this.getWhDir() + "/" + table + "'";
+    executeQuery(hiveDriver, ext_table);
+  }
+
   private void createAllTypesTable(Driver hiveDriver, String format, String source) throws Exception {
     executeQuery(hiveDriver,
         "CREATE TABLE readtest_" + format + "(" +
@@ -680,6 +1142,33 @@ public class HiveTestDataGenerator {
     );
   }
 
+  private String generateTimestampsDataFile() throws Exception {
+    File file = getTempFile();
+
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROWS = 35000;
+    for (int i=0; i<ROWS; ++i) {
+      printWriter.println("2013-07-05 17:01:" + Integer.toString(i%60));
+    }
+    printWriter.close();
+
+    return file.getPath();
+  }
+
+  private String generateDoubleDataFile() throws Exception {
+    File file = getTempFile();
+
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROWS = 35000;
+    printWriter.println(Double.toString(1));
+    for (int i=0; i<ROWS; ++i) {
+      printWriter.println(Double.toString(9_223_372_036_854_700_000L + i));
+    }
+    printWriter.close();
+
+    return file.getPath();
+  }
+
   private String generateAllTypesDataFile() throws Exception {
     File file = getTempFile();
 
@@ -688,6 +1177,165 @@ public class HiveTestDataGenerator {
         "89853749534593985.7834783,8.345,4.67,123456,234235,3455,stringfield,varcharfield," +
         "2013-07-05 17:01:00,2013-07-05,charfield");
     printWriter.println(",,,,,,,,,,,,,,,,");
+    printWriter.close();
+
+    return file.getPath();
+  }
+
+  private String generateComplexTypesDataFile() throws Exception {
+    File file = getTempFile();
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROW_COUNT = 5000;
+    for (int row=0; row<ROW_COUNT; ++row) {
+      String rownum = Integer.toString(row);
+      String listvalue = Integer.toString(row) + "," + Integer.toString(row+1) + "," +
+        Integer.toString(row+2) + "," + Integer.toString(row+3) + "," +
+        Integer.toString(row+4);
+      String structvalue = "name"+Integer.toString(row)+","+Integer.toString(row);
+      String structlistvalue = "type"+ Integer.toString(row) + "," +
+        "elem"+Integer.toString(row) + "," + "elem"+Integer.toString(row+1) +
+        "elem"+Integer.toString(row+2) + "elem"+Integer.toString(row+3) +
+        "elem"+Integer.toString(row+4);
+      String listSturctValue = "name"+Integer.toString(row)+":"+Integer.toString(row)+
+        ","+"name"+Integer.toString(row + 1) + ":"+ Integer.toString(row + 1);
+      String mapValue = "name"+Integer.toString(row)+":"+Integer.toString(row)+
+        ","+"name"+Integer.toString(row + 1) + ":"+ Integer.toString(row + 1)+
+        ((row%2 == 0) ? (","+"name"+Integer.toString(row + 2) + ":"+ Integer.toString(row + 2)) : "");
+      String mapStructValue = "key" + Integer.toString(row) + ":" + "struct" + Integer.toString(row);
+
+      printWriter.println(rownum+"\t"+listvalue+"\t"+
+        structvalue+"\t"+structlistvalue+"\t"+listSturctValue+"\t"+
+        mapValue+"\t"+mapStructValue);
+    }
+    printWriter.close();
+
+    return file.getPath();
+  }
+
+  private String generateListTypesDataFile() throws Exception {
+    File file = getTempFile();
+
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROW_COUNT = 5000;
+    for (int row=0; row<ROW_COUNT; ++row) {
+      String rownum = Integer.toString(row);
+      String tinyint_field = Integer.toString(1) + "," +
+        Integer.toString(2) + "," + Integer.toString(3) + "," +
+        Integer.toString(4)+ "," + Integer.toString(5);
+      String smallint_field = Integer.toString(1024) + "," +
+        Integer.toString(1025) + "," + Integer.toString(1026);
+      String int_field = Integer.toString(row) + "," +
+        Integer.toString(row + 1) + "," + Integer.toString(row + 2);
+      String bigint_field = Long.toString(90000000000L) + "," +
+        Long.toString(90000000001L) + "," + Long.toString(90000000002L);
+      String float_field = Float.toString(row) + "," +
+        Float.toString(row + 1) + "," + Float.toString(row + 2);
+      String double_field = Double.toString(row) + "," +
+        Double.toString(row + 1) + "," + Double.toString(row + 2) + "," +
+        Double.toString(row + 3) + "," + Double.toString(row + 4);
+      String timestamp_field = "2019-02-18" + "," + "2019-02-19" + "," + "2019-02-20";
+      String date_field = "2019-02-18" + "," + "2019-02-19" + "," + "2019-02-20";
+      String string_field = Integer.toString(row) + "," +
+        Integer.toString(row + 1) + "," + Integer.toString(row + 2) + "," +
+        Integer.toString(row + 3) + "," + Integer.toString(row + 4);
+      String boolean_field = "true" + "," + "false" + "," + "true";
+      String binary_field = "000" + "," + "001" + "," + "010";
+
+      if (row % 7 == 0) {
+        printWriter.println(rownum + "\t" + "\\N" +
+          "\t" + "\\N" + "\t" + "\\N" + "\t" + "\\N" + "\t" + "\\N" +
+          "\t" + "\\N" + "\t" + "\\N" + "\t" + "\\N" + "\t" + "\\N" +
+          "\t" + "\\N" + "\t" + "\\N");
+      } else {
+        printWriter.println(rownum + "\t" + tinyint_field + "\t" +
+          smallint_field + "\t" + int_field + "\t" + bigint_field + "\t" + float_field +
+          "\t" + double_field + "\t" + timestamp_field + "\t" + date_field + "\t" +
+          string_field + "\t" + boolean_field + "\t" + binary_field);
+      }
+    }
+    printWriter.close();
+
+    return file.getPath();
+  }
+
+  private String generateUnionIntTypesDataFile()  throws Exception {
+    File file = getTempFile();
+
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROW_COUNT = 5000;
+    for (int row=0; row<ROW_COUNT; row = row+3) {
+      String rownum = Integer.toString(row);
+      String int_field = Integer.toString(row);
+      printWriter.println(rownum + "\t" + int_field);
+    }
+    printWriter.close();
+
+    return file.getPath();
+  }
+
+  private String generateUnionDoubleTypesDataFile()  throws Exception {
+    File file = getTempFile();
+
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROW_COUNT = 5000;
+    for (int row=1; row<ROW_COUNT; row = row+3) {
+      String rownum = Integer.toString(row);
+      String double_field = Integer.toString(row) + "." + Integer.toString(row) ;
+      printWriter.println(rownum + "\t" + double_field);
+    }
+    printWriter.close();
+    return file.getPath();
+  }
+
+  private String generateUnionStringTypesDataFile()  throws Exception {
+    File file = getTempFile();
+
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROW_COUNT = 5000;
+    for (int row=2; row<ROW_COUNT; row = row+3) {
+      String rownum = Integer.toString(row);
+      String string_field = Integer.toString(row) + "." + Integer.toString(row) ;
+      printWriter.println(rownum + "\t" + string_field);
+    }
+    printWriter.close();
+    return file.getPath();
+  }
+
+  private String generateMapTypesDataFile() throws Exception {
+    File file = getTempFile();
+
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROW_COUNT = 5000;
+    for (int row=0; row<ROW_COUNT; ++row) {
+      String rownum = Integer.toString(row);
+      String mapfield = Integer.toString(row) + ":" + Integer.toString(row);
+
+      printWriter.println(rownum + "\t" + mapfield);
+    }
+    printWriter.close();
+
+    return file.getPath();
+  }
+
+  private String generateStructTypesDataFile() throws Exception {
+    File file = getTempFile();
+
+    PrintWriter printWriter = new PrintWriter(file);
+    int ROW_COUNT = 5000;
+    for (int row=0; row<ROW_COUNT; ++row) {
+      String rownum = Integer.toString(row);
+      String tinyint_field = Integer.toString(1);
+      String smallint_field = Integer.toString(1024);
+      String int_field = Integer.toString(row);
+      String bigint_field = Long.toString(90000000000L);
+      String float_field = Float.toString(row);
+      String double_field = Double.toString(row);
+      String string_field = Integer.toString(row);
+
+      printWriter.println(rownum + "\t" + tinyint_field + "," +
+        smallint_field + "," + int_field + "," + bigint_field + "," +
+        float_field + "," + double_field + "," + string_field);
+    }
     printWriter.close();
 
     return file.getPath();

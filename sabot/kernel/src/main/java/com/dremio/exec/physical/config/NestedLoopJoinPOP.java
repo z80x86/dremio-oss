@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,17 +19,14 @@ package com.dremio.exec.physical.config;
 import java.util.Iterator;
 import java.util.List;
 
-import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.calcite.rel.core.JoinRelType;
 
-import com.dremio.common.logical.data.JoinCondition;
-import com.dremio.exec.expr.fn.FunctionLookupContext;
+import com.dremio.common.expression.LogicalExpression;
 import com.dremio.exec.physical.base.AbstractBase;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.PhysicalVisitor;
 import com.dremio.exec.proto.UserBitShared.CoreOperatorType;
-import com.dremio.exec.record.BatchSchema;
-import com.dremio.exec.record.SchemaBuilder;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -40,30 +37,26 @@ import com.google.common.collect.Iterators;
 public class NestedLoopJoinPOP extends AbstractBase {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(NestedLoopJoinPOP.class);
 
-
-  private final PhysicalOperator left;
-  private final PhysicalOperator right;
-
-  /*
-   * Conditions and jointype are currently not used, since the condition is always true
-   * and we don't perform any special execution operation based on join type either. However
-   * when we enhance NLJ this would be used.
-   */
-  private final List<JoinCondition> conditions;
+  private final PhysicalOperator build;
+  private final PhysicalOperator probe;
   private final JoinRelType joinType;
+  private final LogicalExpression condition;
+  private final boolean vectorized;
 
   @JsonCreator
   public NestedLoopJoinPOP(
-      @JsonProperty("left") PhysicalOperator left,
-      @JsonProperty("right") PhysicalOperator right,
-      @JsonProperty("conditions") List<JoinCondition> conditions,
-      @JsonProperty("joinType") JoinRelType joinType
-  ) {
-    this.left = left;
-    this.right = right;
-    this.conditions = conditions;
-    Preconditions.checkArgument(joinType != null, "Join type is missing!");
+      @JsonProperty("props") OpProps props,
+      @JsonProperty("probe") PhysicalOperator probe,
+      @JsonProperty("build") PhysicalOperator build,
+      @JsonProperty("joinType") JoinRelType joinType,
+      @JsonProperty("condition") LogicalExpression condition,
+      @JsonProperty("vectorized") boolean vectorized) {
+    super(props);
+    this.probe = probe;
+    this.build = build;
     this.joinType = joinType;
+    this.condition = condition;
+    this.vectorized = vectorized;
   }
 
   @Override
@@ -74,40 +67,32 @@ public class NestedLoopJoinPOP extends AbstractBase {
   @Override
   public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) {
     Preconditions.checkArgument(children.size() == 2);
-    return new NestedLoopJoinPOP(children.get(0), children.get(1), conditions, joinType);
-  }
-
-  @Override
-  protected BatchSchema constructSchema(FunctionLookupContext context) {
-    SchemaBuilder b = BatchSchema.newBuilder();
-    for (Field f : getRight().getSchema(context)) {
-      b.addField(f);
-    }
-    for (Field f : getLeft().getSchema(context)) {
-      b.addField(f);
-    }
-    return b.build();
+    return new NestedLoopJoinPOP(props, children.get(0), children.get(1), joinType, condition, vectorized);
   }
 
   @Override
   public Iterator<PhysicalOperator> iterator() {
-    return Iterators.forArray(left, right);
+    return Iterators.forArray(probe, build);
   }
 
-  public PhysicalOperator getLeft() {
-    return left;
+  public PhysicalOperator getProbe() {
+    return probe;
   }
 
-  public PhysicalOperator getRight() {
-    return right;
+  public PhysicalOperator getBuild() {
+    return build;
   }
 
   public JoinRelType getJoinType() {
     return joinType;
   }
 
-  public List<JoinCondition> getConditions() {
-    return conditions;
+  public LogicalExpression getCondition() {
+    return condition;
+  }
+
+  public boolean isVectorized() {
+    return vectorized;
   }
 
   @Override

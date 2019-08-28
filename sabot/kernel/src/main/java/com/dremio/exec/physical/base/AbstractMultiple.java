@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,16 @@ package com.dremio.exec.physical.base;
 import java.util.Iterator;
 import java.util.List;
 
-import com.google.common.collect.Iterators;
-
 /**
  * Describes an operator that expects more than one children operators as its input.
  */
-public abstract class AbstractMultiple extends AbstractBase{
+public abstract class AbstractMultiple extends AbstractBase {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(AbstractMultiple.class);
 
   protected final List<PhysicalOperator> children;
 
-  protected AbstractMultiple(List<PhysicalOperator> children) {
+  public AbstractMultiple(OpProps props, List<PhysicalOperator> children) {
+    super(props);
     this.children = children;
   }
 

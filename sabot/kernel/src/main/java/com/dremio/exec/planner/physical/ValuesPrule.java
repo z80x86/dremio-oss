@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,10 @@ package com.dremio.exec.planner.physical;
 import java.io.IOException;
 
 import org.apache.calcite.plan.RelOptRule;
-import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 
-import com.dremio.exec.planner.logical.ValuesRel;
 import com.dremio.exec.planner.logical.RelOptHelper;
+import com.dremio.exec.planner.logical.ValuesRel;
 
 public class ValuesPrule extends RelOptRule {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ValuesPrule.class);
@@ -37,7 +36,7 @@ public class ValuesPrule extends RelOptRule {
   public void onMatch(final RelOptRuleCall call) {
     final ValuesRel rel = (ValuesRel) call.rel(0);
     try{
-      call.transformTo(new ValuesPrel(rel.getCluster(), rel.getTraitSet().plus(Prel.PHYSICAL), rel.getRowType(), rel.getTuplesAsJsonOptions()));
+      call.transformTo(new ValuesPrel(rel.getCluster(), rel.getTraitSet().plus(Prel.PHYSICAL), rel.getRowType(), rel.getTuplesAsJsonOptions(), rel.getRows()));
     }catch(IOException e){
       logger.warn("Failure while converting JSONOptions.", e);
     }

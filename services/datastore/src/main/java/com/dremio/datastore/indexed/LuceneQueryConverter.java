@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import com.dremio.datastore.SearchTypes.SearchQuery.RangeFloat;
 import com.dremio.datastore.SearchTypes.SearchQuery.RangeInt;
 import com.dremio.datastore.SearchTypes.SearchQuery.RangeLong;
 import com.dremio.datastore.SearchTypes.SearchQuery.RangeTerm;
+import com.google.common.base.CharMatcher;
 
 /**
  * Helper class to convert from a KVStore {@code com.dremio.datastore.SearchQuery}
@@ -45,6 +46,9 @@ import com.dremio.datastore.SearchTypes.SearchQuery.RangeTerm;
  */
 public class LuceneQueryConverter {
   public static final LuceneQueryConverter INSTANCE = new LuceneQueryConverter();
+  private final CharMatcher specialCharactersMatcher = CharMatcher.anyOf(new String(new char[] {
+    WildcardQuery.WILDCARD_ESCAPE, WildcardQuery.WILDCARD_CHAR, WildcardQuery.WILDCARD_STRING
+  })).precomputed();
 
   public LuceneQueryConverter() {
   }
@@ -102,9 +106,26 @@ public class LuceneQueryConverter {
     case BOOST:
       return toBoostQuery(query.getBoost());
 
+    case CONTAINS:
+      return toContainsTermQuery(query.getContainsText());
+
     default:
       throw new AssertionError("Unknown query type: " + query);
     }
+  }
+
+  private StringBuilder escapeTextForWildcard(String text) {
+    StringBuilder sb = new StringBuilder(text.length());
+
+    for (int i = 0; i < text.length(); i++) {
+      char currentChar = text.charAt(i);
+      if (specialCharactersMatcher.matches(currentChar)) {
+        sb.append(WildcardQuery.WILDCARD_ESCAPE);
+      }
+      sb.append(currentChar);
+    }
+
+    return sb;
   }
 
   private Query toBooleanQuery(SearchQuery.Boolean booleanQuery) {
@@ -204,6 +225,12 @@ public class LuceneQueryConverter {
 
   private Query toWildcardQuery(SearchQuery.Wildcard wildcard) {
     return new WildcardQuery(new Term(wildcard.getField(), wildcard.getValue()));
+  }
+
+  private Query toContainsTermQuery(SearchQuery.Contains containsQuery) {
+    StringBuilder sb = escapeTextForWildcard(containsQuery.getValue());
+    sb.insert(0, WildcardQuery.WILDCARD_STRING).append(WildcardQuery.WILDCARD_STRING);
+    return new WildcardQuery(new Term(containsQuery.getField(), sb.toString()));
   }
 
   private Query toTermIntQuery(SearchQuery.TermInt term) {

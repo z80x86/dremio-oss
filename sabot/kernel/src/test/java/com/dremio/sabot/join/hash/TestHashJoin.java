@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ public class TestHashJoin extends BaseTestJoin {
 
   @Override
   protected JoinInfo getJoinInfo(List<JoinCondition> conditions, JoinRelType type) {
-    return new JoinInfo(HashJoinOperator.class, new HashJoinPOP(null, null, conditions, type, false));
+    return new JoinInfo(HashJoinOperator.class, new HashJoinPOP(PROPS, null, null, conditions, type, false));
   }
 
   @Ignore("DX-5845")

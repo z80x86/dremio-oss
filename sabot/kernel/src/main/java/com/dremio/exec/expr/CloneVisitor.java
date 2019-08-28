@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,19 @@
  */
 package com.dremio.exec.expr;
 
+import java.util.List;
+
 import com.dremio.common.expression.BooleanOperator;
 import com.dremio.common.expression.CastExpression;
 import com.dremio.common.expression.ConvertExpression;
 import com.dremio.common.expression.FunctionCall;
 import com.dremio.common.expression.FunctionHolderExpression;
 import com.dremio.common.expression.IfExpression;
+import com.dremio.common.expression.IfExpression.IfCondition;
 import com.dremio.common.expression.LogicalExpression;
 import com.dremio.common.expression.NullExpression;
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.common.expression.TypedNullConstant;
-import com.dremio.common.expression.IfExpression.IfCondition;
 import com.dremio.common.expression.ValueExpressions.BooleanExpression;
 import com.dremio.common.expression.ValueExpressions.DateExpression;
 import com.dremio.common.expression.ValueExpressions.DecimalExpression;
@@ -41,8 +43,6 @@ import com.dremio.common.expression.ValueExpressions.TimeStampExpression;
 import com.dremio.common.expression.visitors.AbstractExprVisitor;
 import com.dremio.exec.expr.fn.BaseFunctionHolder;
 import com.google.common.collect.Lists;
-
-import java.util.List;
 
 /**
  * Creates a deep copy of a LogicalExpression. Specifically, it creates new instances of the literal expressions

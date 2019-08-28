@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,28 @@
  */
 import { unauthorizedError, LOGIN_USER_FAILURE, noUsersError } from 'actions/account';
 import { push } from 'react-router-redux';
+import {get} from 'lodash/object';
 
-import { LOGIN_PATH, getLoginUrl, SIGNUP_PATH } from 'routes';
+import { LOGIN_PATH, getLoginUrl, SIGNUP_PATH } from '@app/sagas/loginLogout';
+
+export const UNAUTHORIZED_URL_PARAM = 'reason=401';
+
+export const isUnauthorisedReason = (nextLocation) => {
+  const search = get(nextLocation, 'search');
+  return search && search.includes(UNAUTHORIZED_URL_PARAM);
+};
 
 function authMiddleware() {
   return (store) => next => action => {
     const payload = action.payload;
+    // TODO put that logic to a saga
     if (action.error && payload) {
       // if the action is a login failure, we don't want to call logoutUser and instead let the login code handle the
       // LOGIN_USER_FAILURE action
       if (payload.status === 401 && action.type !== LOGIN_USER_FAILURE) {
         const atLogin = window.location.pathname === LOGIN_PATH;
         if (!atLogin) { // avoid pushing twice, resulting in a redirect URL *to* /login (and multiple history entries)
-          next(push(getLoginUrl())); // eslint-disable-line callback-return
+          next(push(`${getLoginUrl()}&${UNAUTHORIZED_URL_PARAM}`)); // eslint-disable-line callback-return
         }
         return next(unauthorizedError());
       }

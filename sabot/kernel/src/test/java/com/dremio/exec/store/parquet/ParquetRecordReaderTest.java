@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.util.Text;
 import org.apache.parquet.bytes.BytesInput;

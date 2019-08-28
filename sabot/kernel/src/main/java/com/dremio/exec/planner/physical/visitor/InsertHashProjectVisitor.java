@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.dremio.exec.planner.physical.visitor;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
@@ -92,7 +91,7 @@ public class InsertHashProjectVisitor extends BasePrelVisitor<Prel, Void, Runtim
 
     // remove earlier inserted Project SqlOperatorImpl - since it creates issues down the road in HashJoin
     RelDataType removeRowType = RexUtil.createStructType(newPrel.getCluster().getTypeFactory(), keptExprs, childFields);
-    return new ProjectPrel(newPrel.getCluster(), newPrel.getTraitSet(), newPrel, keptExprs, removeRowType);
+    return ProjectPrel.create(newPrel.getCluster(), newPrel.getTraitSet(), newPrel, keptExprs, removeRowType);
   }
 
   @Override

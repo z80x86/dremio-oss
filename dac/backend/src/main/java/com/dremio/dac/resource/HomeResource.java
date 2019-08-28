@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 import javax.annotation.security.RolesAllowed;
 import javax.inject.Inject;
@@ -107,6 +108,7 @@ import com.dremio.service.namespace.dataset.proto.DatasetType;
 import com.dremio.service.namespace.file.FileFormat;
 import com.dremio.service.namespace.file.proto.FileConfig;
 import com.dremio.service.namespace.file.proto.FileType;
+import com.dremio.service.namespace.proto.EntityId;
 import com.dremio.service.namespace.proto.NameSpaceContainer;
 import com.dremio.service.namespace.space.proto.ExtendedConfig;
 import com.dremio.service.namespace.space.proto.FolderConfig;
@@ -301,9 +303,9 @@ public class HomeResource {
     fileFormat.setFullPath(filePath.toPathList());
     fileFormat.setVersion(null);
     final DatasetConfig datasetConfig = toDatasetConfig(fileFormat.asFileConfig(), DatasetType.PHYSICAL_DATASET_HOME_FILE,
-      securityContext.getUserPrincipal().getName(), null);
+      securityContext.getUserPrincipal().getName(), new EntityId(UUID.randomUUID().toString()));
     catalog.createOrUpdateDataset(namespaceService, new NamespaceKey(HomeFileSystemStoragePlugin.HOME_PLUGIN_NAME), filePath.toNamespaceKey(), datasetConfig);
-    fileFormat.setVersion(datasetConfig.getVersion());
+    fileFormat.setVersion(datasetConfig.getTag());
     return newFile(
       datasetConfig.getId().getId(),
       filePath,
@@ -327,11 +329,13 @@ public class HomeResource {
     String fileLocation = PathUtils.toDottedPath(new org.apache.hadoop.fs.Path(fileFormat.getLocation()));
     SqlQuery query = new SqlQuery(format("select * from table(%s.%s (%s)) limit 500",
         SqlUtils.quoteIdentifier(HomeFileSystemStoragePlugin.HOME_PLUGIN_NAME), fileLocation, fileFormat.toTableOptions()), securityContext.getUserPrincipal().getName());
-    JobUI job = new JobUI(jobsService.submitJob(JobRequest.newBuilder()
+
+    return JobUI.getJobData(
+      jobsService.submitJob(JobRequest.newBuilder()
         .setSqlQuery(query)
         .setQueryType(QueryType.UI_INITIAL_PREVIEW)
-        .build(), NoOpJobStatusListener.INSTANCE));
-    return job.getData().truncate(500);
+        .build(), NoOpJobStatusListener.INSTANCE)
+    ).truncate(500);
   }
 
   @POST
@@ -344,11 +348,12 @@ public class HomeResource {
     logger.debug("filePath: " + filePath.toPathString());
     // TODO, this should be moved to dataset resource and be paginated.
     SqlQuery query = new SqlQuery(format("select * from table(%s (%s)) limit 500", filePath.toPathString(), fileFormat.toTableOptions()), securityContext.getUserPrincipal().getName());
-    JobUI job = new JobUI(jobsService.submitJob(JobRequest.newBuilder()
+    return JobUI.getJobData(
+      jobsService.submitJob(JobRequest.newBuilder()
         .setSqlQuery(query)
         .setQueryType(QueryType.UI_INITIAL_PREVIEW)
-        .build(), NoOpJobStatusListener.INSTANCE));
-    return job.getData().truncate(500);
+        .build(), NoOpJobStatusListener.INSTANCE)
+    ).truncate(500);
   }
 
   @GET
@@ -378,7 +383,7 @@ public class HomeResource {
   @DELETE
   @Path("file/{path: .*}")
   @Produces(MediaType.APPLICATION_JSON)
-  public void deleteFile(@PathParam("path") String path, @QueryParam("version") Long version) throws NamespaceException, DACException {
+  public void deleteFile(@PathParam("path") String path, @QueryParam("version") String version) throws NamespaceException, DACException {
     FilePath filePath = FilePath.fromURLPath(homeName, path);
     if (version == null) {
       throw new ClientErrorException("missing version parameter");
@@ -459,7 +464,7 @@ public class HomeResource {
   @DELETE
   @Path("/folder/{path: .*}")
   @Produces(MediaType.APPLICATION_JSON)
-  public void deleteFolder(@PathParam("path") String path, @QueryParam("version") Long version) throws NamespaceException, FolderNotFoundException {
+  public void deleteFolder(@PathParam("path") String path, @QueryParam("version") String version) throws NamespaceException, FolderNotFoundException {
     FolderPath folderPath = FolderPath.fromURLPath(homeName, path);
     if (version == null) {
       throw new ClientErrorException("missing version parameter");
@@ -495,8 +500,10 @@ public class HomeResource {
   @Path("/new_untitled_from_file/{path: .*}")
   @Produces(MediaType.APPLICATION_JSON)
   @Consumes(MediaType.APPLICATION_JSON)
-  public InitialPreviewResponse createUntitledFromHomeFile(@PathParam("path") String path)
+  public InitialPreviewResponse createUntitledFromHomeFile(
+      @PathParam("path") String path,
+      @QueryParam("limit") Integer limit)
     throws DatasetNotFoundException, DatasetVersionNotFoundException, NamespaceException, NewDatasetQueryException {
-    return datasetsResource.createUntitledFromHomeFile(homeName, path);
+    return datasetsResource.createUntitledFromHomeFile(homeName, path, limit);
   }
 }

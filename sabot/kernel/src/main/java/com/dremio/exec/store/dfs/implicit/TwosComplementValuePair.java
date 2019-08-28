@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.dremio.exec.store.dfs.implicit;
 
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.DecimalHelper;
 import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.types.pojo.ArrowType.Decimal;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -24,6 +23,7 @@ import org.apache.arrow.vector.types.pojo.Field;
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.expression.CompleteType;
 import com.dremio.exec.store.dfs.implicit.AdditionalColumnsRecordReader.Populator;
+import com.dremio.exec.util.DecimalUtils;
 import com.dremio.sabot.op.scan.OutputMutator;
 
 import io.netty.buffer.ArrowBuf;
@@ -45,8 +45,8 @@ public class TwosComplementValuePair extends NameValuePair<byte[]>{
        * are populating the decimal vector multiple times with the same buffer, it
        * is fine to swap the bytes once here as opposed to swapping while writing.
        */
-      DecimalHelper.swapBytes(value);
-      buf.setBytes(0, value);
+      byte [] decimalBytesInLE = DecimalUtils.convertDecimalBytesToArrowByteArray(value);
+      buf.setBytes(0, decimalBytesInLE);
     }
   }
 

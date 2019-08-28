@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ public class SqlLoadMaterialization extends SqlCall implements SimpleDirectHandl
   @Override
   public SimpleDirectHandler toDirectHandler(QueryContext context) {
     try {
-      final Class<?> cl = Class.forName("com.dremio.service.reflection.LoadMaterializationHandler");
+      final Class<?> cl = Class.forName("com.dremio.service.reflection.load.LoadMaterializationHandler");
       Constructor<?> ctor = cl.getConstructor(QueryContext.class);
       return (SimpleDirectHandler) ctor.newInstance(context);
     } catch (InstantiationException | IllegalAccessException | ClassNotFoundException | NoSuchMethodException | InvocationTargetException e) {

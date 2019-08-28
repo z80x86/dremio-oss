@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,6 +71,7 @@ public class InfoSchemaScanPrel extends ScanPrelBase {
     return 1;
   }
 
+  @Override
   public boolean hasFilter() {
     return query != null;
   }
@@ -108,8 +109,12 @@ public class InfoSchemaScanPrel extends ScanPrelBase {
 
   @Override
   public PhysicalOperator getPhysicalOperator(PhysicalPlanCreator creator) throws IOException {
-    return creator.addMetadata(this,
-        new InfoSchemaGroupScan(getTableMetadata().getUser(), table, query, getProjectedColumns(), pluginId));
+    return new InfoSchemaGroupScan(
+        creator.props(this, getTableMetadata().getUser(), getTableMetadata().getSchema().maskAndReorder(getProjectedColumns())),
+        table,
+        getProjectedColumns(),
+        query,
+        pluginId);
   }
 
   @Override

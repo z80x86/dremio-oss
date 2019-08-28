@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,11 @@ import static org.junit.Assert.assertEquals;
 
 import java.util.List;
 
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocatorFactory;
+import org.apache.arrow.vector.AllocationHelper;
 import org.apache.arrow.vector.GenerateSampleData;
 import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.ValueVector;
-import org.apache.arrow.vector.AllocationHelper;
+import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.types.Types.MinorType;
 import org.junit.Test;
 
@@ -67,7 +65,7 @@ public class TestLoad extends ExecTest {
     final ArrowBuf byteBuf = allocator.buffer(bytes);
     int index = 0;
     for (int i = 0; i < byteBufs.length; i++) {
-      byteBufs[i].readBytes(byteBuf, index, byteBufs[i].writerIndex());
+      byteBufs[i].readBytes(byteBuf.asNettyBuffer(), index, byteBufs[i].writerIndex());
       index += byteBufs[i].writerIndex();
     }
     byteBuf.writerIndex(bytes);

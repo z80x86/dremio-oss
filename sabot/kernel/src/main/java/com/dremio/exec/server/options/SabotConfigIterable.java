@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package com.dremio.exec.server.options;
 
 import java.util.Iterator;
 import java.util.Map.Entry;
-
 
 import com.dremio.common.config.SabotConfig;
 import com.dremio.options.OptionValue;

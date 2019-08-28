@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptCost;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.plan.RelTraitSet;
+
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.planner.common.ScanRelBase;
@@ -34,10 +35,10 @@ import com.dremio.exec.planner.logical.Rel;
 import com.dremio.exec.planner.physical.visitor.PrelVisitor;
 import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.exec.store.TableMetadata;
+import com.dremio.service.namespace.PartitionChunkMetadata;
 import com.dremio.service.namespace.capabilities.SourceCapabilities;
-import com.dremio.service.namespace.dataset.proto.Affinity;
-import com.dremio.service.namespace.dataset.proto.DatasetSplit;
-
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.Affinity;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.DatasetSplit;
 
 public abstract class ScanPrelBase extends ScanRelBase implements LeafPrel {
 
@@ -45,6 +46,15 @@ public abstract class ScanPrelBase extends ScanRelBase implements LeafPrel {
       TableMetadata dataset, List<SchemaPath> projectedColumns, double observedRowcountAdjustment) {
     super(cluster, traitSet, table, pluginId, dataset, projectedColumns, observedRowcountAdjustment);
     assert traitSet.getTrait(ConventionTraitDef.INSTANCE) != Rel.LOGICAL;
+  }
+
+  /**
+   * Returns if scan has a filter pushed down into
+   *
+   * @return true if filter is present, false otherwise
+   */
+  public boolean hasFilter() {
+    return false;
   }
 
   @Override
@@ -59,11 +69,13 @@ public abstract class ScanPrelBase extends ScanRelBase implements LeafPrel {
     }
 
     final Set<String> nodes = new HashSet<>();
-    Iterator<DatasetSplit> iter = tableMetadata.getSplits();
+    Iterator<PartitionChunkMetadata> iter = tableMetadata.getSplits();
     while(iter.hasNext()){
-      DatasetSplit split = iter.next();
-      for(Affinity a : split.getAffinitiesList()){
-        nodes.add(a.getHost());
+      PartitionChunkMetadata partitionChunk = iter.next();
+      for (DatasetSplit split : partitionChunk.getDatasetSplits()) {
+        for (Affinity a : split.getAffinitiesList()) {
+          nodes.add(a.getHost());
+        }
       }
     }
 

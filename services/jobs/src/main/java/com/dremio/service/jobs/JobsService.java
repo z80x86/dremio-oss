@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,11 @@ package com.dremio.service.jobs;
 
 import java.security.AccessControlException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
+import com.dremio.common.utils.protos.ExternalIdHelper;
 import com.dremio.datastore.SearchTypes.SortOrder;
+import com.dremio.exec.proto.UserBitShared.ExternalId;
 import com.dremio.exec.proto.UserBitShared.QueryProfile;
 import com.dremio.service.Service;
 import com.dremio.service.job.proto.JobId;
@@ -33,11 +36,23 @@ public interface JobsService extends Service {
   /**
    * Submit a job to the execution engine.
    *
-   * @param jobRequest     job request
-   * @param statusListener a listener to notify for change of status. Must not be null
-   * @return Job associated for given request
+   * @param id              external id
+   * @param jobRequest      job request
+   * @param statusListener  a listener to notify for change of status. Must not be null
+   * @return {@link CompletableFuture} of the submitted Job
    */
-  Job submitJob(JobRequest jobRequest, JobStatusListener statusListener);
+  CompletableFuture<Job> submitJob(ExternalId id, JobRequest jobRequest, JobStatusListener statusListener);
+
+  /**
+   * Submit a job to the execution engine. Generates a random externalId for the job
+   *
+   * @param jobRequest      job request
+   * @param statusListener  a listener to notify for change of status. Must not be null
+   * @return {@link CompletableFuture} of the submitted Job
+   */
+  default CompletableFuture<Job> submitJob(JobRequest jobRequest, JobStatusListener statusListener) {
+    return submitJob(ExternalIdHelper.generateExternalId(), jobRequest, statusListener);
+  }
 
   /**
    * Get details of the job.

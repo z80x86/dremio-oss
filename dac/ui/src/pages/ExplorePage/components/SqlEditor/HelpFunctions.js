@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import PropTypes from 'prop-types';
 import { injectIntl } from 'react-intl';
 import {safeHtml} from 'common-tags';
 
+import { getExploreState } from '@app/selectors/explore';
 import { loadHelpGridData } from 'actions/explore/sqlActions';
 import DragSource from 'components/DragComponents/DragSource';
 import { SearchField } from 'components/Fields';
@@ -232,7 +233,7 @@ const styles = {
 
 function mapStateToProps(state) {
   return {
-    gridHelpData: state.explore.sqlActions.get('gridHelpData')
+    gridHelpData: getExploreState(state).sqlActions.get('gridHelpData')
   };
 }
 

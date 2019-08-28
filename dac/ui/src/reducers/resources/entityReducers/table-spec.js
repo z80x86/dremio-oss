@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@ import Immutable from 'immutable';
 
 import { RUN_TABLE_TRANSFORM_START } from 'actions/explore/dataset/common';
 import { LOAD_NEXT_ROWS_SUCCESS } from 'actions/explore/dataset/data';
+import { UPDATE_COLUMN_FILTER } from 'actions/explore/view';
 
 import table from './table';
 
-describe('folder', () => {
+describe('table', () => {
 
   const initialState =  Immutable.fromJS({
     table: {}
@@ -127,6 +128,16 @@ describe('folder', () => {
       expect(result.getIn(['tableData', 123, 'columns']).equals(
         Immutable.fromJS(payload.columns)
       )).to.be.true;
+    });
+  });
+
+  describe('UPDATE_COLUMN_FILTER', () => {
+    it('should set filter in state', () => {
+      const result = table(initialState, {
+        type: UPDATE_COLUMN_FILTER,
+        columnFilter: 'test'
+      });
+      expect(result.getIn(['tableData', 'columnFilter'])).to.equal('test');
     });
   });
 });

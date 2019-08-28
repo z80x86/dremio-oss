@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import com.dremio.sabot.exec.context.FunctionContext;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 
-public abstract class SingleBatchSorterTemplate implements SingleBatchSorter, IndexedSortable{
+public abstract class SingleBatchSorterTemplate implements SingleBatchSorterInterface, IndexedSortable{
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(SingleBatchSorterTemplate.class);
 
   private SelectionVector2 vector2;

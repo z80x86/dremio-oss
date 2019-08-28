@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,22 @@ import {smallModal, mediumModal, largeModal, tallModal, smallestModal, modalBody
 import ModalHeader from './ModalHeader';
 import './Modals.less';
 
+// react-modal recommends to set app element. It put warnings in console without this.
+ReactModal.setAppElement(document.body);
+
+export const ModalSize = {
+  small: 'small',
+  large: 'large',
+  tall: 'tall',
+  medium: 'medium',
+  smallest: 'smallest'
+};
+
+export const MODAL_CLOSE_ANIMATION_DURATION = 150;
 export default class Modal extends Component {
 
   static propTypes = {
-    size: PropTypes.oneOf(['small', 'large', 'tall', 'medium', 'smallest']).isRequired,
+    size: PropTypes.oneOf(Object.values(ModalSize)).isRequired,
     isOpen: PropTypes.bool,
     hideCloseButton: PropTypes.bool,
     onClickCloseButton: PropTypes.func, // optional. defaults to props.hide
@@ -59,7 +71,13 @@ export default class Modal extends Component {
     const mediumModalUpdated = { ...mediumModal, content: { ...mediumModal.content, ...style}};
     const largeModalUpdated = { ...largeModal, content: { ...largeModal.content, ...style}};
     const tallModalUpdated = { ...tallModal, content: { ...tallModal.content, ...style}};
-    const styles = {small: smallModalUpdated, medium: mediumModalUpdated, large: largeModalUpdated, tall: tallModalUpdated, smallest: smallestModal};
+    const styles = {
+      [ModalSize.small]: smallModalUpdated,
+      [ModalSize.medium]: mediumModalUpdated,
+      [ModalSize.large]: largeModalUpdated,
+      [ModalSize.tall]: tallModalUpdated,
+      [ModalSize.smallest]: smallestModal
+    };
 
     let stringTitle = title;
     if (typeof stringTitle === 'object') {
@@ -72,11 +90,11 @@ export default class Modal extends Component {
     return (
       <ReactModal
         contentLabel={stringTitle}
-        overlayClassName={`${size}-modal qa-${classQa}`}
+        overlayClassName={`dremio-modal ${size}-modal qa-${classQa}`}
         isOpen={isOpen}
         onRequestClose={hide}
         style={styles[size]}
-        closeTimeoutMS={150}
+        closeTimeoutMS={MODAL_CLOSE_ANIMATION_DURATION}
         className={className}
       >
         {stringTitle ?

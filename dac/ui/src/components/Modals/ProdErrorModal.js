@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import FontIcon from 'components/Icon/FontIcon';
 import SimpleButton from 'components/Buttons/SimpleButton';
 import CopyButton from 'components/Buttons/CopyButton';
 import sentryUtil from 'utils/sentryUtil';
-import config from 'utils/config';
+import config from 'dyn-load/utils/config';
 
 import { modalFooter } from 'uiTheme/radium/modal';
 import { formDescription } from 'uiTheme/radium/typography';
@@ -31,14 +31,21 @@ export default class ProdErrorModal extends Component {
 
   static propTypes = {
     error: PropTypes.object.isRequired,
+    eventId: PropTypes.string,
     onHide: PropTypes.func,
     showGoHome: PropTypes.bool,
     showFileABug: PropTypes.bool
   };
 
+  renderCopyButton(valueToCopy) {
+    return !config.outsideCommunicationDisabled &&
+      <CopyButton style={{marginLeft: '0.5em'}} text={valueToCopy} title={la('Copy')} />;
+  }
+
   render() {
     const {
       error,
+      eventId,
       showGoHome,
       showFileABug
     } = this.props;
@@ -60,8 +67,14 @@ export default class ProdErrorModal extends Component {
           <div style={styles.content}>
             <div>{la('If the problem persists, please contact support.')}</div>
             <div style={{...formDescription, fontSize: 12, marginTop: '1em'}}>
-              {sessionUUID}
-              {!config.outsideCommunicationDisabled && <CopyButton style={{marginLeft: '0.5em'}} text={sessionUUID} title={la('Copy')}/>}
+              <div>
+                {sessionUUID}
+                {this.renderCopyButton(sentryUtil.sessionUUID)}
+              </div>
+              {eventId && <div>
+                Event ID: {eventId}
+                {this.renderCopyButton(eventId)}
+              </div>}
             </div>
           </div>
         </div>

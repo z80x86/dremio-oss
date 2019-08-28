@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,15 @@ import { Component } from 'react';
 
 import PropTypes from 'prop-types';
 
+
+/**
+ * A HOC that wraps redux form and overrides handleSubmit to call {@see mutateSubmitValues} before passing
+ * values to original handleSubmit function, which is provided by redux form *
+ * @export
+ * @param {func} mutateSubmitValues
+ * @param {*} Form
+ * @returns
+ */
 export default function wrapSubmitValueMutator(mutateSubmitValues, Form) {
   const Wrapper = class extends Component {
     static propTypes = {
@@ -25,7 +34,7 @@ export default function wrapSubmitValueMutator(mutateSubmitValues, Form) {
 
     handleSubmit = (onSubmit) => {
       return this.props.handleSubmit((values) => {
-        mutateSubmitValues(values);
+        mutateSubmitValues(values, this.props);
         return onSubmit(values);
       });
     }

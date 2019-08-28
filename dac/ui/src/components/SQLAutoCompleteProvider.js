@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,8 +55,7 @@ const getItems = (monaco, sqlContextGetter) => {
     return ApiUtils.fetch('sql/analyze/suggest',
       {
         method: 'POST',
-        body: JSON.stringify(request),
-        headers: {'Content-Type': 'application/json'}
+        body: JSON.stringify(request)
       }, 2).then((data) => {
         const contentType = data.headers.get('content-type');
         if (contentType && contentType.indexOf('application/json') !== -1) {

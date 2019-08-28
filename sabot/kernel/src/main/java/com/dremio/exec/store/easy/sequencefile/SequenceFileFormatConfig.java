@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  */
 package com.dremio.exec.store.easy.sequencefile;
 
+import java.util.List;
+
 import com.dremio.common.logical.FormatPluginConfig;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.common.collect.ImmutableList;
-
-import java.util.List;
 
 @JsonTypeName("sequencefile") @JsonInclude(JsonInclude.Include.NON_DEFAULT)
 public class SequenceFileFormatConfig implements FormatPluginConfig {

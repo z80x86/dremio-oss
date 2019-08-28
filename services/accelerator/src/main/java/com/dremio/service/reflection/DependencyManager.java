@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -121,32 +121,6 @@ public class DependencyManager {
     });
   }
 
-
-  private List<String> findCyclicDependency(final ReflectionId reflectionId, final List<DependencyEntry> dependencyEntries) {
-    return filterReflectionDependencies(dependencyEntries)
-      .filter(new Predicate<ReflectionDependency>() {
-        @Override
-        public boolean apply(ReflectionDependency entry) {
-          return dependsOn(entry.getReflectionId(), reflectionId);
-        }
-      }).transform(new Function<ReflectionDependency, String>() {
-        @Override
-        public String apply(ReflectionDependency entry) {
-          return entry.getReflectionId().getId();
-        }
-      }).toList();
-  }
-
-  private boolean dependsOn(ReflectionId rId1, final ReflectionId rId2) {
-    return filterReflectionDependencies(getDependencies(rId1))
-      .anyMatch(new Predicate<ReflectionDependency>() {
-        @Override
-        public boolean apply(ReflectionDependency entry) {
-          return entry.getReflectionId().equals(rId2);
-        }
-      });
-  }
-
   /**
    * @return FAILED and cyclic dependencies
    */
@@ -178,10 +152,9 @@ public class DependencyManager {
     return !graph.getPredecessors(id).isEmpty();
   }
 
-  boolean shouldRefresh(final ReflectionId id, final long noDependencyRefreshPeriodMs) {
+  boolean shouldRefresh(final ReflectionEntry entry, final long noDependencyRefreshPeriodMs) {
     final long currentTime = System.currentTimeMillis();
-    final ReflectionEntry entry = Preconditions.checkNotNull(entriesStore.get(id),
-      "No reflection entry found for reflection %s", id.getId());
+    final ReflectionId id = entry.getId();
     final long lastSubmitted = Preconditions.checkNotNull(entry.getLastSubmittedRefresh(),
       "trying to check if reflection %s should be refreshed but it has not last_submitted_refresh field", id.getId());
 

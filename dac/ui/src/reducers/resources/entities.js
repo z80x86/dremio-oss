@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 import Immutable from 'immutable';
+import { get } from 'lodash/object';
 
 import entityTypes from 'dyn-load/reducers/resources/entityTypes';
 import { LOAD_ENTITIES_SUCCESS } from '@app/actions/resources';
+import { CLEAR_ENTITIES } from '@app/actions/resources/entities';
 
 import * as entityReducers from './entityReducers';
 
@@ -26,12 +28,11 @@ export const cacheConfigs = {
   }
 };
 
-const initialState = entityTypes.reduce(
-  (prevMap, entityType) => {
-    return prevMap.set(entityType, cacheConfigs[entityType] ? Immutable.OrderedMap() : Immutable.Map());
-  },
-  Immutable.Map()
-);
+const initEntityTypeState = (state, entityType) => {
+  return state.set(entityType, cacheConfigs[entityType] ? Immutable.OrderedMap() : Immutable.Map());
+};
+
+export const initialState = entityTypes.reduce(initEntityTypeState, Immutable.Map());
 
 export function evictOldEntities(entities, max) {
   if (entities.size > max) {
@@ -40,13 +41,21 @@ export function evictOldEntities(entities, max) {
   return entities;
 }
 
-const applyEntitiesToState = (state, action) => {
+export const applyEntitiesToState = (state, action) => {
   let result = state;
-  const applyMethod = action.meta && action.meta.mergeEntities ? 'mergeIn' : 'setIn';
+  // todo in long term we should migrate a util to leave only mergeEntities flag.
+  // and mergeEntities=false should work as replaceEntities = true
+  const replaceEntities = get(action, 'meta.replaceEntities', false);
+  const mergeEntities = get(action, 'meta.mergeEntities', false);
+  const applyMethod = mergeEntities ? 'mergeIn' : 'setIn';
   action.payload.get('entities').forEach((entitiesToAdd, entityType) => {
-    entitiesToAdd.forEach((entity, entityId) => {
-      result = result[applyMethod]([entityType, entityId], entity);
-    });
+    if (replaceEntities) {
+      result = result.set(entityType, entitiesToAdd);
+    } else {
+      entitiesToAdd.forEach((entity, entityId) => {
+        result = result[applyMethod]([entityType, entityId], entity);
+      });
+    }
     if (cacheConfigs[entityType]) {
       result = result.set(entityType, evictOldEntities(result.get(entityType), cacheConfigs[entityType].max));
     }
@@ -63,7 +72,7 @@ const clearEntitiesByType = (state, types) => {
 
   if (types) {
     for (const entityType of types) {
-      nextState = nextState.set(entityType, new Immutable.Map());
+      nextState = initEntityTypeState(nextState, entityType);
     }
   }
 
@@ -73,9 +82,17 @@ const clearEntitiesByType = (state, types) => {
 export default function entitiesReducer(state = initialState, action) {
   let nextState = state;
 
+  switch (action.type) {
   // DX-10700 clear data that could be cached for other folders. New data would be applied below
-  if (action.type === LOAD_ENTITIES_SUCCESS) {
+  case LOAD_ENTITIES_SUCCESS:
     nextState = clearEntitiesByType(nextState, ['folder', 'file', 'fileFormat']);
+    break;
+  case CLEAR_ENTITIES:
+    // DX-13506
+    nextState = clearEntitiesByType(state, action.typeList);
+    break;
+  default:
+    //do nothing
   }
 
   if (action.meta) {
@@ -109,7 +126,7 @@ export default function entitiesReducer(state = initialState, action) {
       });
 
       const newFileFormats = nextState.get('fileFormat').filter((fileFormat) => {
-        return fileFormat.get('fullPath').get(0) !== root;
+        return !fileFormat.get('fullPath') || fileFormat.get('fullPath').get(0) !== root;
       });
 
       nextState = nextState.set('folder', newFolders).set('file', newFiles).set('fileFormat', newFileFormats);

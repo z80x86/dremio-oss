@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ import com.google.common.collect.Maps;
 public class WorkloadTicket extends TicketWithChildren {
   protected final ConcurrentMap<QueryId, QueryTicket> queryTickets = Maps.newConcurrentMap();
 
-  private final SchedulingGroup<AsyncTaskWrapper> schedulingGroup;
+  private SchedulingGroup<AsyncTaskWrapper> schedulingGroup;
 
   /**
    * Create a WorkloadTicket
@@ -52,6 +52,10 @@ public class WorkloadTicket extends TicketWithChildren {
    */
   public WorkloadTicket(final BufferAllocator allocator, final SchedulingGroup<AsyncTaskWrapper> schedulingGroup) {
     super(allocator);
+    setSchedulingGroup(schedulingGroup);
+  }
+
+  protected void setSchedulingGroup(SchedulingGroup<AsyncTaskWrapper> schedulingGroup) {
     this.schedulingGroup = Preconditions.checkNotNull(schedulingGroup, "scheduling group required");
   }
 
@@ -81,6 +85,16 @@ public class WorkloadTicket extends TicketWithChildren {
     }
     queryTicket.reserve();
     queryStarter.buildAndStartQuery(queryTicket);
+  }
+
+  /**
+   * Returns the query ticket corresponding to the queryId. Returns null if not found.
+   *
+   * @param queryId
+   * @return
+   */
+  public QueryTicket getQueryTicket(QueryId queryId) {
+    return queryTickets.get(queryId);
   }
 
   /**

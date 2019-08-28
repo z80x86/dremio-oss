@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import com.dremio.datastore.StoreBuildingFactory;
 import com.dremio.datastore.StoreCreationFunction;
 import com.dremio.datastore.StringSerializer;
 import com.dremio.datastore.VersionExtractor;
-import com.dremio.service.accelerator.store.serializer.SchemaSerializer;
+import com.dremio.service.reflection.store.SchemaSerializer;
 import com.dremio.services.configuration.proto.ConfigurationEntry;
 import com.google.common.base.Preconditions;
 
@@ -79,15 +79,18 @@ public class ConfigurationStore {
     }
 
     @Override
-    public Long incrementVersion(ConfigurationEntry value) {
-      final Long currentVersion = value.getVersion();
-      value.setVersion(currentVersion != null ? currentVersion + 1 : 0);
-      return currentVersion;
+    public void setVersion(ConfigurationEntry value, Long tag) {
+      value.setVersion(tag);
     }
 
     @Override
-    public void setVersion(ConfigurationEntry value, Long version) {
-      value.setVersion(version);
+    public String getTag(ConfigurationEntry value) {
+      return value.getTag();
+    }
+
+    @Override
+    public void setTag(ConfigurationEntry value, String tag) {
+      value.setTag(tag);
     }
   }
 }

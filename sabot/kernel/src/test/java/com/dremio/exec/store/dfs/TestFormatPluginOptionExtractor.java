@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,6 @@ import java.util.Collection;
 import org.junit.Test;
 
 import com.dremio.exec.ExecTest;
-import com.dremio.exec.store.dfs.FormatPluginOptionExtractor;
-import com.dremio.exec.store.dfs.FormatPluginOptionsDescriptor;
-import com.dremio.exec.store.dfs.NamedFormatPluginConfig;
 import com.dremio.exec.store.easy.text.TextFormatPlugin.TextFormatConfig;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 

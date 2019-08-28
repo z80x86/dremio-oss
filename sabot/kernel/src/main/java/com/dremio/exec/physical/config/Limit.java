@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,28 @@
  */
 package com.dremio.exec.physical.config;
 
-import com.dremio.exec.expr.fn.FunctionLookupContext;
 import com.dremio.exec.physical.base.AbstractSingle;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.PhysicalVisitor;
 import com.dremio.exec.proto.UserBitShared.CoreOperatorType;
-import com.dremio.exec.record.BatchSchema;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 
 @JsonTypeName("limit")
 public class Limit extends AbstractSingle {
+
   private final Integer first;
   private final Integer last;
 
   @JsonCreator
-  public Limit(@JsonProperty("child") PhysicalOperator child, @JsonProperty("first") Integer first, @JsonProperty("last") Integer last) {
-    super(child);
+  public Limit(
+      @JsonProperty("props") OpProps props,
+      @JsonProperty("child") PhysicalOperator child,
+      @JsonProperty("first") Integer first,
+      @JsonProperty("last") Integer last) {
+    super(props, child);
     this.first = first;
     this.last = last;
   }
@@ -47,7 +51,7 @@ public class Limit extends AbstractSingle {
 
   @Override
   protected PhysicalOperator getNewWithChild(PhysicalOperator child) {
-    return new Limit(child, first, last);
+    return new Limit(props, child, first, last);
   }
 
   @Override

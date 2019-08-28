@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.dremio.exec.store.dfs;
 
 import com.dremio.exec.physical.base.AbstractWriter;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.WriterOptions;
 
@@ -24,8 +25,11 @@ import com.dremio.exec.physical.base.WriterOptions;
  */
 public abstract class FileSystemWriter extends AbstractWriter {
 
-  public FileSystemWriter(PhysicalOperator child, String userName, WriterOptions options) {
-    super(child, userName, options);
+  public FileSystemWriter(
+      OpProps props,
+      PhysicalOperator child,
+      WriterOptions options) {
+    super(props, child, options);
   }
 
   public abstract boolean isPdfs();

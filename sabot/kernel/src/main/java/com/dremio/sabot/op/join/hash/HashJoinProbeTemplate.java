@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,11 @@ package com.dremio.sabot.op.join.hash;
 
 import static com.dremio.sabot.op.common.hashtable.HashTable.BUILD_RECORD_LINK_SIZE;
 
+import java.util.BitSet;
+import java.util.List;
+
+import javax.inject.Named;
+
 import org.apache.calcite.rel.core.JoinRelType;
 
 import com.dremio.exec.record.VectorAccessible;
@@ -25,9 +30,6 @@ import com.dremio.sabot.op.common.hashtable.HashTable;
 
 import io.netty.buffer.ArrowBuf;
 import io.netty.util.internal.PlatformDependent;
-import java.util.BitSet;
-import java.util.List;
-import javax.inject.Named;
 
 public abstract class HashJoinProbeTemplate implements HashJoinProbe {
 

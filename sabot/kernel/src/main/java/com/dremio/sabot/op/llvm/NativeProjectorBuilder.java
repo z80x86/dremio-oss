@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.dremio.sabot.op.llvm;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.dremio.sabot.exec.context.OperatorStats;
 import org.apache.arrow.gandiva.exceptions.GandivaException;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.ValueVector;
@@ -26,6 +25,8 @@ import org.apache.arrow.vector.types.pojo.Schema;
 
 import com.dremio.common.expression.LogicalExpression;
 import com.dremio.exec.record.VectorAccessible;
+import com.dremio.sabot.exec.context.FunctionContext;
+import com.dremio.sabot.exec.context.OperatorStats;
 
 /**
  * Used to construct a native projector for a set of expressions.
@@ -37,9 +38,11 @@ public class NativeProjectorBuilder {
   private List<ExprPairing> exprs = new ArrayList<>();
   private List<ValueVector> allocationVectors = new ArrayList<>();
   private final VectorAccessible incoming;
+  private final FunctionContext functionContext;
 
-  public NativeProjectorBuilder(VectorAccessible incoming) {
+  public NativeProjectorBuilder(VectorAccessible incoming, FunctionContext functionContext) {
     this.incoming = incoming;
+    this.functionContext = functionContext;
   }
 
   /**
@@ -53,12 +56,12 @@ public class NativeProjectorBuilder {
     exprs.add(pairing);
   }
 
-  public NativeProjectEvaluator build(Schema incomingSchema, OperatorStats stats) throws Exception {
+  public NativeProjectEvaluator build(Schema incomingSchema, OperatorStats stats) throws GandivaException {
     if(exprs.isEmpty()) {
       return NO_OP;
     }
 
-    final NativeProjector projector = new NativeProjector(incoming, incomingSchema);
+    final NativeProjector projector = new NativeProjector(incoming, incomingSchema, functionContext);
     for (ExprPairing e : exprs) {
       projector.add(e.expr, e.outputVector);
       allocationVectors.add(e.outputVector);

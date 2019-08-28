@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ export class FolderMenu extends Component {
     const {folder, closeMenu} = this.props;
     this.props.showConfirmationDialog({
       title: la('Remove Folder'),
-      text: la('Are you sure you want to remove this folder?'),
+      text: la(`Are you sure you want to remove "${folder.get('name')}"?`),
       confirmText: la('Remove'),
       confirm: () => this.props.removeSpaceFolder(folder)
     });

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,35 +18,30 @@ package com.dremio.exec.planner.sql.handlers.commands;
 import com.dremio.exec.ops.QueryContext;
 import com.dremio.exec.physical.PhysicalPlan;
 import com.dremio.exec.planner.PhysicalPlanReader;
-import com.dremio.exec.planner.fragment.PlanningSet;
 import com.dremio.exec.planner.observer.AttemptObserver;
 import com.dremio.exec.proto.CoordExecRPC.FragmentCodec;
-import com.dremio.exec.work.foreman.ExecutionPlan;
 import com.dremio.exec.work.rpc.CoordToExecTunnelCreator;
 import com.dremio.resource.ResourceAllocator;
+import com.dremio.service.execselector.ExecutorSelectionService;
 import com.google.protobuf.ByteString;
 
 // should be deprecated once tests are removed.
-public class PhysicalPlanCommand extends AsyncCommand<Object> {
+public class PhysicalPlanCommand extends AsyncCommand {
 
-  private final CoordToExecTunnelCreator tunnelCreator;
-  private final QueryContext context;
   private final PhysicalPlanReader reader;
-  private final AttemptObserver observer;
   private final ByteString plan;
 
-  private ExecutionPlan exec;
+  private PhysicalPlan physicalPlan;
 
   public PhysicalPlanCommand(
-    CoordToExecTunnelCreator tunnelCreator,
-    QueryContext context,
-    PhysicalPlanReader reader,
-    AttemptObserver observer,
-    ByteString plan,
-    ResourceAllocator queryResourceManager) {
-    super(context, queryResourceManager, observer);
-    this.tunnelCreator = tunnelCreator;
-    this.context = context;
+      CoordToExecTunnelCreator tunnelCreator,
+      QueryContext context,
+      PhysicalPlanReader reader,
+      AttemptObserver observer,
+      ByteString plan,
+      ResourceAllocator queryResourceManager,
+      ExecutorSelectionService executorSelectionService) {
+    super(context, queryResourceManager, executorSelectionService, observer, reader, tunnelCreator);
     this.reader = reader;
     this.observer = observer;
     this.plan = plan;
@@ -54,18 +49,13 @@ public class PhysicalPlanCommand extends AsyncCommand<Object> {
 
   @Override
   public double plan() throws Exception {
-    PhysicalPlan plan = reader.readPhysicalPlan(this.plan, FragmentCodec.NONE);
-    final PlanningSet planningSet = allocateResourcesBasedOnPlan(plan);
-    exec = ExecutionPlanCreator.getExecutionPlan(context, reader, observer, plan, resourceSet, planningSet);
-    observer.planCompleted(exec);
-    return plan.getCost();
+    physicalPlan = reader.readPhysicalPlan(this.plan, FragmentCodec.NONE);
+    return physicalPlan.getCost();
   }
 
   @Override
-  public Object execute() throws Exception {
-    FragmentStarter starter = new FragmentStarter(tunnelCreator, resourceSchedulingDecisionInfo);
-    starter.start(exec, observer);
-    return null;
+  protected PhysicalPlan getPhysicalPlan() {
+    return physicalPlan;
   }
 
   @Override

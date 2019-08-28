@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,10 @@
  */
 package com.dremio.exec.planner.physical;
 
-import com.dremio.common.expression.FieldReference;
-import com.dremio.common.expression.FunctionCall;
-import com.dremio.common.expression.LogicalExpression;
-import com.dremio.exec.planner.physical.DistributionTrait.DistributionField;
-import com.dremio.exec.planner.physical.visitor.InsertLocalExchangeVisitor.RexNodeBasedHashExpressionCreatorHelper;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -31,10 +28,13 @@ import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.SqlTypeName;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import com.dremio.common.expression.FieldReference;
+import com.dremio.common.expression.FunctionCall;
+import com.dremio.common.expression.LogicalExpression;
+import com.dremio.exec.planner.physical.DistributionTrait.DistributionField;
+import com.dremio.exec.planner.physical.visitor.InsertLocalExchangeVisitor.RexNodeBasedHashExpressionCreatorHelper;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 
 /**
  * Contains utility methods for creating hash expression for either distribution (in PartitionSender) or for HashTable.
@@ -152,7 +152,7 @@ public class HashPrelUtil {
 
     RelDataType rowType = RexUtil.createStructType(input.getCluster().getTypeFactory(), updatedExpr, outputFieldNames);
 
-    ProjectPrel addColumnprojectPrel = new ProjectPrel(input.getCluster(), input.getTraitSet(), input, updatedExpr, rowType);
+    ProjectPrel addColumnprojectPrel = ProjectPrel.create(input.getCluster(), input.getTraitSet(), input, updatedExpr, rowType);
     return addColumnprojectPrel;
   }
 
@@ -173,7 +173,7 @@ public class HashPrelUtil {
       return new FieldReference(HASH_EXPR_NAME);
     }
 
-    final List<LogicalExpression> expressions = new ArrayList<LogicalExpression>(childFields.size());
+    final List<LogicalExpression> expressions = new ArrayList<>(childFields.size());
     for(int i =0; i < fields.size(); i++){
       expressions.add(new FieldReference(childFields.get(fields.get(i).getFieldId())));
     }

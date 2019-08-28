@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,20 @@
  */
 package com.dremio.exec.store;
 
-import io.netty.buffer.ArrowBuf;
+import javax.inject.Inject;
+
 import org.apache.arrow.vector.holders.NullableBitHolder;
 import org.apache.arrow.vector.holders.NullableVarBinaryHolder;
 import org.apache.arrow.vector.holders.NullableVarCharHolder;
 
 import com.dremio.exec.expr.SimpleFunction;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
+import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
 import com.dremio.exec.expr.annotations.Output;
 import com.dremio.exec.expr.annotations.Param;
 import com.dremio.exec.expr.annotations.Workspace;
-import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
 
-import javax.inject.Inject;
+import io.netty.buffer.ArrowBuf;
 
 /**
  *  The functions are similar to those created through FreeMarker template for fixed types. There is not much benefit to

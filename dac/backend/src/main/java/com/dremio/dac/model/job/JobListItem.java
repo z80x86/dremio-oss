@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ package com.dremio.dac.model.job;
 
 import java.util.List;
 
-import com.dremio.exec.proto.beans.RequestType;
+import com.dremio.proto.model.attempts.RequestType;
 import com.dremio.service.job.proto.JobState;
 import com.dremio.service.job.proto.ParentDatasetInfo;
 import com.dremio.service.jobs.Job;
@@ -37,6 +37,7 @@ public class JobListItem extends PartialJobListItem {
       @JsonProperty("id") String id,
       @JsonProperty("state") JobState state,
       @JsonProperty("failureInfo") JobFailureInfo failureInfo,
+      @JsonProperty("cancellationInfo") JobCancellationInfo cancellationInfo,
       @JsonProperty("user") String user,
       @JsonProperty("startTime") Long startTime,
       @JsonProperty("endTime") Long endTime,
@@ -46,8 +47,10 @@ public class JobListItem extends PartialJobListItem {
       @JsonProperty("requestType") RequestType requestType,
       @JsonProperty("accelerated") boolean accelerated,
       @JsonProperty("datasetVersion") String datasetVersion,
-      @JsonProperty("snowflakeAccelerated") boolean snowflakeAccelerated) {
-    super(id, state, failureInfo, user, startTime, endTime, description, requestType, accelerated, datasetVersion, snowflakeAccelerated);
+      @JsonProperty("snowflakeAccelerated") boolean snowflakeAccelerated,
+      @JsonProperty("spilled") boolean spilled) {
+    super(id, state, failureInfo, cancellationInfo, user, startTime, endTime, description, requestType,
+        accelerated, datasetVersion, snowflakeAccelerated, spilled);
     this.datasetPathList = datasetPathList;
     this.datasetType = datasetType;
   }

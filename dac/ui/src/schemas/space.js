@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 import { Schema, arrayOf } from 'normalizr';
+import { ENTITY_TYPES } from '@app/constants/Constants';
 
 import dataset from './dataset';
 import file from './file';
 import folder from './folder';
 import physicalDataset from './physicalDataset';
 
-const space = new Schema('space');
+const space = new Schema(ENTITY_TYPES.space);
 
 space.define({
   contents: {

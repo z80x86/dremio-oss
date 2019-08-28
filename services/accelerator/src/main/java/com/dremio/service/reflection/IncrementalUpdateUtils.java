@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import com.dremio.exec.planner.RoutingShuttle;
 import com.dremio.exec.planner.StatelessRelShuttleImpl;
+import com.dremio.exec.planner.acceleration.ExpansionNode;
 import com.dremio.service.Pointer;
 import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.dataset.proto.AccelerationSettings;
@@ -77,7 +78,7 @@ public class IncrementalUpdateUtils {
 
   /**
    * Visitor that checks if a logical plan can support incremental update. The supported pattern right now is a plan
-   * that contains only Filters, Projects, Scans, and Aggregates. There can only be one Aggregate in the plan, and the
+   * that contains only ExpansionNode, Filters, Projects, Scans, and Aggregates. There can only be one Aggregate in the plan, and the
    * Scan most support incremental update.
    */
   private static class IncrementalChecker extends RoutingShuttle {
@@ -112,6 +113,10 @@ public class IncrementalUpdateUtils {
 
     @Override
     public RelNode visit(RelNode other) {
+      if (other instanceof ExpansionNode) {
+        return visitChild(other, 0, other.getInput(0));
+      }
+
       if (unsupportedOperator == null) {
         unsupportedOperator = other;
       }

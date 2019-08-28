@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,24 +13,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { CALL_API } from 'redux-api-middleware';
+import Immutable from 'immutable';
+import { RSAA } from 'redux-api-middleware';
+import { explorePageLocationChanged } from '@app/actions/explore/dataset/data';
+import { PageTypes } from '@app/pages/ExplorePage/pageTypes';
 
 import {
   LOCATION_CHANGE,
   getLocationChangePredicate,
+  getExplorePageLocationChangePredicate,
   getActionPredicate,
   getApiCallCompletePredicate,
   getApiActionTypes,
-  getApiActionEntity
+  getApiActionEntity,
+  needsTransform,
+  isSqlChanged
 } from './utils';
 
 const apiAction = {
-  [CALL_API]:  {
+  [RSAA]:  {
     types: ['START', 'SUCCESS', 'FAILURE']
   }
 };
 const apiActionWithEntity = {
-  [CALL_API]: {
+  [RSAA]: {
     types: [
       'START',
       {type: 'SUCCESS', meta: {entity: 'entity'}},
@@ -56,6 +62,114 @@ describe('saga utils', () => {
         {type: LOCATION_CHANGE, payload: {pathname: 'foo', query: {bar: 'bar'}, state: {a: 'b'}}})).to.be.false;
       expect(predicate2(
         {type: LOCATION_CHANGE, payload: {pathname: 'foo', query: {bar: 'bar'}, state: {a: 'different'}}})).to.be.true;
+    });
+  });
+
+  describe('getExplorePageLocationChangePredicate', () => {
+    const generateRouteState = ({
+      path,
+      pageType,
+      query,
+      state
+    }) => ({
+      location: {
+        pathname: path + (pageType ? `/${pageType}` : ''),
+        query,
+        state
+      },
+      params: {
+        pageType
+      }
+    });
+
+    const originalParams = {
+      path: '/resources/resourceId/foo',
+      query: { bar: 'bar'},
+      state: { a: 'b' }
+    };
+    const differentParams = {
+      path: '/resources/resourceId/different',
+      query: { bar: 'different'},
+      state: { a: 'different'}
+    };
+    const predicate = getExplorePageLocationChangePredicate(generateRouteState(originalParams));
+
+    const testPredicate = (newParams, expected) => {
+      expect(predicate(explorePageLocationChanged(generateRouteState(newParams)))).to.be.equal(expected);
+    };
+
+    it('returns false if location is not changed', () => {
+      testPredicate(originalParams, false);
+    });
+
+    it('returns false if any action, except EXPLORE_PAGE_LOCATION_CHANGED action is received', () => {
+      expect(predicate({ ...explorePageLocationChanged(originalParams, differentParams), type: 'foo' })).to.be.false;
+      expect(predicate({ type: 'foo' })).to.be.false;
+      testPredicate(differentParams, true);
+    });
+
+    it('returns true if location.path is changed', () => {
+      testPredicate({
+        ...originalParams,
+        path: differentParams.path
+      }, true);
+      // treat navigation to details page as location change
+      testPredicate({
+        ...originalParams,
+        pageType: PageTypes.details
+      }, true);
+      // should return false if we are navigating to graph/wiki tab
+      testPredicate({
+        ...originalParams,
+        pageType: PageTypes.graph
+      }, false);
+      testPredicate({
+        ...originalParams,
+        pageType: PageTypes.wiki
+      }, false);
+    });
+
+    it('returns true if location.query is changed', () => {
+      testPredicate({
+        ...originalParams,
+        query: differentParams.query
+      }, true);
+
+      testPredicate({
+        ...originalParams,
+        query: null
+      }, true);
+
+      testPredicate({
+        ...originalParams,
+        query: {}
+      }, true);
+    });
+
+    it('returns false if location.state is changed', () => {
+      testPredicate({
+        ...originalParams,
+        state: differentParams.state
+      }, false);
+      testPredicate({
+        ...originalParams,
+        state: null
+      }, false);
+      testPredicate({
+        ...originalParams,
+        state: {}
+      }, false);
+    });
+
+    it('returns false if location is changed due to the fact, that a dataset was saved as other dataset', () => {
+      // In that case we set state.afterDatasetSave = true
+      testPredicate({
+        ...differentParams,
+        state: {
+          ...differentParams.state,
+          afterDatasetSave: true
+        }
+      }, false);
     });
   });
 
@@ -118,7 +232,7 @@ describe('saga utils', () => {
 
   describe('getApiActionTypes', () => {
     const action = {
-      [CALL_API]: {
+      [RSAA]: {
         types: [
           'type1',
           {type: 'type2'},
@@ -141,7 +255,7 @@ describe('saga utils', () => {
     let action;
     beforeEach(() => {
       action = {
-        [CALL_API]: {
+        [RSAA]: {
           types: [
             'type1',
             {type: 'type2', meta: {entity: 'entity'}},
@@ -156,14 +270,52 @@ describe('saga utils', () => {
     });
 
     it('should not die if no entity', () => {
-      delete action[CALL_API].types[1].meta.entity;
+      delete action[RSAA].types[1].meta.entity;
       expect(getApiActionEntity(action)).to.be.undefined;
 
-      delete action[CALL_API].types[1].meta;
+      delete action[RSAA].types[1].meta;
       expect(getApiActionEntity(action)).to.be.undefined;
 
-      action[CALL_API].types[1] = 'type2';
+      action[RSAA].types[1] = 'type2';
       expect(getApiActionEntity(action)).to.be.undefined;
+    });
+  });
+
+  it('isSqlChanged should return true only if currentSql !== null and it !== savedSql', () => {
+    expect(isSqlChanged('some sql', null)).to.be.false;
+    expect(isSqlChanged('some sql', undefined)).to.be.false;
+    expect(isSqlChanged('some sql', 'some sql')).to.be.false;
+    expect(isSqlChanged('some sql', 'different sql')).to.be.true;
+    expect(isSqlChanged()).to.be.false;
+    expect(isSqlChanged(null, 'some sql')).to.be.true;
+    expect(isSqlChanged(undefined, 'some sql')).to.be.true;
+  });
+
+  describe('needsTransform', () => {
+    it('should return false if no changes for existing dataset', () => {
+      const dataset = Immutable.fromJS({datasetVersion: 1});
+      const result = needsTransform(dataset);
+      expect(result).to.equal(false);
+    });
+    it('should return true if sql changed', () => {
+      const dataset = Immutable.fromJS({datasetVersion: 1});
+      const result = needsTransform(dataset, [], 'SELECT');
+      expect(result).to.equal(true);
+    });
+    it('should return false if sql is not changed', () => {
+      const dataset = Immutable.fromJS({datasetVersion: 1, sql: 'SELECT'});
+      const result = needsTransform(dataset, [], 'SELECT');
+      expect(result).to.equal(false);
+    });
+    it('should return true if context changed', () => {
+      const dataset = Immutable.fromJS({datasetVersion: 1, sql: 'SELECT', context: ['Prod', '1']});
+      const result = needsTransform(dataset, ['Prod', '2'], 'SELECT');
+      expect(result).to.equal(true);
+    });
+    it('should return false if context not changed', () => {
+      const dataset = Immutable.fromJS({datasetVersion: 1, sql: 'SELECT', context: ['Prod', '1']});
+      const result = needsTransform(dataset, ['Prod', '1'], 'SELECT');
+      expect(result).to.equal(false);
     });
   });
 });

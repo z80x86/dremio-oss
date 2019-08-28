@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,38 +16,26 @@
 package com.dremio.exec.physical.base;
 
 
-import com.dremio.exec.expr.fn.FunctionLookupContext;
-import com.dremio.exec.physical.MinorFragmentEndpoint;
-import com.dremio.exec.record.BatchSchema;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.collect.ImmutableList;
-
 import java.util.List;
+
+import com.dremio.exec.physical.config.MinorFragmentEndpoint;
+import com.dremio.exec.planner.fragment.EndpointsIndex;
+import com.dremio.exec.record.BatchSchema;
 
 public abstract class AbstractSender extends AbstractSingle implements Sender {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(AbstractSender.class);
 
-  protected final int oppositeMajorFragmentId;
-  //
-  protected final List<MinorFragmentEndpoint> destinations;
+  protected final BatchSchema schema;
+  protected final int receiverMajorFragmentId;
 
-  @JsonProperty("schema")
-  protected BatchSchema schema;
-
-  /**
-   * @param oppositeMajorFragmentId MajorFragmentId of fragments that are receiving data sent by this sender.
-   * @param child Child PhysicalOperator which is providing data to this Sender.
-   * @param destinations List of receiver MinorFragmentEndpoints each containing MinorFragmentId and SabotNode endpoint
-   *                     where it is running.
-   */
-  public AbstractSender(int oppositeMajorFragmentId,
-                        PhysicalOperator child,
-                        List<MinorFragmentEndpoint> destinations,
-                        BatchSchema schema) {
-    super(child);
-    this.oppositeMajorFragmentId = oppositeMajorFragmentId;
-    this.destinations = ImmutableList.copyOf(destinations);
+  public AbstractSender(
+      OpProps props,
+      BatchSchema schema,
+      PhysicalOperator child,
+      int receiverMajorFragmentId) {
+    super(props, child);
     this.schema = schema;
+    this.receiverMajorFragmentId = receiverMajorFragmentId;
   }
 
   @Override
@@ -56,20 +44,22 @@ public abstract class AbstractSender extends AbstractSingle implements Sender {
   }
 
   @Override
-  @JsonProperty("receiver-major-fragment")
-  public int getOppositeMajorFragmentId() {
-    return oppositeMajorFragmentId;
+  public int getReceiverMajorFragmentId() {
+    return receiverMajorFragmentId;
   }
 
   @Override
-  @JsonProperty("destinations")
-  public List<MinorFragmentEndpoint> getDestinations() {
-    return destinations;
-  }
-
-  @Override
-  @JsonProperty("schema")
   public BatchSchema getSchema() {
     return schema;
+  }
+
+  /**
+   * Resolve the index values and return the minor fragment endpoints.
+   * @param endpointsIndex index of endpoints.
+   * @return List of MinorFragmentEndpoints each containing a minor fragment id and an endpoint.
+   */
+  @Override
+  public List<MinorFragmentEndpoint> getDestinations(EndpointsIndex endpointsIndex) {
+    return endpointsIndex.getFragmentEndpoints(getDestinations());
   }
 }

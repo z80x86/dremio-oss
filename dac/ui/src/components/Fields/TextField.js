@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import classNames from 'classnames';
 import { textInput } from '@app/uiTheme/less/forms.less';
 
 import forms from 'uiTheme/radium/forms';
-import { formPlaceholder } from 'uiTheme/radium/typography';
 
 @Radium
 export default class TextField extends Component {
@@ -86,8 +85,7 @@ export default class TextField extends Component {
         style={[
           this.props.style,
           this.props.error && this.props.touched && forms.textInputError,
-          this.props.disabled && forms.textInputDisabled,
-          this.props.placeholder && !this.props.value && {...formPlaceholder, ...{opacity: 0.7}}
+          this.props.disabled && forms.textInputDisabled
         ]}/>
     );
   }

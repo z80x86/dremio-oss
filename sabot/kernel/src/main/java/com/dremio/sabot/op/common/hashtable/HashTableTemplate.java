@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,14 +25,14 @@ import java.util.concurrent.TimeUnit;
 
 import javax.inject.Named;
 
-import org.apache.arrow.vector.SimpleIntVector;
+import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.FixedWidthVector;
-import org.apache.arrow.vector.VariableWidthVector;
-
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.util.TransferPair;
+import org.apache.arrow.vector.SimpleIntVector;
 import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.VariableWidthVector;
+import org.apache.arrow.vector.util.TransferPair;
+
 import com.dremio.common.AutoCloseables;
 import com.dremio.exec.compile.sig.RuntimeOverridden;
 import com.dremio.exec.expr.TypeHelper;

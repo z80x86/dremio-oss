@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,5 +74,33 @@ describe('apiUtils', () => {
 
       expect(apiUtils.parseErrorsToObject(json)).to.eql(expectedResult);
     });
+
   });
+
+  describe('getErrorMessage', () => {
+    let jsonFn;
+    beforeEach(() => {
+      jsonFn = sinon.stub();
+    });
+
+    it('should return prefix if no message provided', () => {
+      jsonFn.resolves(null);
+      return apiUtils.getErrorMessage('==>', {json: jsonFn}).then((msg) => {
+        expect(msg).to.equal('==>.');
+      });
+    });
+    it('should get errorMessage from error response', () => {
+      jsonFn.resolves({errorMessage: 'Message'});
+      return apiUtils.getErrorMessage('==>', {json: jsonFn}).then((msg) => {
+        expect(msg).to.equal('==>: Message');
+      });
+    });
+    it('should get moreInfo from error response', () => {
+      jsonFn.resolves({moreInfo: 'Info'});
+      return apiUtils.getErrorMessage('==>', {json: jsonFn}).then((msg) => {
+        expect(msg).to.equal('==>: Info');
+      });
+    });
+  });
+
 });

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 import { shallow } from 'enzyme';
+import ExploreCellLargeOverlay from '@app/pages/ExplorePage/components/ExploreTable/ExploreCellLargeOverlay';
 import SelectFrequentValues from './SelectFrequentValues';
+
 describe('SelectFrequentValues', () => {
   let minimalProps;
   let commonProps;
@@ -48,7 +50,7 @@ describe('SelectFrequentValues', () => {
     wrapper.setState({
       activeCell: { cellValue: 'foo', anchor: document.createElement('span') }
     });
-    expect(wrapper.find('withLocation(ExploreCellLargeOverlayView)')).to.have.length(1);
+    expect(wrapper.find(ExploreCellLargeOverlay)).to.have.length(1);
   });
   describe('#handleCheck', () => {
     it('should return call onChange with checked values', () => {

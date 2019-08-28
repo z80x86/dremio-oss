@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,19 @@ import { Component } from 'react';
 import PropTypes from 'prop-types';
 import Immutable from 'immutable';
 import { connect } from 'react-redux';
-import { push } from 'react-router-redux';
 
-import { getSortedSpaces, getSortedSources } from 'selectors/resources';
+import { getSortedSources } from 'selectors/home';
+import ApiUtils from 'utils/apiUtils/apiUtils';
+import { sourceTypesIncludeS3 } from 'utils/sourceUtils';
+import { loadSourceListData } from 'actions/resources/sources';
 
-import { loadSourceListData, setSourcePin } from 'actions/resources/sources';
-import { loadSpaceListData, setSpacePin } from 'actions/resources/spaces';
 import { getViewState } from 'selectors/resources';
 import { page } from 'uiTheme/radium/general';
 
 import QlikStateModal from '../ExplorePage/components/modals/QlikStateModal';
 import MainHeader from './../../components/MainHeader';
 import RecentDatasets from './subpages/RecentDatasets/RecentDatasets';
-import LeftTree   from './components/LeftTree';
+import LeftTree from './components/LeftTree';
 import './HomePage.less';
 
 class HomePage extends Component {
@@ -41,34 +41,41 @@ class HomePage extends Component {
 
   static propTypes = {
     userInfo: PropTypes.object,
-    spaces: PropTypes.instanceOf(Immutable.List).isRequired,
     sources: PropTypes.instanceOf(Immutable.List).isRequired,
-    spacesViewState: PropTypes.instanceOf(Immutable.Map).isRequired,
     sourcesViewState: PropTypes.instanceOf(Immutable.Map).isRequired,
     routeParams: PropTypes.object,
     location: PropTypes.object.isRequired,
-    loadSpaceListData: PropTypes.func,
     loadSourceListData: PropTypes.func,
-    setSourcePin: PropTypes.func,
-    push: PropTypes.func,
-    setSpacePin: PropTypes.func,
     children: PropTypes.node,
     style: PropTypes.object
   }
 
+  state = {
+    sourceTypes: []
+  };
+
   componentWillMount() {
-    this.props.loadSpaceListData();
     this.props.loadSourceListData();
   }
 
-  componentWillReceiveProps(nextProps) {
-    if (nextProps.spacesViewState.get('invalidated')) {
-      nextProps.loadSpaceListData();
-    }
+  componentDidMount() {
+    this.setStateWithSourceTypesFromServer();
+  }
 
+  componentWillReceiveProps(nextProps) {
     if (nextProps.sourcesViewState.get('invalidated')) {
       nextProps.loadSourceListData();
     }
+  }
+
+  setStateWithSourceTypesFromServer() {
+    ApiUtils.fetch('source/type').then(response => {
+      response.json().then((result) => {
+        this.setState({sourceTypes: result.data});
+      });
+    }, () => {
+      console.error('Failed to load source types.');
+    });
   }
 
   getCenterContent() {
@@ -81,10 +88,7 @@ class HomePage extends Component {
     return (
       <div className='page-content'>
         <LeftTree
-          spaces={this.props.spaces}
           sources={this.props.sources}
-          toggleSpacePin={this.toggleSpacePin}
-          toggleSourcePin={this.toggleSourcePin}
           pageType='recent'
           className='col-lg-2 col-md-3'
         />
@@ -98,14 +102,6 @@ class HomePage extends Component {
     return userInfo && userInfo.size > 0 ? `@${userInfo.get('homeConfig').get('owner')}` : '';
   }
 
-  toggleSourcePin = (name, state) => {
-    this.props.setSourcePin(name, !state);
-  }
-
-  toggleSpacePin = (name, state) => {
-    this.props.setSpacePin(name, !state);
-  }
-
   // Note were are getting the "ref" to the SearchBar React object.
   render() {
     return (
@@ -113,14 +109,10 @@ class HomePage extends Component {
         <MainHeader />
         <div className='page-content'>
           <LeftTree
-            spacesViewState={this.props.spacesViewState}
             sourcesViewState={this.props.sourcesViewState}
-            spaces={this.props.spaces}
             sources={this.props.sources}
+            sourceTypesIncludeS3={sourceTypesIncludeS3(this.state.sourceTypes)}
             routeParams={this.props.routeParams}
-            toggleSpacePin={this.toggleSpacePin}
-            toggleSourcePin={this.toggleSourcePin}
-            push={this.props.push}
             className='col-lg-2 col-md-3'/>
           {this.props.children}
         </div>
@@ -134,17 +126,11 @@ class HomePage extends Component {
 function mapStateToProps(state) {
   return {
     sources: getSortedSources(state),
-    spaces: getSortedSpaces(state),
     userInfo: state.home.config.get('userInfo'),
-    spacesViewState: getViewState(state, 'AllSpaces'),
     sourcesViewState: getViewState(state, 'AllSources')
   };
 }
 
 export default connect(mapStateToProps, {
-  loadSourceListData,
-  loadSpaceListData,
-  setSpacePin,
-  setSourcePin,
-  push
+  loadSourceListData
 })(HomePage);

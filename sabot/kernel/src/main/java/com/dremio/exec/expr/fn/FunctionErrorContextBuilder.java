@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 package com.dremio.exec.expr.fn;
-
-import com.dremio.common.expression.LogicalExpression;
-import com.google.common.collect.ImmutableList;
 
 /**
  *

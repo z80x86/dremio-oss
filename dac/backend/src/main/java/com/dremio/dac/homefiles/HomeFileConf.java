@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import com.dremio.exec.catalog.conf.SourceType;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.store.dfs.FileSystemConf;
 import com.dremio.exec.store.dfs.FileSystemWrapper;
+import com.dremio.exec.store.dfs.FileSystemWrapperCreator;
 import com.dremio.exec.store.dfs.SchemaMutability;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
@@ -66,13 +67,19 @@ public class HomeFileConf extends FileSystemConf<HomeFileConf, HomeFileSystemSto
   @Tag(1)
   public String location;
 
+  @Tag(2)
+  public boolean enableAsync = true;
+
   public HomeFileConf() {
 
   }
 
   public HomeFileConf(DremioConfig config) {
     this(config.getString(DremioConfig.UPLOADS_PATH_STRING));
+    final boolean enableAsyncForUploads = !config.hasPath(DremioConfig.DEBUG_UPLOADS_ASYNC_ENABLED)
+      || config.getBoolean(DremioConfig.DEBUG_UPLOADS_ASYNC_ENABLED);
     hostname = config.getThisNode();
+    enableAsync = enableAsyncForUploads;
   }
 
   public HomeFileConf(String location) {
@@ -120,8 +127,13 @@ public class HomeFileConf extends FileSystemConf<HomeFileConf, HomeFileSystemSto
   }
 
   @Override
+  public List<String> getConnectionUniqueProperties() {
+    return ImmutableList.of();
+  }
+
+  @Override
   public HomeFileSystemStoragePlugin newPlugin(SabotContext context, String name, Provider<StoragePluginId> pluginIdProvider) {
-    return new HomeFileSystemStoragePlugin(this, context, name, null, pluginIdProvider);
+    return new HomeFileSystemStoragePlugin(this, context, name, pluginIdProvider);
   }
 
   public Path getBaseUploadsPath() {
@@ -137,7 +149,7 @@ public class HomeFileConf extends FileSystemConf<HomeFileConf, HomeFileSystemSto
   }
 
   public FileSystemWrapper getFilesystemAndCreatePaths(String hostname) throws IOException {
-    FileSystemWrapper fs = FileSystemWrapper.get(uri.get(), new Configuration());
+    FileSystemWrapper fs = FileSystemWrapperCreator.get(uri.get(), new Configuration(), enableAsync);
     fs.mkdirs(getPath(), HomeFileSystemStoragePlugin.DEFAULT_PERMISSIONS);
     fs.mkdirs(getInnerUploads(), HomeFileSystemStoragePlugin.DEFAULT_PERMISSIONS);
 
@@ -155,5 +167,10 @@ public class HomeFileConf extends FileSystemConf<HomeFileConf, HomeFileSystemSto
   @Override
   public boolean isInternal() {
     return true;
+  }
+
+  @Override
+  public boolean isAsyncEnabled() {
+    return enableAsync;
   }
 }

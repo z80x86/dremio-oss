@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,7 +136,7 @@ describe('Tags', () => {
 
       const inputWrapper = getInput(wrapper);
 
-      expect(inputWrapper.node.selectionStart).to.eq(str.length); // check that a cursor in END position
+      expect(inputWrapper.instance().selectionStart).to.eq(str.length); // check that a cursor in END position
     });
 
     // array values should respect keyCodes field names
@@ -200,7 +200,7 @@ describe('Tags', () => {
 
     it('tag is removed on x click', () => {
       const index = 3;
-      getAllTags(wrapper).at(index).find(`.${deleteButton}`).simulate('click');
+      getAllTags(wrapper).at(index).find(`.${deleteButton}`).hostNodes().simulate('click');
 
       expect(removeHandler.calledWith(commonProps.tags.get(index))).to.eq(true); // DELETE handler called for a next to the cursor tag
     });

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,34 +16,51 @@
 package com.dremio.exec.catalog;
 
 import java.util.Comparator;
+import java.util.ConcurrentModificationException;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.utils.PathUtils;
+import com.dremio.connector.ConnectorException;
+import com.dremio.connector.metadata.DatasetHandle;
+import com.dremio.connector.metadata.DatasetMetadata;
+import com.dremio.connector.metadata.DatasetSplit;
+import com.dremio.connector.metadata.PartitionChunk;
+import com.dremio.connector.metadata.PartitionChunkListing;
+import com.dremio.connector.metadata.SourceMetadata;
 import com.dremio.datastore.IndexedStore.FindByCondition;
 import com.dremio.datastore.SearchQueryUtils;
 import com.dremio.exec.catalog.ManagedStoragePlugin.MetadataAccessType;
 import com.dremio.exec.dotfile.View;
 import com.dremio.exec.planner.logical.ViewTable;
 import com.dremio.exec.record.BatchSchema;
+import com.dremio.exec.store.DatasetRetrievalOptions;
 import com.dremio.exec.store.NamespaceTable;
+import com.dremio.exec.store.SchemaConfig;
+import com.dremio.exec.store.StoragePlugin;
 import com.dremio.exec.store.TableMetadata;
 import com.dremio.exec.store.Views;
+import com.dremio.exec.store.dfs.ImpersonationConf;
 import com.dremio.exec.util.ViewFieldsHelper;
+import com.dremio.options.OptionManager;
 import com.dremio.service.namespace.DatasetHelper;
+import com.dremio.service.namespace.DatasetMetadataSaver;
 import com.dremio.service.namespace.NamespaceAttribute;
 import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.NamespaceIndexKeys;
 import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.NamespaceNotFoundException;
 import com.dremio.service.namespace.NamespaceService;
+import com.dremio.service.namespace.NamespaceService.SplitCompression;
 import com.dremio.service.namespace.NamespaceUtils;
-import com.dremio.service.namespace.SourceTableDefinition;
 import com.dremio.service.namespace.dataset.proto.DatasetConfig;
-import com.dremio.service.namespace.dataset.proto.DatasetSplit;
 import com.dremio.service.namespace.dataset.proto.DatasetType;
+import com.dremio.service.namespace.proto.EntityId;
 import com.dremio.service.namespace.proto.NameSpaceContainer;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
@@ -68,13 +85,16 @@ class DatasetManager {
 
   private final PluginRetriever plugins;
   private final NamespaceService userNamespaceService;
+  private final OptionManager optionManager;
 
   public DatasetManager(
       PluginRetriever plugins,
-      NamespaceService userNamespaceService
+      NamespaceService userNamespaceService,
+      OptionManager optionManager
       ) {
     this.userNamespaceService = userNamespaceService;
     this.plugins = plugins;
+    this.optionManager = optionManager;
   }
 
   /**
@@ -178,11 +198,7 @@ class DatasetManager {
       key = new NamespaceKey(config.getFullPathList());
     }
 
-    if(key.getRoot().startsWith("@")) {
-      plugin = plugins.getPlugin("__home", true);
-    } else {
-      plugin = plugins.getPlugin(key.getRoot(), false);
-    }
+    plugin = plugins.getPlugin(key.getRoot(), false);
 
     if(plugin != null) {
 
@@ -220,31 +236,47 @@ class DatasetManager {
     return getTable(key, options);
   }
 
+  private NamespaceTable getTableFromNamespace(NamespaceKey key, DatasetConfig datasetConfig, ManagedStoragePlugin plugin,
+                                               String accessUserName, MetadataRequestOptions options) {
+    plugin.checkAccess(key, datasetConfig, accessUserName, options);
+    final TableMetadata tableMetadata = new TableMetadataImpl(plugin.getId(),
+        datasetConfig,
+        accessUserName,
+        DatasetSplitsPointer.of(userNamespaceService, datasetConfig));
+    return new NamespaceTable(tableMetadata);
+  }
+
   /**
    * Retrieves a source table, checking that things are up to date.
-   * @param key
-   * @param datasetConfig
-   * @param plugin
-   * @param options
-   * @return
    */
-  private DremioTable getTableFromPlugin(NamespaceKey key, DatasetConfig datasetConfig, ManagedStoragePlugin plugin, final MetadataRequestOptions options) {
+  private DremioTable getTableFromPlugin(
+      NamespaceKey key,
+      DatasetConfig datasetConfig,
+      ManagedStoragePlugin plugin,
+      MetadataRequestOptions options
+  ) {
+
+    // Figure out the user we want to access the source with.  If the source supports impersonation we allow it to
+    // override the delegated username.
+    final SchemaConfig schemaConfig = options.getSchemaConfig();
+    final String accessUserName = getAccessUserName(plugin, schemaConfig);
 
     final Stopwatch stopwatch = Stopwatch.createStarted();
-    if(plugin.isValid(datasetConfig, options)) {
-      plugin.checkAccess(key, datasetConfig, options);
+    if (plugin.isValid(datasetConfig, options)) {
+      plugin.checkAccess(key, datasetConfig, accessUserName, options);
       final NamespaceKey canonicalKey = new NamespaceKey(datasetConfig.getFullPathList());
-      final NamespaceTable namespaceTable = new NamespaceTable(new TableMetadataImpl(plugin.getId(), datasetConfig, options.getSchemaConfig().getUserName(), DatasetSplitsPointer.of(userNamespaceService, datasetConfig)));
-      options.getStatsCollector().addDatasetStat(canonicalKey.getSchemaPath(), MetadataAccessType.CACHED_METADATA.name(), stopwatch.elapsed(TimeUnit.MILLISECONDS));
+      final NamespaceTable namespaceTable = getTableFromNamespace(key, datasetConfig, plugin, accessUserName, options);
+      options.getStatsCollector()
+          .addDatasetStat(canonicalKey.getSchemaPath(), MetadataAccessType.CACHED_METADATA.name(),
+              stopwatch.elapsed(TimeUnit.MILLISECONDS));
       return namespaceTable;
     }
 
     try {
-
       // TODO: move views to namespace and out of filesystem.
-      if(datasetConfig == null) {
+      if (datasetConfig == null) {
         ViewTable view = plugin.getView(key, options);
-        if(view != null){
+        if (view != null) {
           return view;
         }
       }
@@ -256,65 +288,107 @@ class DatasetManager {
     }
 
 
-    if(datasetConfig != null) {
+    if (datasetConfig != null) {
       // canonicalize key if we can.
       key = new NamespaceKey(datasetConfig.getFullPathList());
     }
 
-    // even though the following call won't assume the key is canonical we will need to hit the source anyway
-    // to retrieve the complete dataset
-    final SourceTableDefinition tableDefinition;
+    final DatasetRetrievalOptions retrievalOptions = plugin.getDefaultRetrievalOptions()
+        .toBuilder()
+        .setIgnoreAuthzErrors(schemaConfig.getIgnoreAuthErrors())
+        .build();
 
+    final Optional<DatasetHandle> handle;
     try {
-      tableDefinition = plugin.getTable(key, datasetConfig, options.getSchemaConfig().getIgnoreAuthErrors());
-    } catch (Exception ex) {
-      throw UserException.validationError(ex).message("Failure while retrieving dataset [%s].", key).build(logger);
+      handle = plugin.getDatasetHandle(key, datasetConfig, retrievalOptions);
+    } catch (ConnectorException e) {
+      throw UserException.validationError(e)
+          .message("Failure while retrieving dataset [%s].", key)
+          .build(logger);
     }
 
-    if(tableDefinition == null) {
+    if (!handle.isPresent()) {
       return null;
     }
 
-    final NamespaceKey canonicalKey = tableDefinition.getName();
+    final NamespaceKey canonicalKey = MetadataObjectsUtils.toNamespaceKey(handle.get().getDatasetPath());
 
-    if(datasetConfig == null && !canonicalKey.equals(key)) {
-      // before we do anything with this accessor, we should reprobe namespace as it is possible that the request the user made was not the canonical key and therefore we missed when trying to retrieve data from the namespace.
+    if (datasetConfig == null && !canonicalKey.equals(key)) {
+      // before we do anything with this accessor, we should reprobe namespace as it is possible that the request the
+      // user made was not the canonical key and therefore we missed when trying to retrieve data from the namespace.
 
       try {
         datasetConfig = userNamespaceService.getDataset(canonicalKey);
-        if(datasetConfig != null && plugin.isValid(datasetConfig, options)) {
-          // if the datasetconfig is complete and unexpired, we'll recurse because we don't need the just retrieved SourceTableDefinition. Since they're lazy, little harm done.
+        if (datasetConfig != null && plugin.isValid(datasetConfig, options)) {
+          // if the dataset config is complete and unexpired, we'll recurse because we don't need the just retrieved
+          // SourceTableDefinition. Since they're lazy, little harm done.
           // Otherwise, we'll fall through and use the found accessor.
           return getTableFromPlugin(canonicalKey, datasetConfig, plugin, options);
         }
-      } catch(NamespaceException e) {
+      } catch (NamespaceException e) {
         // ignore, we'll fall through.
       }
     }
 
+    // arriving here means that the metadata for the table is either incomplete, missing or out of date. We need
+    // to save it and return the updated data.
 
-    // arriving here means that the metadata for the table is either incomplete, missing or out of date. We need to save it and return the updated data.
-    try {
-      final DatasetConfig newDatasetConfig = tableDefinition.getDataset();
-      final List<DatasetSplit> splits = tableDefinition.getSplits();
-      NamespaceUtils.copyFromOldConfig(datasetConfig, newDatasetConfig);
-
-      // if saveable, we'll save whether or not
-      if(tableDefinition.isSaveable()) {
-        plugin.getSaver().completeSave(newDatasetConfig, splits);
-      }
-
-      options.getStatsCollector().addDatasetStat(canonicalKey.getSchemaPath(), MetadataAccessType.PARTIAL_METADATA.name(), stopwatch.elapsed(TimeUnit.MILLISECONDS));
-
-      plugin.checkAccess(canonicalKey, newDatasetConfig, options);
-
-      TableMetadata metadata = new TableMetadataImpl(plugin.getId(), newDatasetConfig, options.getSchemaConfig().getUserName(), MaterializedSplitsPointer.of(splits, splits.size()));
-      return new NamespaceTable(metadata);
-    } catch(UserException ex) {
-      throw ex;
-    } catch (Exception e) {
-      throw UserException.dataReadError(e).message("Failure while attempting to read metadata for %s.", key).build(logger);
+    boolean opportunisticSave = (datasetConfig == null);
+    if (opportunisticSave) {
+      datasetConfig = MetadataObjectsUtils.newShallowConfig(handle.get());
     }
+
+    try {
+      plugin.getSaver()
+          .save(datasetConfig, handle.get(), plugin.unwrap(StoragePlugin.class), opportunisticSave, retrievalOptions);
+    } catch (ConcurrentModificationException cme) {
+      // Some other query, or perhaps the metadata refresh, must have already created this dataset. Re-obtain it
+      // from the namespace
+      assert opportunisticSave : "Non-opportunistic saves should have already handled a CME";
+      try {
+        datasetConfig = userNamespaceService.getDataset(canonicalKey);
+      } catch (NamespaceException e) {
+        // We got a concurrent modification exception because a dataset existed. It shouldn't be the case that it
+        // no longer exists. In the very rare case of this code racing with both another update *and* a dataset deletion
+        // we should act as if the delete won
+        logger.warn("Unable to obtain dataset {}. Likely race with dataset deletion", canonicalKey);
+        return null;
+      }
+      final NamespaceTable namespaceTable = getTableFromNamespace(key, datasetConfig, plugin, accessUserName, options);
+      options.getStatsCollector()
+          .addDatasetStat(canonicalKey.getSchemaPath(), MetadataAccessType.CACHED_METADATA.name(),
+              stopwatch.elapsed(TimeUnit.MILLISECONDS));
+      return namespaceTable;
+    }
+
+    options.getStatsCollector()
+        .addDatasetStat(canonicalKey.getSchemaPath(), MetadataAccessType.PARTIAL_METADATA.name(),
+            stopwatch.elapsed(TimeUnit.MILLISECONDS));
+
+    plugin.checkAccess(canonicalKey, datasetConfig, accessUserName, options);
+
+    // TODO: use MaterializedSplitsPointer if metadata is not too big!
+    final TableMetadata tableMetadata = new TableMetadataImpl(plugin.getId(), datasetConfig,
+        accessUserName, DatasetSplitsPointer.of(userNamespaceService, datasetConfig));
+    return new NamespaceTable(tableMetadata);
+  }
+
+  // Figure out the user we want to access the source with.  If the source supports impersonation we allow it to
+  // override the delegated username.
+  private String getAccessUserName(ManagedStoragePlugin plugin, SchemaConfig schemaConfig) {
+    final String accessUserName;
+
+    if (plugin.getConnectionConf() instanceof ImpersonationConf) {
+      String queryUser = null;
+      if (schemaConfig.getViewExpansionContext() != null) {
+        queryUser = schemaConfig.getViewExpansionContext().getQueryUser();
+      }
+      accessUserName = ((ImpersonationConf) plugin.getConnectionConf()).getAccessUserName(schemaConfig.getUserName(), queryUser);
+    } else {
+      accessUserName = schemaConfig.getUserName();
+    }
+
+    return accessUserName;
   }
 
   private ViewTable createTableFromVirtualDataset(DatasetConfig datasetConfig, MetadataRequestOptions options) {
@@ -335,50 +409,66 @@ class DatasetManager {
     }
   }
 
-  private boolean isFSBasedDataset(DatasetConfig datasetConfig) {
+  private static boolean isFSBasedDataset(DatasetConfig datasetConfig) {
     return datasetConfig.getType() == DatasetType.PHYSICAL_DATASET_HOME_FILE ||
       datasetConfig.getType() == DatasetType.PHYSICAL_DATASET_SOURCE_FILE ||
       datasetConfig.getType() == DatasetType.PHYSICAL_DATASET_SOURCE_FOLDER ||
       datasetConfig.getType() == DatasetType.PHYSICAL_DATASET_HOME_FOLDER;
   }
 
-  public boolean createOrUpdateDataset(NamespaceService userNamespaceService, ManagedStoragePlugin plugin, NamespaceKey source, final NamespaceKey datasetPath, final DatasetConfig datasetConfig, NamespaceAttribute... attributes) throws NamespaceException {
-    if (!isFSBasedDataset(datasetConfig)) {
-      return userNamespaceService.tryCreatePhysicalDataset(datasetPath, datasetConfig, attributes);
+  public boolean createOrUpdateDataset(
+      ManagedStoragePlugin plugin,
+      NamespaceKey datasetPath,
+      DatasetConfig newConfig,
+      NamespaceAttribute... attributes
+  ) throws NamespaceException {
+
+    if (!isFSBasedDataset(newConfig)) {
+      return userNamespaceService.tryCreatePhysicalDataset(datasetPath, newConfig, attributes);
     }
-    DatasetConfig oldDatasetConfig = null;
+
+    DatasetConfig currentConfig = null;
     try {
-      oldDatasetConfig = userNamespaceService.getDataset(datasetPath);
+      currentConfig = userNamespaceService.getDataset(datasetPath);
     } catch (NamespaceNotFoundException nfe) {
       // ignore
     }
 
     // if format settings did not change fall back to namespace based update
-    if (oldDatasetConfig != null && oldDatasetConfig.getPhysicalDataset().getFormatSettings().equals(datasetConfig.getPhysicalDataset().getFormatSettings())) {
-      return userNamespaceService.tryCreatePhysicalDataset(datasetPath, datasetConfig, attributes);
+    if (currentConfig != null &&
+        currentConfig.getPhysicalDataset().getFormatSettings().equals(
+            newConfig.getPhysicalDataset().getFormatSettings())) {
+      return userNamespaceService.tryCreatePhysicalDataset(datasetPath, newConfig, attributes);
     }
 
+    final DatasetRetrievalOptions retrievalOptions = plugin.getDefaultRetrievalOptions();
     try {
       // for home files dataset path is location of file not path in namespace.
-      if (datasetConfig.getType() == DatasetType.PHYSICAL_DATASET_HOME_FILE || datasetConfig.getType() == DatasetType.PHYSICAL_DATASET_HOME_FOLDER) {
-        final SourceTableDefinition datasetAccessor = plugin.getTable(
-          new NamespaceKey(ImmutableList.<String>builder()
+      if (newConfig.getType() == DatasetType.PHYSICAL_DATASET_HOME_FILE) {
+        final NamespaceKey pathInHome = new NamespaceKey(ImmutableList.<String>builder()
             .add("__home") // TODO (AH) hack.
-            .addAll(PathUtils.toPathComponents(datasetConfig.getPhysicalDataset().getFormatSettings().getLocation())).build()),
-          datasetConfig, false);
-        if (datasetAccessor == null) {
-          return userNamespaceService.tryCreatePhysicalDataset(datasetPath, datasetConfig, attributes);
-        }
-        saveInHomeSpace(userNamespaceService, datasetAccessor, datasetConfig);
-      } else {
-        final SourceTableDefinition datasetAccessor = plugin.getTable(datasetPath, datasetConfig, false);
-        if (datasetAccessor == null) {
+            .addAll(PathUtils.toPathComponents(newConfig.getPhysicalDataset().getFormatSettings().getLocation()))
+            .build());
+
+        final Optional<DatasetHandle> handle = getHandle(plugin, pathInHome, newConfig, retrievalOptions);
+        if (!handle.isPresent()) {
           // setting format setting on empty folders?
-          return userNamespaceService.tryCreatePhysicalDataset(datasetPath, datasetConfig, attributes);
+          return userNamespaceService.tryCreatePhysicalDataset(datasetPath, newConfig, attributes);
         }
 
-        plugin.getSaver().completeSave(datasetAccessor, oldDatasetConfig, attributes);
+        saveInHomeSpace(userNamespaceService, plugin.unwrap(StoragePlugin.class), handle.get(), retrievalOptions, newConfig);
+        return true;
       }
+
+      final Optional<DatasetHandle> handle = getHandle(plugin, datasetPath, newConfig, retrievalOptions);
+      if (!handle.isPresent()) {
+        // setting format setting on empty folders?
+        return userNamespaceService.tryCreatePhysicalDataset(datasetPath, newConfig, attributes);
+      }
+
+      NamespaceUtils.copyFromOldConfig(currentConfig, newConfig);
+      plugin.getSaver()
+          .save(newConfig, handle.get(), plugin.unwrap(StoragePlugin.class), false, retrievalOptions, attributes);
     } catch (Exception e) {
       Throwables.propagateIfPossible(e, NamespaceException.class);
       throw new RuntimeException("Failed to get new dataset ", e);
@@ -386,51 +476,103 @@ class DatasetManager {
     return true;
   }
 
-  public void createDataset(NamespaceKey key, ManagedStoragePlugin plugin, Function<DatasetConfig, DatasetConfig> datasetMutator){
-    DatasetConfig config = null;
+  private static Optional<DatasetHandle> getHandle(
+      ManagedStoragePlugin plugin,
+      NamespaceKey key,
+      DatasetConfig datasetConfig,
+      DatasetRetrievalOptions retrievalOptions
+  ) {
+    try {
+      return plugin.getDatasetHandle(key, datasetConfig, retrievalOptions);
+    } catch (ConnectorException e) {
+      throw UserException.validationError(e)
+          .message("Failure while retrieving dataset [%s].", key)
+          .build(logger);
+    }
+  }
+
+  public void createDataset(NamespaceKey key, ManagedStoragePlugin plugin, Function<DatasetConfig, DatasetConfig> datasetMutator) {
+    DatasetConfig config;
     try {
       config = userNamespaceService.getDataset(key);
-      if(config != null){
-        throw UserException.validationError().message("Table already exists %s", key.getRoot()).build(logger);
+
+      if (config != null) {
+        throw UserException.validationError()
+            .message("Table already exists %s", key.getRoot())
+            .build(logger);
       }
-    }catch (NamespaceException ex){
-      logger.debug("Failure while trying to retrieve dataset for key {}.", key, ex);
+    } catch (NamespaceException ex) {
+      logger.debug("Failure while trying to retrieve dataset for key {}. Exception: {}", key, ex.getLocalizedMessage());
     }
 
-    SourceTableDefinition definition = null;
+    final DatasetRetrievalOptions retrievalOptions = plugin.getDefaultRetrievalOptions();
+    final Optional<DatasetHandle> handle;
     try {
-      definition = plugin.getTable(key, null, false);
-    } catch (Exception ex){
-      throw UserException.dataReadError(ex).message("Failure while attempting to read metadata for table %s from source.", key).build(logger);
+      handle = plugin.getDatasetHandle(key, null, retrievalOptions);
+    } catch (ConnectorException e) {
+      throw UserException.validationError(e)
+          .message("Failure while retrieving dataset [%s].", key)
+          .build(logger);
     }
 
-    if(definition == null){
-      throw UserException.validationError().message("Unable to find requested table %s.", key).build(logger);
+    if (!handle.isPresent()) {
+      throw UserException.validationError()
+          .message("Unable to find requested dataset %s.", key)
+          .build(logger);
     }
 
-    plugin.getSaver().completeSave(datasetMutator == null ? definition : new MutatedSourceTableDefinition(definition, datasetMutator), config);
+    config = MetadataObjectsUtils.newShallowConfig(handle.get());
+
+    plugin.getSaver()
+        .save(config, handle.get(), plugin.unwrap(StoragePlugin.class), false, retrievalOptions, datasetMutator::apply);
   }
 
-  private void saveInHomeSpace(NamespaceService namespaceService, SourceTableDefinition accessor, DatasetConfig nsConfig) {
+  private void saveInHomeSpace(
+      NamespaceService userNamespace,
+      SourceMetadata sourceMetadata,
+      DatasetHandle handle,
+      DatasetRetrievalOptions options,
+      DatasetConfig nsConfig
+  ) {
     Preconditions.checkNotNull(nsConfig);
     final NamespaceKey key = new NamespaceKey(nsConfig.getFullPathList());
-    try{
-      // use key from namespace config
-      DatasetConfig srcConfig = accessor.getDataset();
-      if (nsConfig.getId() == null) {
-        nsConfig.setId(srcConfig.getId());
+
+    if (nsConfig.getId() == null) {
+      nsConfig.setId(new EntityId(UUID.randomUUID().toString()));
+    }
+
+    SplitCompression splitCompression = SplitCompression.valueOf(optionManager.getOption(CatalogOptions.SPLIT_COMPRESSION_TYPE).toUpperCase());
+    try (DatasetMetadataSaver saver = userNamespace.newDatasetMetadataSaver(key, nsConfig.getId(), splitCompression)) {
+      final PartitionChunkListing chunkListing = sourceMetadata.listPartitionChunks(handle,
+          options.asListPartitionChunkOptions(nsConfig));
+      final Iterator<? extends PartitionChunk> chunks = chunkListing.iterator();
+      while (chunks.hasNext()) {
+        final PartitionChunk chunk = chunks.next();
+
+        final Iterator<? extends DatasetSplit> splits = chunk.getSplits().iterator();
+        while (splits.hasNext()) {
+          final DatasetSplit split = splits.next();
+          saver.saveDatasetSplit(split);
+        }
+        saver.savePartitionChunk(chunk);
       }
-      // Merge namespace config with config obtained from underlying filesystem used to store user uploaded files.
-      // Set schema, read definition and state from source accessor
-      nsConfig.setRecordSchema(srcConfig.getRecordSchema());
-      nsConfig.setSchemaVersion(srcConfig.getSchemaVersion());
-      nsConfig.setReadDefinition(srcConfig.getReadDefinition());
-      // get splits from source
-      List<DatasetSplit> splits = accessor.getSplits();
-      namespaceService.addOrUpdateDataset(key, nsConfig, splits);
-    }catch(Exception ex){
-      logger.warn("Failure while retrieving and saving dataset {}.", key, ex);
+
+      final DatasetMetadata datasetMetadata = sourceMetadata.getDatasetMetadata(handle, chunkListing,
+          options.asGetMetadataOptions(nsConfig));
+      MetadataObjectsUtils.overrideExtended(nsConfig, datasetMetadata, Optional.empty(),
+          options.maxMetadataLeafColumns());
+      saver.saveDataset(nsConfig, false);
+    } catch (DatasetMetadataTooLargeException e) {
+      nsConfig.setRecordSchema(null);
+      nsConfig.setReadDefinition(null);
+      try {
+        userNamespaceService.addOrUpdateDataset(key, nsConfig);
+      } catch (NamespaceException ignored) {
+      }
+      throw UserException.validationError(e)
+          .build(logger);
+    } catch (Exception e) {
+      logger.warn("Failure while retrieving and saving dataset {}.", key, e);
     }
   }
-
 }

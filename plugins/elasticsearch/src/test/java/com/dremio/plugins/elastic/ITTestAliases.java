@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,6 +75,50 @@ public class ITTestAliases extends ElasticBaseTestQuery {
             .baselineValues("Chicago")
             .baselineValues("Oakland")
             .go();
+  }
+
+  @Test
+  public void testAliasDifferentIndexes() throws Exception {
+    if (elastic.getMinVersionInCluster().getMajor() == 5) {
+      assumeFalse(elastic.getMinVersionInCluster().getMinor() <= 2);
+    }
+
+    String schema1 = schema;
+    ElasticsearchCluster.ColumnData[] data = new ElasticsearchCluster.ColumnData[]{
+      new ElasticsearchCluster.ColumnData("location", TEXT, new Object[][]{
+        {"San Francisco"},
+        {"Oakland"},
+        {"San Jose"}
+      })
+    };
+
+    elastic.load(schema, table, data);
+    schema = schemaName();
+    data = new ElasticsearchCluster.ColumnData[]{
+      new ElasticsearchCluster.ColumnData("location", TEXT, new Object[][]{
+        {"New York"},
+        {"Los Angeles"},
+        {"Chicago"}
+      }),
+      new ElasticsearchCluster.ColumnData("is_valid", ElasticsearchType.BOOLEAN, new Object[][]{
+        {false},
+        {true},
+        {true},
+      })
+    };
+
+    elastic.load(schema, table, data);
+
+    elastic.alias("alias1", schema1, schema);
+
+    String sql = String.format("select location from elasticsearch.alias1.%s where is_valid", table);
+    testBuilder()
+      .sqlQuery(sql)
+      .unOrdered()
+      .baselineColumns("location")
+      .baselineValues("Los Angeles")
+      .baselineValues("Chicago")
+      .go();
   }
 
   @Test

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { PageTypes as ExplorePageTypes } from 'pages/ExplorePage/pageTypes';
+import { changePageTypeInUrl } from '@app/pages/ExplorePage/pageTypeUtils';
+import { ENTITY_TYPES } from '@app/constants/Constants';
+
 //This is a bit hacky, but it won't be necessary after server and client urls match
 
 // full path is the . path used in sql
@@ -78,19 +82,15 @@ export function getEntityNameFromId(spaceId) {
   return splittedEntityId[splittedEntityId.length - 1];
 }
 
-export function isHomePage(pathname) {
-  //TODO for some reasons if we open folder in home we will have spaces pathname, so we can't check correctly
-  return pathname === '/home';
-}
-
 export function parseResourceId(pathname, username) {
   const parts = pathname.split('/');
   let resourceId = parts[2];
-  if (parts.length === 2 || ['source', 'space'].indexOf(parts[1]) === -1) {
-    resourceId = `"@${username}"`;
+  if (parts.length === 2 || [ENTITY_TYPES.source, ENTITY_TYPES.space].indexOf(parts[1]) === -1) {
+    resourceId = `@${username}`;
   }
+  resourceId = `"${resourceId}"`;
   if (parts[3] === 'folder') {
-    return [resourceId].concat(parts.slice(4)).join('.');
+    return [resourceId].concat(parts.slice(4).map(it => `"${it}"`)).join('.');
   }
   return resourceId;
 }
@@ -103,7 +103,7 @@ export function getSourceNameFromResourceId(resourceId) {
 
 export function getEntityType(urlPath) {
   if (urlPath === '/') {
-    return 'home';
+    return ENTITY_TYPES.home;
   }
   const pathParts = urlPath.split('/');
   if (pathParts.length < 4) {
@@ -117,7 +117,7 @@ export function getRootEntityType(urlPath) {
     return undefined;
   }
   if (urlPath === '/') {
-    return 'home';
+    return ENTITY_TYPES.home;
   }
   const pathParts = urlPath.split('/');
   return pathParts[1];
@@ -167,6 +167,14 @@ export function constructResourcePath(fullPath, type = 'dataset') {
   return `/${type}/${fullPath}`;
 }
 
+/**
+ * Returns a path to a home space as a **string** if use creates a new vds or {@see fullPath} as
+ * a **string**
+ * @param {string[]} fullPath - current path
+ * @param {string} datasetType
+ * @param {string} username - current user name
+ * @returns {string} - current entity path in dremio namespace
+ */
 export function getInitialResourceLocation(fullPath, datasetType, username) {
   return fullPath && fullPath[0] !== 'tmp' &&
          (datasetType === 'VIRTUAL_DATASET' || datasetType === 'PHYSICAL_DATASET_HOME_FILE')
@@ -190,4 +198,29 @@ export function getUniqueName(name, isUniqueFunc) {
   }
 
   return `${name} (${count})`;
+}
+
+export function getRouteParamsFromLocation(location) {
+  // this logic works only for Explore page
+  let pathname = location && location.pathname;
+  if (pathname) {
+    try {
+      pathname = decodeURI(pathname);
+    } catch (e) { // if pathname is malformed, ignore it
+      pathname = null;
+    }
+  }
+  return {
+    resourceId: (pathname) ? decodeURIComponent(pathname.split('/')[2]) : '',
+    tableId: (pathname) ? decodeURIComponent(pathname.split('/')[3]) : ''
+  };
+}
+
+export function navigateToExploreDefaultIfNecessary(pageType, location, router) {
+  if (pageType !== ExplorePageTypes.default) {
+    router.push({
+      ...location,
+      pathname: changePageTypeInUrl(location.pathname, ExplorePageTypes.default)
+    });
+  }
 }

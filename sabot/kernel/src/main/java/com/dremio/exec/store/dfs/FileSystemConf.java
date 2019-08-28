@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,8 @@ import org.apache.hadoop.fs.Path;
 
 import com.dremio.exec.catalog.conf.ConnectionConf;
 import com.dremio.exec.catalog.conf.Property;
-import com.google.common.collect.ImmutableList;
 
 public abstract class FileSystemConf<C extends FileSystemConf<C, P>, P extends FileSystemPlugin<C>> extends ConnectionConf<C, P>{
-
   public abstract Path getPath();
 
   public abstract boolean isImpersonationEnabled();
@@ -36,6 +34,13 @@ public abstract class FileSystemConf<C extends FileSystemConf<C, P>, P extends F
   public abstract SchemaMutability getSchemaMutability();
 
   /**
+   * List of properties that are unique to the {@link FileSystem} objects. This are in addition to the URI and user.
+   * Examples include ADLS password, S3 access key and secret etc.
+   * @return
+   */
+  public abstract List<String> getConnectionUniqueProperties();
+
+  /**
    * Whether the plugin should automatically create the requested path if it doesn't already exist.
    * @return {@code true} if a missing path should be created.
    */
@@ -44,11 +49,39 @@ public abstract class FileSystemConf<C extends FileSystemConf<C, P>, P extends F
   }
 
   /**
-   * List of properties that are unique to the {@link FileSystem} objects. This are in addition to the URI and user.
-   * Examples include ADLS password, S3 access key and secret etc.
-   * @return
+   * Indicates that the plugin should use asynchronous reads when possible.
+   * (This means the user has enabled async for the source and the underlying FileSystem supports
+   * asynchronous reads).
    */
-  public List<String> getConnectionUniqueProperties() {
-    return ImmutableList.of();
+  public boolean isAsyncEnabled() {
+    return false;
+  }
+
+  /**
+   * Interface for plugin implementations to communicate cache properties to underlying system.
+   */
+  public interface CacheProperties {
+    /**
+     * Indicates that the plugin requests caching whenever possible.
+     * (Note that even if plugin requests caching, underlying Dremio system must support caching and the source
+     * must have async reads enabled.)
+     * @return {@code true} if caching is requested.
+     */
+    default boolean isCachingEnabled() {
+      return false;
+    }
+
+    /**
+     * If caching is enabled and this feature is supported by underlying Dremio system, this controls the max amount
+     * of disk space that can be used to cache data for this source.
+     * @return {@code percentage} of max disk space to be used for this source, default is 100%.
+     */
+    default int cacheMaxSpaceLimitPct() {
+      return 100;
+    }
+  }
+
+  public CacheProperties getCacheProperties() {
+    return new CacheProperties() {};
   }
 }

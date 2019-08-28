@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.dremio.sabot.op.common.ht2;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertArrayEquals;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -30,12 +30,12 @@ import java.util.Random;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
-import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.VarCharVector;
-import org.apache.arrow.vector.SimpleBigIntVector;
-import org.apache.arrow.vector.Float8Vector;
-import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.Float4Vector;
+import org.apache.arrow.vector.Float8Vector;
+import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.SimpleBigIntVector;
+import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -44,27 +44,27 @@ import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
-import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartition;
-import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartitionSerializable;
-import com.dremio.sabot.op.aggregate.vectorized.SumAccumulators;
+import com.dremio.common.config.SabotConfig;
+import com.dremio.exec.proto.ExecProtos;
+import com.dremio.exec.record.VectorContainer;
+import com.dremio.exec.work.AttemptId;
 import com.dremio.sabot.op.aggregate.vectorized.AccumulatorSet;
-import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator;
-import com.dremio.sabot.op.aggregate.vectorized.MaxAccumulators;
-import com.dremio.sabot.op.aggregate.vectorized.MinAccumulators;
 import com.dremio.sabot.op.aggregate.vectorized.CountColumnAccumulator;
 import com.dremio.sabot.op.aggregate.vectorized.CountOneAccumulator;
+import com.dremio.sabot.op.aggregate.vectorized.MaxAccumulators;
+import com.dremio.sabot.op.aggregate.vectorized.MinAccumulators;
 import com.dremio.sabot.op.aggregate.vectorized.PartitionToLoadSpilledData;
+import com.dremio.sabot.op.aggregate.vectorized.SumAccumulators;
+import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator;
+import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartition;
+import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartitionSerializable;
 import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartitionSpillHandler;
 import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggPartitionSpillHandler.SpilledPartitionIterator;
 import com.dremio.service.spill.SpillDirectory;
 import com.dremio.service.spill.SpillService;
-import com.google.common.io.Files;
-import com.dremio.common.config.SabotConfig;
-import com.dremio.exec.proto.ExecProtos;
-import com.dremio.exec.work.AttemptId;
 import com.dremio.test.DremioTest;
 import com.google.common.collect.Lists;
-import com.dremio.exec.record.VectorContainer;
+import com.google.common.io.Files;
 import com.koloboke.collect.hash.HashConfig;
 
 import io.netty.buffer.ArrowBuf;
@@ -104,12 +104,12 @@ public class TestVectorizedHashAggPartitionSerializable {
     testPartitionRoundTrip1Helper();
     postSpillAccumulatorVectorFields.clear();
 
-    /* try with HT batch size as arbitrary non power of 2 */
-    MAX_VALUES_PER_BATCH = 940;
+    /* try with HT batchsize as non power of 2 */
+    MAX_VALUES_PER_BATCH = 990;
     testPartitionRoundTrip1Helper();
     postSpillAccumulatorVectorFields.clear();
 
-    MAX_VALUES_PER_BATCH = 1017;
+    MAX_VALUES_PER_BATCH = 976;
     testPartitionRoundTrip1Helper();
   }
 
@@ -270,13 +270,14 @@ public class TestVectorizedHashAggPartitionSerializable {
     testPartitionRoundTrip2Helper();
     postSpillAccumulatorVectorFields.clear();
 
-    /* try with HT batch size as arbitrary non power of 2 */
-    MAX_VALUES_PER_BATCH = 940;
-    testPartitionRoundTrip2Helper();
+    /* try with HT batchsize as non power of 2 */
+    MAX_VALUES_PER_BATCH = 990;
+    testPartitionRoundTrip1Helper();
     postSpillAccumulatorVectorFields.clear();
 
-    MAX_VALUES_PER_BATCH = 1017;
-    testPartitionRoundTrip2Helper();
+    MAX_VALUES_PER_BATCH = 976;
+    testPartitionRoundTrip1Helper();
+    postSpillAccumulatorVectorFields.clear();
   }
 
   private void testPartitionRoundTrip2Helper() throws Exception {
@@ -453,8 +454,9 @@ public class TestVectorizedHashAggPartitionSerializable {
         }).when(spillService).getSpillSubdir(any(String.class));
 
         LBlockHashTable sourceHashTable = new LBlockHashTable(HashConfig.getDefault(), pivot, allocator, 16000, 10, true, accumulator, MAX_VALUES_PER_BATCH);
-        VectorizedHashAggPartition hashAggPartition =  new VectorizedHashAggPartition(accumulator, sourceHashTable, pivot.getBlockWidth(), "P0");
-        final VectorizedHashAggPartitionSpillHandler partitionSpillHandler = new VectorizedHashAggPartitionSpillHandler(hashAggPartitions, fragmentHandle, null, sabotConfig, 1, partitionToLoadSpilledData, spillService, true);
+        VectorizedHashAggPartition hashAggPartition =  new VectorizedHashAggPartition
+          (accumulator, sourceHashTable, pivot.getBlockWidth(), "P0", offsets, false);
+        final VectorizedHashAggPartitionSpillHandler partitionSpillHandler = new VectorizedHashAggPartitionSpillHandler(hashAggPartitions, fragmentHandle, null, sabotConfig, 1, partitionToLoadSpilledData, spillService, true, null);
         hashAggPartitions[0] = hashAggPartition;
 
         final long keyFixedVectorAddr = fbv.getMemoryAddress();
@@ -474,13 +476,14 @@ public class TestVectorizedHashAggPartitionSerializable {
         for (int keyIndex = 0; keyIndex < records; keyIndex++, offsetAddr += VectorizedHashAggOperator.PARTITIONINDEX_HTORDINAL_WIDTH) {
           final int keyHash = (int)hashValues.get(keyIndex);
           actualOrdinals[keyIndex] = sourceHashTable.add(keyFixedVectorAddr, keyVarVectorAddr, keyIndex, keyHash);
-          PlatformDependent.putByte(offsetAddr, (byte)hashPartitionIndex);
-          PlatformDependent.putInt(offsetAddr + VectorizedHashAggOperator.HTORDINAL_OFFSET, actualOrdinals[keyIndex]);
-          PlatformDependent.putInt(offsetAddr + VectorizedHashAggOperator.KEYINDEX_OFFSET, keyIndex);
+          hashAggPartition.appendRecord(actualOrdinals[keyIndex], keyIndex);
+          //PlatformDependent.putByte(offsetAddr, (byte)hashPartitionIndex);
+          //PlatformDependent.putInt(offsetAddr + VectorizedHashAggOperator.HTORDINAL_OFFSET, actualOrdinals[keyIndex]);
+          //PlatformDependent.putInt(offsetAddr + VectorizedHashAggOperator.KEYINDEX_OFFSET, keyIndex);
         }
 
         /* accumulate */
-        accumulator.accumulate(offsets.memoryAddress(), records);
+        accumulator.accumulate(offsets.memoryAddress(), records, sourceHashTable.getBitsInChunk(), sourceHashTable.getChunkOffsetMask());
 
         /* check hash table ordinals */
         assertArrayEquals(expectedOrdinals, actualOrdinals);

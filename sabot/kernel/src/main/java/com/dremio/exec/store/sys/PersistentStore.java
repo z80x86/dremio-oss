@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,15 +45,6 @@ public interface PersistentStore<V> extends AutoCloseable {
    * @param key  lookup key
    */
   void delete(String key);
-
-  /**
-   * Stores the (key, value) tuple in the store only if it does not exists.
-   *
-   * @param key  lookup key
-   * @param value  value to store
-   * @return  true if put takes place, false otherwise.
-   */
-  boolean putIfAbsent(String key, V value);
 
   /**
    * Returns an iterator of entries.

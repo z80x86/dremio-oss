@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,10 @@ import com.dremio.exec.planner.physical.visitor.PrelVisitor;
 import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 
 public interface Prel extends RelNode, Iterable<Prel>{
+
+  final long DEFAULT_RESERVE = 1_000_000;
+  final long DEFAULT_LIMIT = Long.MAX_VALUE;
+  final long DEFAULT_LOW_LIMIT = 0;
 
   Convention PHYSICAL = new Convention.Impl("PHYSICAL", Prel.class) {
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,8 @@ const InternalSupportEmail = (props) => {
       <div style={props.descriptionStyle}>
         {la('Note: Users will see changes when they next reload.')}
       </div>
-      {props.renderSettings('support.email.addr')}
-      {props.renderSettings('support.email.jobs.subject')}
+      {props.renderSettings('support.email.addr', {allowEmpty : true})}
+      {props.renderSettings('support.email.jobs.subject', {allowEmpty : true})}
     </div>
   );
 };

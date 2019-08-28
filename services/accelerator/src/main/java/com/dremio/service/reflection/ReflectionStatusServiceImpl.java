@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,17 @@ import static com.dremio.service.reflection.ReflectionUtils.computeDatasetHash;
 import static com.dremio.service.reflection.ReflectionUtils.hasMissingPartitions;
 import static com.dremio.service.users.SystemUser.SYSTEM_USERNAME;
 
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import javax.inject.Provider;
 
 import com.dremio.datastore.KVStoreProvider;
+import com.dremio.exec.planner.acceleration.UpdateIdWrapper;
 import com.dremio.exec.proto.CoordinationProtos;
 import com.dremio.exec.proto.ReflectionRPC;
 import com.dremio.exec.server.SabotContext;
@@ -44,10 +49,13 @@ import com.dremio.service.reflection.ReflectionStatus.REFRESH_STATUS;
 import com.dremio.service.reflection.proto.DataPartition;
 import com.dremio.service.reflection.proto.ExternalReflection;
 import com.dremio.service.reflection.proto.Materialization;
+import com.dremio.service.reflection.proto.ReflectionDimensionField;
 import com.dremio.service.reflection.proto.ReflectionEntry;
+import com.dremio.service.reflection.proto.ReflectionField;
 import com.dremio.service.reflection.proto.ReflectionGoal;
 import com.dremio.service.reflection.proto.ReflectionGoalState;
 import com.dremio.service.reflection.proto.ReflectionId;
+import com.dremio.service.reflection.proto.ReflectionMeasureField;
 import com.dremio.service.reflection.proto.ReflectionState;
 import com.dremio.service.reflection.proto.Refresh;
 import com.dremio.service.reflection.store.ExternalReflectionStore;
@@ -55,14 +63,8 @@ import com.dremio.service.reflection.store.MaterializationStore;
 import com.dremio.service.reflection.store.ReflectionEntriesStore;
 import com.dremio.service.reflection.store.ReflectionGoalsStore;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.FluentIterable;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 
 /**
@@ -157,7 +159,7 @@ public class ReflectionStatusServiceImpl implements ReflectionStatusService {
     final AccelerationSettings settings = reflectionSettings.getReflectionSettings(new NamespaceKey(config.getFullPathList()));
     final boolean hasManualRefresh = settings.getNeverRefresh();
 
-    final Optional<ReflectionEntry> entryOptional = Optional.fromNullable(entriesStore.get(id));
+    final Optional<ReflectionEntry> entryOptional = Optional.ofNullable(entriesStore.get(id));
     if (!entryOptional.isPresent()) {
       // entry not created yet, e.g. reflection created but manager isn't awake yet
       return new ReflectionStatus(
@@ -201,12 +203,11 @@ public class ReflectionStatusServiceImpl implements ReflectionStatusService {
         availabilityStatus = AVAILABILITY_STATUS.AVAILABLE;
       } else {
         // if the reflection has any valid materialization, then it can accelerate
-        if (Iterables.any(materializationStore.getAllDoneWhen(now), new Predicate<Materialization>() {
-          @Override
-          public boolean apply(Materialization m) {
-            return !hasMissingPartitions(m.getPartitionList(), activeHosts) && cacheViewer.get().isCached(m.getId());
-          }
-        })) {
+        if (StreamSupport.stream(materializationStore.getAllDoneWhen(now).spliterator(), false)
+          .anyMatch(
+            m -> !hasMissingPartitions(m.getPartitionList(), activeHosts) && cacheViewer.get().isCached(m.getId())
+            )
+          ) {
           availabilityStatus = AVAILABILITY_STATUS.AVAILABLE;
         }
       }
@@ -219,13 +220,7 @@ public class ReflectionStatusServiceImpl implements ReflectionStatusService {
   }
 
   private Set<String> getActiveHosts() {
-    return Sets.newHashSet(Iterables.transform(sabotContext.get().getExecutors(),
-      new Function<CoordinationProtos.NodeEndpoint, String>() {
-        @Override
-        public String apply(final CoordinationProtos.NodeEndpoint endpoint) {
-          return endpoint.getAddress();
-        }
-      }));
+    return Sets.newHashSet(sabotContext.get().getExecutors().stream().map(CoordinationProtos.NodeEndpoint::getAddress).collect(Collectors.toList()));
   }
 
   private ExternalReflectionStatus.STATUS computeStatus(ExternalReflection reflection) {
@@ -283,41 +278,37 @@ public class ReflectionStatusServiceImpl implements ReflectionStatusService {
   public Iterable<AccelerationListManager.ReflectionInfo> getReflections() {
     final Iterable<ReflectionGoal> goalReflections = ReflectionUtils.getAllReflections(goalsStore);
     final Iterable<ExternalReflection> externalReflections = externalReflectionStore.getExternalReflections();
-    FluentIterable<AccelerationListManager.ReflectionInfo> reflections = FluentIterable.from(goalReflections)
-      .transform(new Function<ReflectionGoal, AccelerationListManager.ReflectionInfo>() {
-        @Override
-        public AccelerationListManager.ReflectionInfo apply(ReflectionGoal goal) {
-          final String dataset = quotedCompound(namespaceService.get().findDatasetByUUID(goal.getDatasetId()).getFullPathList());
-          final Optional<ReflectionStatus> statusOpt = getNoThrowStatus(goal.getId());
-          String combinedStatus = "UNKNOWN";
-          int numFailures = 0;
-          if (statusOpt.isPresent()) {
-            combinedStatus = statusOpt.get().getCombinedStatus().toString();
-            numFailures = statusOpt.get().getNumFailures();
-          }
+    Stream<AccelerationListManager.ReflectionInfo> reflections = StreamSupport.stream(goalReflections.spliterator(),
+      false).map(goal -> {
+      final String dataset = quotedCompound(namespaceService.get().findDatasetByUUID(goal.getDatasetId()).getFullPathList());
+      final Optional<ReflectionStatus> statusOpt = getNoThrowStatus(goal.getId());
+      String combinedStatus = "UNKNOWN";
+      int numFailures = 0;
+      if (statusOpt.isPresent()) {
+        combinedStatus = statusOpt.get().getCombinedStatus().toString();
+        numFailures = statusOpt.get().getNumFailures();
+      }
 
-          return new AccelerationListManager.ReflectionInfo(
-            goal.getId().getId(),
-            goal.getName(),
-            goal.getType().toString(),
-            combinedStatus,
-            numFailures,
-            dataset,
-            JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getSortFieldList()).stream().map(t -> t.getName()).collect(Collectors.toList())),
-            JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getPartitionFieldList()).stream().map(t -> t.getName()).collect(Collectors.toList())),
-            JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getDistributionFieldList()).stream().map(t -> t.getName()).collect(Collectors.toList())),
-            JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getDimensionFieldList()).stream().map(t -> t.getName()).collect(Collectors.toList())),
-            JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getMeasureFieldList()).stream().map(t -> t.getName()).collect(Collectors.toList())),
-            JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getDisplayFieldList()).stream().map(t -> t.getName()).collect(Collectors.toList())),
-            null
-          );
-        }
-      });
+      return new AccelerationListManager.ReflectionInfo(
+        goal.getId().getId(),
+        goal.getName(),
+        goal.getType().toString(),
+        combinedStatus,
+        numFailures,
+        dataset,
+        JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getSortFieldList()).stream().map(ReflectionField::getName).collect(Collectors.toList())),
+        JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getPartitionFieldList()).stream().map(ReflectionField::getName).collect(Collectors.toList())),
+        JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getDistributionFieldList()).stream().map(ReflectionField::getName).collect(Collectors.toList())),
+        JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getDimensionFieldList()).stream().map(ReflectionDimensionField::getName).collect(Collectors.toList())),
+        JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getMeasureFieldList()).stream().map(ReflectionMeasureField::getName).collect(Collectors.toList())),
+        JOINER.join(AccelerationUtils.selfOrEmpty(goal.getDetails().getDisplayFieldList()).stream().map(ReflectionField::getName).collect(Collectors.toList())),
+        null
+      );
+    });
 
-    Iterable<AccelerationListManager.ReflectionInfo> externalReflectionsInfo = FluentIterable.from(externalReflections)
-      .transform(new Function<ExternalReflection, AccelerationListManager.ReflectionInfo>() {
-        @Override
-        public AccelerationListManager.ReflectionInfo apply(ExternalReflection externalReflection) {
+    Stream<AccelerationListManager.ReflectionInfo> externalReflectionsInfo = StreamSupport.stream
+      (externalReflections.spliterator(), false)
+      .map(externalReflection -> {
           DatasetConfig dataset = namespaceService.get().findDatasetByUUID(externalReflection.getQueryDatasetId());
           if (dataset == null) {
             return null;
@@ -345,21 +336,14 @@ public class ReflectionStatusServiceImpl implements ReflectionStatusService {
             null,
             targetDatasetPath
           );
-        }
-      })
-      .filter(Predicates.notNull());
-    return reflections.append(externalReflectionsInfo);
+      }).filter(Objects::nonNull);
+    return Stream.concat(reflections, externalReflectionsInfo).collect(Collectors.toList());
   }
 
   @Override
   public Iterable<ReflectionRPC.RefreshInfo> getRefreshInfos() {
-    return FluentIterable.from(materializationStore.getAllRefreshes()).transform(new Function<Refresh, ReflectionRPC
-      .RefreshInfo>() {
-      @Override
-      public ReflectionRPC.RefreshInfo apply(Refresh refresh) {
-        return toProto(refresh);
-      }
-    });
+    return StreamSupport.stream(materializationStore.getAllRefreshes().spliterator(), false)
+      .map(this::toProto).collect(Collectors.toList());
   }
 
   private ReflectionRPC.RefreshInfo toProto(Refresh refreshInfo) {
@@ -415,7 +399,9 @@ public class ReflectionStatusServiceImpl implements ReflectionStatusService {
       }
     }
     if (refreshInfo.getUpdateId() != null) {
-      refreshInfoBuilder.setUpdateId(refreshInfo.getUpdateId());
+      UpdateIdWrapper wrapper = new UpdateIdWrapper(refreshInfo.getUpdateId());
+      String updateId = wrapper.toStringValue();
+      refreshInfoBuilder.setUpdateId(updateId);
     }
     if (refreshInfo.getPartitionList() != null) {
       StringBuilder strB = new StringBuilder("[");
@@ -444,7 +430,7 @@ public class ReflectionStatusServiceImpl implements ReflectionStatusService {
       logger.warn("Couldn't compute status for reflection {}", id, e);
     }
 
-    return Optional.absent();
+    return Optional.empty();
   }
 
   private Optional<ExternalReflectionStatus> getNoThrowStatusForExternal(ReflectionId externalReflectionId) {
@@ -454,6 +440,6 @@ public class ReflectionStatusServiceImpl implements ReflectionStatusService {
       logger.warn("Couldn't compute status for reflection {}", externalReflectionId, e);
     }
 
-    return Optional.absent();
+    return Optional.empty();
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,8 +45,10 @@ export default class JobProfileModal extends Component {
         size='large'
         title={la('Job Profile')}
         isOpen={isOpen}
-        hide={hide}>
+        hide={hide}
+      >
         <iframe
+          id='profile_frame'
           src={profileUrl}
           style={{ height: '100%', width: '100%', border: 'none' }}
           ref='iframe'

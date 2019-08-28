@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,30 @@
  */
 import uuid from 'uuid';
 import Immutable from 'immutable';
+
 import { API_URL_V2, API_URL_V3 } from 'constants/Api';
-import { InvalidRSAA, InternalError, RequestError, ApiError } from 'redux-api-middleware/lib/errors';
 import localStorageUtils from 'utils/storageUtils/localStorageUtils';
+
+/**
+ * Error names from api middleware.
+ * see {@link https://github.com/agraboso/redux-api-middleware}
+ * {@code instanceof} does not work in babel environment for errors, so we have to use names
+ */
+export const ApiMiddlewareErrors = {
+  InvalidRSAA: 'InvalidRSAA',
+  InternalError: 'InternalError',
+  RequestError: 'RequestError',
+  ApiError: 'ApiError'
+};
 
 class ApiUtils {
   isApiError(error) {
-    return error instanceof InvalidRSAA ||
-      error instanceof InternalError ||
-      error instanceof RequestError ||
-      error instanceof ApiError;
+    return error instanceof Error &&
+      (error.name === ApiMiddlewareErrors.InvalidRSAA
+        || error.name === ApiMiddlewareErrors.InternalError
+        || error.name === ApiMiddlewareErrors.RequestError
+        || error.name === ApiMiddlewareErrors.ApiError
+      );
   }
 
   getEntityFromResponse(entityType, response) {
@@ -80,44 +94,66 @@ class ApiUtils {
         const {response} = error;
         const errorId = uuid.v4();
         if (response) {
-          if (response.errorMessage) {
-            const errorFields = this.parseErrorsToObject(response);
-            const errors = {
-              _error: { message: Immutable.Map(response), id: errorId },
-              ...errorFields
-            };
-
-            throw errors;
-          }
-          if (response.meta && response.meta.validationError) {
-            throw response.meta.validationError;
-          }
+          this.handleError(response);
         }
-
         throw {_error: { message: error.message, id: errorId }};
       }
       return action;
-    }).catch((error) => {
-      if (error.statusText) { // chris asks: how would this be possible? (fetch API rejects with TypeError)
-        throw {_error: 'Request Error: ' + error.statusText}; // todo: loc
-      }
-      throw error;
-    });
+    }).catch(this.handleError);
   }
+
+  handleError = (error) => {
+    if (error.errorMessage) {
+      const errorFields = this.parseErrorsToObject(error);
+      const errors = {
+        _error: { message: Immutable.Map(error), id: uuid.v4() },
+        ...errorFields
+      };
+      throw errors;
+    }
+    if (error.meta && error.meta.validationError) {
+      throw error.meta.validationError;
+    }
+    if (error.statusText) { // chris asks: how would this be possible? (fetch API rejects with TypeError)
+      throw {
+        _error: {
+          message: 'Request Error: ' + error.statusText,
+          id: uuid.v4()
+        }
+      }; // todo: loc
+    }
+    throw error;
+  };
 
   fetch(endpoint, options = {}, version = 3) {
     const apiVersion = (version === 3) ? API_URL_V3 : API_URL_V2;
 
-    const headers = new Headers(options.headers || {}); // protect against older chrome browsers
-    headers.append('Authorization', `_dremio${localStorageUtils.getAuthToken()}`);
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+      'Authorization': localStorageUtils.getAuthToken(),
+      ...options.headers
+    }); // protect against older chrome browsers
 
     return fetch(`${apiVersion}/${endpoint}`, { ...options, headers }).then(response => response.ok ? response : Promise.reject(response));
   }
 
-  // This method assumes that error response may contain moreInfo field, that should be used for error message
+  /**
+   * Returns headers that enables writing numbers as strings for job data
+   *
+   * key should match with {@see WebServer#X_DREMIO_JOB_DATA_NUMBERS_AS_STRINGS} in {@see WebServer.java}
+   * @returns headers object
+   * @memberof ApiUtils
+   */
+  getJobDataNumbersAsStringsHeader() {
+    return {
+      'x-dremio-job-data-number-format': 'number-as-string'
+    };
+  }
+
+  // error response may contain moreInfo or errorMessage field, that should be used for error message
   async getErrorMessage(prefix, response) {
     const err = await response.json();
-    const errText = err && err.moreInfo || '';
+    const errText = err && (err.moreInfo || err.errorMessage) || '';
     return errText.length ? `${prefix}: ${errText}` : `${prefix}.`;
   }
 }

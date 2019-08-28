@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,20 @@ package com.dremio.exec.work;
 
 import java.util.List;
 
-import com.dremio.exec.proto.CoordExecRPC.PlanFragment;
+import com.dremio.exec.planner.fragment.PlanFragmentFull;
 import com.google.common.base.Preconditions;
 
 public class QueryWorkUnit {
   // private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(QueryWorkUnit.class);
-  private final List<PlanFragment> fragments;
+  private final List<PlanFragmentFull> fragments;
 
-  public QueryWorkUnit(final List<PlanFragment> fragments) {
+  public QueryWorkUnit(final List<PlanFragmentFull> fragments) {
     Preconditions.checkNotNull(fragments);
 
     this.fragments = fragments;
   }
 
-  public List<PlanFragment> getFragments() {
+  public List<PlanFragmentFull> getFragments() {
     return fragments;
   }
 }

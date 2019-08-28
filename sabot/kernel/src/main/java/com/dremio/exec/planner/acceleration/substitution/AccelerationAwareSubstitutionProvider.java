@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,13 @@
  */
 package com.dremio.exec.planner.acceleration.substitution;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-
-import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.tools.RuleSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.dremio.exec.planner.observer.AttemptObserver;
 import com.dremio.exec.planner.sql.handlers.RelTransformer;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 
 public class AccelerationAwareSubstitutionProvider implements SubstitutionProvider, Observable {
   private static final Logger logger = LoggerFactory.getLogger(AccelerationAwareSubstitutionProvider.class);
@@ -62,12 +54,12 @@ public class AccelerationAwareSubstitutionProvider implements SubstitutionProvid
   }
 
   @Override
-  public List<Substitution> findSubstitutions(final RelNode query) {
+  public SubstitutionStream findSubstitutions(final RelNode query) {
     if (isEnabled()) {
       return delegate.findSubstitutions(query);
     } else {
       logger.debug("Acceleration is disabled. No substitutions...");
-      return ImmutableList.of();
+      return SubstitutionStream.empty();
     }
   }
 

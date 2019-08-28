@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,6 @@ import com.dremio.service.reflection.proto.ReflectionId;
 import com.dremio.service.reflection.store.Serializers.ReflectionGoalSerializer;
 import com.dremio.service.reflection.store.Serializers.ReflectionIdSerializer;
 import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
@@ -160,15 +159,18 @@ public class ReflectionGoalsStore {
     }
 
     @Override
-    public Long incrementVersion(ReflectionGoal value) {
-      final Long current = value.getVersion();
-      value.setVersion(Optional.fromNullable(current).or(-1L) + 1);
-      return current;
+    public void setVersion(ReflectionGoal value, Long version) {
+      value.setVersion(version);
     }
 
     @Override
-    public void setVersion(ReflectionGoal value, Long version) {
-      value.setVersion(version);
+    public String getTag(ReflectionGoal value) {
+      return value.getTag();
+    }
+
+    @Override
+    public void setTag(ReflectionGoal value, String tag) {
+      value.setTag(tag);
     }
   }
 

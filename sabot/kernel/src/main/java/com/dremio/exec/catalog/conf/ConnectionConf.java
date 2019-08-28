@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import java.lang.reflect.Field;
 import java.util.Arrays;
 
 import javax.inject.Provider;
+
+import org.apache.commons.lang3.reflect.FieldUtils;
 
 import com.dremio.exec.catalog.ConnectionReader;
 import com.dremio.exec.catalog.StoragePluginId;
@@ -91,7 +93,7 @@ public abstract class ConnectionConf<T extends ConnectionConf<T, P>, P extends S
    */
   private void clear(Predicate<Field> predicate, boolean isSecret) {
     try {
-      for(Field field : this.getClass().getDeclaredFields()) {
+      for(Field field : FieldUtils.getAllFields(getClass())) {
         if(predicate.apply(field)) {
           if (isSecret && field.getType() == String.class) {
             field.set(this, USE_EXISTING_SECRET_VALUE);
@@ -112,7 +114,7 @@ public abstract class ConnectionConf<T extends ConnectionConf<T, P>, P extends S
    * @param existingConf
    */
   public void applySecretsFrom(ConnectionConf existingConf) {
-    for (Field field : getClass().getDeclaredFields()) {
+    for (Field field : FieldUtils.getAllFields(getClass())) {
       if (field.getAnnotation(Secret.class) == null) {
         continue;
       }

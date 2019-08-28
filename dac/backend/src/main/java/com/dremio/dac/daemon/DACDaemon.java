@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,9 @@ import com.dremio.common.perf.Timer.TimedBlock;
 import com.dremio.common.scanner.ClassPathScanner;
 import com.dremio.common.scanner.persistence.ScanResult;
 import com.dremio.config.DremioConfig;
+import com.dremio.dac.admin.LocalAdmin;
 import com.dremio.dac.server.DACConfig;
+import com.dremio.dac.server.LivenessService;
 import com.dremio.dac.server.WebServer;
 import com.dremio.dac.service.exec.MasterStatusListener;
 import com.dremio.exec.ExecConstants;
@@ -81,6 +83,7 @@ public final class DACDaemon implements AutoCloseable {
   private final boolean isMaster;
   private final boolean isCoordinator;
   private final boolean isExecutor;
+  private final boolean isMasterless;
 
   private final CountDownLatch closed = new CountDownLatch(1);
 
@@ -109,7 +112,9 @@ public final class DACDaemon implements AutoCloseable {
     setupDefaultHttpsSSLSocketFactory();
 
     this.dacConfig = new DACConfig(config);
-    this.isMaster = dacConfig.isMaster;
+    this.isMasterless = config.isMasterlessEnabled();
+    // master and masterless are mutually exclusive
+    this.isMaster = (dacConfig.isMaster && !isMasterless);
     this.isCoordinator = config.getBoolean(DremioConfig.ENABLE_COORDINATOR_BOOL);
     this.isExecutor = config.getBoolean(DremioConfig.ENABLE_EXECUTOR_BOOL);
     this.thisNode = dacConfig.thisNode;
@@ -126,20 +131,22 @@ public final class DACDaemon implements AutoCloseable {
     }
 
     StringBuilder sb = new StringBuilder();
-    if (isMaster) {
-      sb.append("This node is the master node, ");
-      sb.append(dacConfig.thisNode);
-      sb.append(". ");
-    } else {
-      sb.append("This node is not master, waiting on master to register in ZooKeeper");
-      sb.append(". ");
+    if (!isMasterless) {
+      if (isMaster) {
+        sb.append("This node is the master node, ");
+        sb.append(dacConfig.thisNode);
+        sb.append(". ");
+      } else {
+        sb.append("This node is not master, waiting on master to register in ZooKeeper");
+        sb.append(". ");
+      }
     }
 
-    if (isMaster) {
-      final String writePath = config.getString(DremioConfig.LOCAL_WRITE_PATH_STRING);
-      logger.info("Dremio daemon write path: " + config.getString(DremioConfig.LOCAL_WRITE_PATH_STRING));
-      PathUtils.checkWritePath(writePath);
-    }
+    // we should not check it only on master - either check everywhere
+    // or nowhere
+    final String writePath = config.getString(DremioConfig.LOCAL_WRITE_PATH_STRING);
+    logger.info("Dremio daemon write path: " + config.getString(DremioConfig.LOCAL_WRITE_PATH_STRING));
+    PathUtils.checkWritePath(writePath);
 
     sb.append("This node acts as ");
     if (isCoordinator && isExecutor) {
@@ -156,7 +163,7 @@ public final class DACDaemon implements AutoCloseable {
     logger.info(sb.toString());
 
     this.bootstrapRegistry = new SingletonRegistry();
-    if (isMaster) {
+    if (isMaster || isMasterless) {
       registry = new SingletonRegistry();
     } else {
       // retry if service start fails due to master is unavailable.
@@ -181,7 +188,16 @@ public final class DACDaemon implements AutoCloseable {
     try (TimedBlock b = Timer.time("init")) {
       startPreServices();
       startServices();
-      System.out.println("Dremio Daemon Started as " + (isMaster ?  "master" : "worker"));
+      final String text;
+      if (isMaster) {
+        text = "master";
+      } else if (isCoordinator) {
+        text = "coordinator";
+      } else {
+        text = "worker";
+      }
+      System.out.println("Dremio Daemon Started as " + text);
+      LocalAdmin.getInstance().setDaemon(this);
       if(webServer != null){
         System.out.println(String.format("Webserver available at: %s://%s:%d",
             dacConfig.webSSLEnabled() ? "https" : "http", thisNode, webServer.getPort()));
@@ -238,6 +254,10 @@ public final class DACDaemon implements AutoCloseable {
   @VisibleForTesting
   public WebServer getWebServer() {
     return registry.lookup(WebServer.class);
+  }
+
+  public LivenessService getLivenessService() {
+    return registry.provider(LivenessService.class).get();
   }
 
   public void awaitClose() throws InterruptedException {

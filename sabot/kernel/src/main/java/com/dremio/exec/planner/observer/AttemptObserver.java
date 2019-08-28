@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,20 +23,21 @@ import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlNode;
 
+import com.dremio.common.utils.protos.QueryWritableBatch;
 import com.dremio.exec.catalog.DremioTable;
 import com.dremio.exec.planner.PlannerPhase;
+import com.dremio.exec.planner.acceleration.DremioMaterialization;
 import com.dremio.exec.planner.acceleration.substitution.SubstitutionInfo;
 import com.dremio.exec.planner.fragment.PlanningSet;
 import com.dremio.exec.planner.physical.Prel;
-import com.dremio.exec.planner.sql.DremioRelOptMaterialization;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
+import com.dremio.exec.proto.UserBitShared.FragmentRpcSizeStats;
 import com.dremio.exec.proto.UserBitShared.QueryProfile;
 import com.dremio.exec.rpc.RpcOutcomeListener;
 import com.dremio.exec.work.QueryWorkUnit;
 import com.dremio.exec.work.foreman.ExecutionPlan;
 import com.dremio.exec.work.protector.UserRequest;
 import com.dremio.exec.work.protector.UserResult;
-import com.dremio.common.utils.protos.QueryWritableBatch;
 import com.dremio.resource.ResourceSchedulingDecisionInfo;
 
 public interface AttemptObserver {
@@ -47,6 +48,12 @@ public interface AttemptObserver {
    * @param user User.
    */
   void queryStarted(UserRequest query, String user);
+
+  /**
+   * Called to report the wait in the command pool.
+   * May be called multiple times during a query lifetime, as often as the query's tasks are put into the command pool
+   */
+  void commandPoolWait(long waitInMillis);
 
   /**
    * Planning started using provided plan.
@@ -157,7 +164,7 @@ public interface AttemptObserver {
    * @param query
    * @param target
    */
-  void planSubstituted(DremioRelOptMaterialization materialization,
+  void planSubstituted(DremioMaterialization materialization,
                        List<RelNode> substitutions,
                        RelNode target, long millisTaken);
 
@@ -211,6 +218,10 @@ public interface AttemptObserver {
    */
   void attemptCompletion(UserResult result);
 
+  /**
+   * Executor nodes were selected for the query
+   */
+  void executorsSelected(long millisTaken, int idealNumFragments, int idealNumNodes, int numExecutors, String detailsText);
 
   /**
    * Time taken to generate fragments.
@@ -225,16 +236,22 @@ public interface AttemptObserver {
   void planAssignmentTime(long millisTaken);
 
   /**
-   * Time taken for sending intermediate fragments to all nodes.
+   * Time taken for sending start fragment rpcs to all nodes.
    * @param millisTaken
    */
-  void intermediateFragmentScheduling(long millisTaken);
+  void fragmentsStarted(long millisTaken, FragmentRpcSizeStats stats);
 
   /**
-   * Time taken for sending leaf fragments to all nodes.
+   * Time taken for sending activate fragment rpcs to all nodes.
    * @param millisTaken
    */
-  void leafFragmentScheduling(long millisTaken);
+  void fragmentsActivated(long millisTaken);
+
+  /**
+   * Failed to activate fragment.
+   * @param ex
+   */
+  void activateFragmentFailed(Exception ex);
 
   /**
    * ResourceScheduling related information

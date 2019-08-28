@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,7 @@ package com.dremio.exec.store.easy.text.compliant;
 
 import java.io.IOException;
 
-import com.univocity.parsers.common.ParserOutput;
 import com.univocity.parsers.common.ParsingContext;
-import com.univocity.parsers.common.input.CharInputReader;
 
 class TextParsingContext implements ParsingContext {
 

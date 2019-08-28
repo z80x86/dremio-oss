@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,12 +27,15 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
-
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
 
 import com.dremio.common.utils.protos.ExternalIdHelper;
@@ -40,7 +43,7 @@ import com.dremio.dac.explore.model.DatasetPath;
 import com.dremio.dac.explore.model.InitialPreviewResponse;
 import com.dremio.dac.explore.model.InitialTransformAndRunResponse;
 import com.dremio.dac.model.job.AttemptDetailsUI;
-import com.dremio.dac.model.job.AttemptsHelper;
+import com.dremio.dac.model.job.AttemptsUIHelper;
 import com.dremio.dac.model.job.JobDetailsUI;
 import com.dremio.dac.model.job.JobFailureInfo;
 import com.dremio.dac.model.job.JobFailureType;
@@ -50,6 +53,8 @@ import com.dremio.dac.resource.JobResource;
 import com.dremio.dac.resource.NotificationResponse;
 import com.dremio.dac.server.BaseTestServer;
 import com.dremio.dac.server.socket.TestWebSocket;
+import com.dremio.datastore.KVStore;
+import com.dremio.datastore.KVStoreProvider;
 import com.dremio.datastore.SearchTypes.SortOrder;
 import com.dremio.exec.ExecConstants;
 import com.dremio.exec.proto.UserBitShared;
@@ -71,12 +76,16 @@ import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.dataset.DatasetVersion;
 import com.dremio.service.namespace.dataset.proto.FieldOrigin;
 import com.dremio.service.namespace.dataset.proto.Origin;
+import com.dremio.service.namespace.space.proto.SpaceConfig;
 import com.google.common.collect.ImmutableList;
+import com.google.common.util.concurrent.Futures;
 
 /**
  * Tests for job service.
  */
 public class TestJobService extends BaseTestServer {
+  @Rule
+  public ExpectedException thrown = ExpectedException.none();
 
   @Rule public TemporaryFolder tempFolder = new TemporaryFolder();
   private LocalJobsService jobsService;
@@ -118,43 +127,55 @@ public class TestJobService extends BaseTestServer {
     final DatasetPath ds2 = new DatasetPath("s.ds2");
     final DatasetPath ds3 = new DatasetPath("s.ds3");
 
-    Job job1_0 = jobsService.submitJob(JobRequest.newBuilder()
+    final CompletableFuture<Job> job1v0 = jobsService.submitJob(
+      JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("select * from LocalFS1.\"dac-sample1.json\" limit 1"))
         .setDatasetPath(ds1.toNamespaceKey())
-        .setDatasetVersion(new DatasetVersion("v1")).build(), NoOpJobStatusListener.INSTANCE);
-    Job job2_0 = jobsService.submitJob(JobRequest.newBuilder()
+        .setDatasetVersion(new DatasetVersion("v1")).build(),
+      NoOpJobStatusListener.INSTANCE);
+    final CompletableFuture<Job> job2v0 = jobsService.submitJob(
+      JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("select * from LocalFS1.\"dac-sample1.json\" limit 1"))
         .setDatasetPath(ds2.toNamespaceKey())
-        .setDatasetVersion(new DatasetVersion("v1")).build(), NoOpJobStatusListener.INSTANCE);
-    Job job3_0 = jobsService.submitJob(JobRequest.newBuilder()
+        .setDatasetVersion(new DatasetVersion("v1")).build(),
+      NoOpJobStatusListener.INSTANCE);
+    final CompletableFuture<Job> job3v0 = jobsService.submitJob(
+      JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("select * from LocalFS1.\"dac-sample1.json\" limit 1"))
         .setDatasetPath(ds3.toNamespaceKey())
-        .setDatasetVersion(new DatasetVersion("v1")).build(), NoOpJobStatusListener.INSTANCE);
+        .setDatasetVersion(new DatasetVersion("v1")).build(),
+      NoOpJobStatusListener.INSTANCE);
 
-    job1_0.getData().loadIfNecessary();
-    job2_0.getData().loadIfNecessary();
-    job3_0.getData().loadIfNecessary();
+    JobsServiceUtil.waitForJobCompletion(job1v0);
+    JobsServiceUtil.waitForJobCompletion(job2v0);
+    JobsServiceUtil.waitForJobCompletion(job3v0);
 
     assertEquals(1, jobsService.getJobsCount(ds1.toNamespaceKey()));
     assertEquals(1, jobsService.getJobsCount(ds2.toNamespaceKey()));
     assertEquals(1, jobsService.getJobsCount(ds3.toNamespaceKey()));
 
-    Job job1_2 = jobsService.submitJob(JobRequest.newBuilder()
+    final CompletableFuture<Job> job1v2 = jobsService.submitJob(
+      JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("select * from LocalFS1.\"dac-sample1.json\" limit 1"))
         .setDatasetPath(ds1.toNamespaceKey())
-        .setDatasetVersion(new DatasetVersion("v1")).build(), NoOpJobStatusListener.INSTANCE);
-    Job job1_3 = jobsService.submitJob(JobRequest.newBuilder()
+        .setDatasetVersion(new DatasetVersion("v1")).build(),
+      NoOpJobStatusListener.INSTANCE);
+    final CompletableFuture<Job> job1v3 = jobsService.submitJob(
+      JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("select * from LocalFS1.\"dac-sample1.json\" limit 1"))
         .setDatasetPath(ds1.toNamespaceKey())
-        .setDatasetVersion(new DatasetVersion("v2")).build(), NoOpJobStatusListener.INSTANCE);
-    Job job2_2 = jobsService.submitJob(JobRequest.newBuilder()
+        .setDatasetVersion(new DatasetVersion("v2")).build(),
+      NoOpJobStatusListener.INSTANCE);
+    final CompletableFuture<Job> job2v2 = jobsService.submitJob(
+      JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("select * from LocalFS1.\"dac-sample1.json\" limit 1"))
         .setDatasetPath(ds2.toNamespaceKey())
-        .setDatasetVersion(new DatasetVersion("v2")).build(), NoOpJobStatusListener.INSTANCE);
+        .setDatasetVersion(new DatasetVersion("v2")).build(),
+      NoOpJobStatusListener.INSTANCE);
 
-    job1_2.getData().loadIfNecessary();
-    job1_3.getData().loadIfNecessary();
-    job2_2.getData().loadIfNecessary();
+    JobsServiceUtil.waitForJobCompletion(job1v2);
+    JobsServiceUtil.waitForJobCompletion(job1v3);
+    JobsServiceUtil.waitForJobCompletion(job2v2);
 
     assertEquals(3, jobsService.getJobsCount(ds1.toNamespaceKey()));
     assertEquals(2, jobsService.getJobsCount(ds2.toNamespaceKey()));
@@ -166,11 +187,14 @@ public class TestJobService extends BaseTestServer {
     assertEquals(1, jobsService.getJobsCountForDataset(ds2.toNamespaceKey(), new DatasetVersion("2")));
     assertEquals(1, jobsService.getJobsCountForDataset(ds3.toNamespaceKey(), new DatasetVersion("1")));
 
-    Job job1_4 = jobsService.submitJob(JobRequest.newBuilder()
+    JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(
+        JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("select * from LocalFS1.\"dac-sample1.json\" limit 1"))
         .setDatasetPath(ds1.toNamespaceKey())
-        .setDatasetVersion(new DatasetVersion("v1")).build(), NoOpJobStatusListener.INSTANCE);
-    job1_4.getData().loadIfNecessary();
+        .setDatasetVersion(new DatasetVersion("v1")).build(),
+        NoOpJobStatusListener.INSTANCE)
+    );
     List<Job> jobs = ImmutableList.copyOf(jobsService.getAllJobs());
     assertEquals(7, jobs.size());
 
@@ -188,6 +212,22 @@ public class TestJobService extends BaseTestServer {
 
     jobs = getAllJobs("ds==s.ds3;dsv==v2", null, null);
     assertEquals(0, jobs.size());
+  }
+
+  @Test
+  public void testJobCompleted() throws Exception {
+    populateInitialData();
+    final DatasetPath ds1 = new DatasetPath("s.ds1");
+    final CompletableFuture<Job> jobFuture = jobsService.submitJob(
+      JobRequest.newBuilder()
+        .setSqlQuery(getQueryFromSQL("select * from LocalFS1.\"dac-sample1.json\" limit 1")).build(),
+      NoOpJobStatusListener.INSTANCE);
+    Job job = JobsServiceUtil.waitForJobCompletion(jobFuture);
+
+    // get the latest version of the job entry
+    job = jobsService.getJob(job.getJobId());
+    // and make sure it's marked as completed
+    assertTrue("job should be marked as 'completed'", job.isCompleted());
   }
 
   private Job createJob(final String id, final List<String> datasetPath, final String version, final String user,
@@ -450,11 +490,14 @@ public class TestJobService extends BaseTestServer {
   public void testCTASAndDropTable() throws Exception {
     // Create a table
     SqlQuery ctas = getQueryFromSQL("CREATE TABLE \"$scratch\".\"ctas\" AS select * from cp.\"json/users.json\" LIMIT 1");
-    Job ctasJob = jobsService.submitJob(JobRequest.newBuilder()
-        .setSqlQuery(ctas)
-        .setQueryType(QueryType.UI_RUN)
-        .build(), NoOpJobStatusListener.INSTANCE);
-    ctasJob.getData().loadIfNecessary();
+    JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(ctas)
+          .setQueryType(QueryType.UI_RUN)
+          .build(),
+        NoOpJobStatusListener.INSTANCE)
+    );
 
     FileSystemPlugin plugin = (FileSystemPlugin) getCurrentDremioDaemon().getBindingProvider().lookup(CatalogService.class).getSource("$scratch");
 
@@ -465,11 +508,14 @@ public class TestJobService extends BaseTestServer {
 
     // Now drop the table
     SqlQuery dropTable = getQueryFromSQL("DROP TABLE \"$scratch\".\"ctas\"");
-    Job dropTableJob = jobsService.submitJob(JobRequest.newBuilder()
-        .setSqlQuery(dropTable)
-        .setQueryType(QueryType.ACCELERATOR_DROP)
-        .build(), NoOpJobStatusListener.INSTANCE);
-    dropTableJob.getData().loadIfNecessary();
+    JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(dropTable)
+          .setQueryType(QueryType.ACCELERATOR_DROP)
+          .build(),
+        NoOpJobStatusListener.INSTANCE)
+    );
 
     // Make sure the table data directory is deleted
     assertFalse(ctasTableDir.exists());
@@ -483,7 +529,7 @@ public class TestJobService extends BaseTestServer {
     job.getJobAttempt().setDetails(new JobDetails());
     job.getJobAttempt().setAttemptId(attemptId);
 
-    JobDetailsUI detailsUI = new JobDetailsUI(job.getJobId(), job.getJobAttempt().getDetails(), JobResource.getPaginationURL(job.getJobId()), job.getAttempts(), JobResource.getDownloadURL(job), null, null, true, null);
+    JobDetailsUI detailsUI = new JobDetailsUI(job.getJobId(), job.getJobAttempt().getDetails(), JobResource.getPaginationURL(job.getJobId()), job.getAttempts(), JobResource.getDownloadURL(job), null, null, null, true, null, null);
 
     assertEquals("", detailsUI.getAttemptsSummary());
     assertEquals(1, detailsUI.getAttemptDetails().size());
@@ -495,13 +541,13 @@ public class TestJobService extends BaseTestServer {
   }
 
   @Test
-  public void testJobCleanup() throws Exception {
+  public void testJobResultsCleanup() throws Exception {
     jobsService = (LocalJobsService) l(JobsService.class);
     SqlQuery ctas = getQueryFromSQL("SHOW SCHEMAS");
-    Job job = jobsService.submitJob(JobRequest.newBuilder()
-        .setSqlQuery(ctas)
-        .build(), NoOpJobStatusListener.INSTANCE);
-    job.getData().loadIfNecessary();
+    Job job = JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(
+        JobRequest.newBuilder().setSqlQuery(ctas).build(), NoOpJobStatusListener.INSTANCE)
+    );
 
     SabotContext context = l(SabotContext.class);
     OptionValue days = OptionValue.createLong(OptionType.SYSTEM, ExecConstants.RESULTS_MAX_AGE_IN_DAYS.getOptionName(), 0);
@@ -511,7 +557,7 @@ public class TestJobService extends BaseTestServer {
 
     Thread.sleep(20);
 
-    LocalJobsService.CleanupTask cleanupTask = jobsService.new CleanupTask();
+    LocalJobsService.JobResultsCleanupTask cleanupTask = jobsService.new JobResultsCleanupTask();
     cleanupTask.cleanup();
 
     //make sure that the job output directory is gone
@@ -524,6 +570,30 @@ public class TestJobService extends BaseTestServer {
   }
 
   @Test
+  public void testJobProfileCleanup() throws Exception {
+    jobsService = (LocalJobsService) l(JobsService.class);
+    SqlQuery ctas = getQueryFromSQL("SHOW SCHEMAS");
+    Job job = JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(JobRequest.newBuilder().setSqlQuery(ctas).build(), NoOpJobStatusListener.INSTANCE)
+    );
+
+    Thread.sleep(20);
+
+    KVStoreProvider provider = l(KVStoreProvider.class);
+
+    LocalJobsService.DeleteResult deleteResult = LocalJobsService.deleteOldJobs(provider, 10);
+    assertEquals(1, deleteResult.getJobsDeleted());
+    assertEquals(1, deleteResult.getProfilesDeleted());
+
+    KVStore<AttemptId, UserBitShared.QueryProfile> profileStore = provider.getStore(LocalJobsService.JobsProfileCreator.class);
+    UserBitShared.QueryProfile queryProfile = profileStore.get(AttemptIdUtils.fromString(job.getJobAttempt().getAttemptId()));
+    assertEquals(null, queryProfile);
+
+    thrown.expect(JobNotFoundException.class);
+    jobsService.getJob(job.getJobId());
+  }
+
+  @Test
   public void testSingleFailedAttempt() throws Exception {
     final String attemptId = AttemptIdUtils.toString(new AttemptId());
 
@@ -531,7 +601,7 @@ public class TestJobService extends BaseTestServer {
     job.getJobAttempt().setDetails(new JobDetails());
     job.getJobAttempt().setAttemptId(attemptId);
 
-    JobDetailsUI detailsUI = new JobDetailsUI(job.getJobId(), job.getJobAttempt().getDetails(), JobResource.getPaginationURL(job.getJobId()), job.getAttempts(), JobResource.getDownloadURL(job), new JobFailureInfo("Some error message", JobFailureType.UNKNOWN, null), null, false, null);
+    JobDetailsUI detailsUI = new JobDetailsUI(job.getJobId(), job.getJobAttempt().getDetails(), JobResource.getPaginationURL(job.getJobId()), job.getAttempts(), JobResource.getDownloadURL(job), new JobFailureInfo("Some error message", JobFailureType.UNKNOWN, null), null, null, false, null, null);
 
     assertEquals("", detailsUI.getAttemptsSummary());
     assertEquals(1, detailsUI.getAttemptDetails().size());
@@ -551,7 +621,8 @@ public class TestJobService extends BaseTestServer {
     AttemptId attemptId = AttemptId.of(externalId);
     job.getJobAttempt()
             .setAttemptId(AttemptIdUtils.toString(attemptId))
-            .setState(JobState.FAILED);
+            .setState(JobState.FAILED)
+            .setDetails(new JobDetails());
 
     // 3 more SCHEMA_CHANGE failures
     for (int i = 0; i < 3; i++) {
@@ -560,7 +631,8 @@ public class TestJobService extends BaseTestServer {
               .setInfo(newJobInfo(job.getJobAttempt().getInfo(), 100L+2*i, 100L+2*i+1, "failed"))
               .setAttemptId(AttemptIdUtils.toString(attemptId))
               .setState(JobState.FAILED)
-              .setReason(i == 0 ? AttemptReason.OUT_OF_MEMORY : AttemptReason.SCHEMA_CHANGE);
+              .setReason(i == 0 ? AttemptReason.OUT_OF_MEMORY : AttemptReason.SCHEMA_CHANGE)
+              .setDetails(new JobDetails());
       job.addAttempt(jobAttempt);
     }
 
@@ -570,24 +642,25 @@ public class TestJobService extends BaseTestServer {
             .setInfo(newJobInfo(job.getJobAttempt().getInfo(), 106, 107, null))
             .setAttemptId(AttemptIdUtils.toString(attemptId))
             .setState(JobState.COMPLETED)
-            .setReason(AttemptReason.SCHEMA_CHANGE);
+            .setReason(AttemptReason.SCHEMA_CHANGE)
+            .setDetails(new JobDetails());
     job.addAttempt(jobAttempt);
 
     // retrieve the UI jobDetails
-    JobDetailsUI detailsUI = new JobDetailsUI(job.getJobId(), new JobDetails(), JobResource.getPaginationURL(job.getJobId()), job.getAttempts(), JobResource.getDownloadURL(job), null, null, false, null);
+    JobDetailsUI detailsUI = new JobDetailsUI(job.getJobId(), new JobDetails(), JobResource.getPaginationURL(job.getJobId()), job.getAttempts(), JobResource.getDownloadURL(job), null, null, null, false, null, null);
 
     assertEquals(JobState.COMPLETED, detailsUI.getState());
     assertEquals(Long.valueOf(100L), detailsUI.getStartTime());
     assertEquals(Long.valueOf(107L), detailsUI.getEndTime());
     assertNull(detailsUI.getFailureInfo());
     assertEquals(5, detailsUI.getAttemptDetails().size());
-    assertEquals(AttemptsHelper.constructSummary(5, 1, 3), detailsUI.getAttemptsSummary());
+    assertEquals(AttemptsUIHelper.constructSummary(5, 1, 3), detailsUI.getAttemptsSummary());
 
     // check profileUrl
     attemptId = AttemptId.of(externalId);
     for (int i = 0; i < 5; i++, attemptId = attemptId.nextAttempt()) {
       final AttemptDetailsUI attemptDetails = detailsUI.getAttemptDetails().get(i);
-      final String reason = i == 0 ? "" : (i == 1 ? AttemptsHelper.OUT_OF_MEMORY_TEXT : AttemptsHelper.SCHEMA_CHANGE_TEXT);
+      final String reason = i == 0 ? "" : (i == 1 ? AttemptsUIHelper.OUT_OF_MEMORY_TEXT : AttemptsUIHelper.SCHEMA_CHANGE_TEXT);
       checkAttemptDetail(attemptDetails, job.getJobId(), i, i == 4 ? JobState.COMPLETED : JobState.FAILED, reason);
     }
   }
@@ -609,30 +682,27 @@ public class TestJobService extends BaseTestServer {
   }
 
   @Test
-  public void testExplain() throws Exception {
-    SqlQuery ctas = getQueryFromSQL("EXPLAIN PLAN FOR SELECT * FROM sys.version");
-    Job ctasJob = jobsService.submitJob(JobRequest.newBuilder()
-        .setSqlQuery(ctas)
-        .build(), NoOpJobStatusListener.INSTANCE);
-    ctasJob.getData().loadIfNecessary();
+  public void testExplain() {
+    final SqlQuery query = getQueryFromSQL("EXPLAIN PLAN FOR SELECT * FROM sys.version");
+    JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(JobRequest.newBuilder().setSqlQuery(query).build(), NoOpJobStatusListener.INSTANCE)
+    );
   }
 
   @Test
-  public void testAlterOption() throws Exception {
-    SqlQuery ctas = getQueryFromSQL("alter session set \"planner.enable_multiphase_agg\"=true");
-    Job ctasJob = jobsService.submitJob(JobRequest.newBuilder()
-        .setSqlQuery(ctas)
-        .build(), NoOpJobStatusListener.INSTANCE);
-    ctasJob.getData().loadIfNecessary();
+  public void testAlterOption() {
+    final SqlQuery query = getQueryFromSQL("alter session set \"planner.enable_multiphase_agg\"=true");
+    JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(JobRequest.newBuilder().setSqlQuery(query).build(), NoOpJobStatusListener.INSTANCE)
+    );
   }
 
   @Test
   public void testAliasedQuery() throws Exception {
-    SqlQuery ctas = getQueryFromSQL("SHOW SCHEMAS");
-    Job ctasJob = jobsService.submitJob(JobRequest.newBuilder()
-        .setSqlQuery(ctas)
-        .build(), NoOpJobStatusListener.INSTANCE);
-    ctasJob.getData().loadIfNecessary();
+    final SqlQuery query = getQueryFromSQL("SHOW SCHEMAS");
+    JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(JobRequest.newBuilder().setSqlQuery(query).build(), NoOpJobStatusListener.INSTANCE)
+    );
   }
 
   @Test
@@ -644,5 +714,76 @@ public class TestJobService extends BaseTestServer {
         .addFilter(JobIndexKeys.DATASET, "dsg10")
         .setSort(JobIndexKeys.END_TIME.getShortName(), SortOrder.ASCENDING);
     assertEquals("/jobs?filters=%7B%22st%22%3A%5B1200%2C2000%5D%2C%22contains%22%3A%5B%22DG%22%5D%2C%22qt%22%3A%5B%22UI%22%2C%22EXTERNAL%22%5D%2C%22ds%22%3A%5B%22dsg10%22%5D%7D&sort=et&order=ASCENDING", jobFilters.toUrl());
+  }
+
+  @Test
+  public void testCTASReplace() throws Exception {
+    NamespaceKey namespaceKey = new NamespaceKey("ctasSpace");
+    SpaceConfig spaceConfig = new SpaceConfig();
+    spaceConfig.setName("ctasSpace");
+
+    newNamespaceService().addOrUpdateSpace(namespaceKey, spaceConfig);
+
+    SqlQuery ctas = getQueryFromSQL("CREATE OR REPLACE VIEW ctasSpace.ctastest AS select * from (VALUES (1))");
+    Job ctasJob = Futures.getUnchecked(
+      jobsService.submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(ctas)
+          .setQueryType(QueryType.UI_RUN)
+          .build(),
+        NoOpJobStatusListener.INSTANCE)
+    );
+
+    waitForCompletion(ctasJob);
+
+    ctas = getQueryFromSQL("CREATE OR REPLACE VIEW ctasSpace.ctastest AS select * from (VALUES (2))");
+    ctasJob = Futures.getUnchecked(
+      jobsService.submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(ctas)
+          .setQueryType(QueryType.UI_RUN)
+          .build(),
+        NoOpJobStatusListener.INSTANCE)
+    );
+
+    waitForCompletion(ctasJob);
+
+    newNamespaceService().deleteSpace(namespaceKey, newNamespaceService().getSpace(namespaceKey).getTag());
+  }
+
+  @Test
+  public void testMetadataAwaitingValidQuery() {
+    Job job = JobsServiceUtil.waitForJobCompletion(
+      jobsService.submitJob(JobRequest.newBuilder()
+      .setSqlQuery(getQueryFromSQL("SELECT * FROM (VALUES(1234))"))
+      .build(), NoOpJobStatusListener.INSTANCE));
+
+    job.getData().waitForMetadata();
+    assertEquals("batch schema is not empty after awaiting",true, job.getJobAttempt().getInfo().getBatchSchema() != null);
+  }
+
+  @Test
+  public void testMetadataAwaitingInvalidQuery() {
+    Job job = Futures.getUnchecked(
+      jobsService.submitJob(JobRequest.newBuilder()
+      .setSqlQuery(getQueryFromSQL("SELECT * FROM_1 (VALUES(1234))"))
+      .build(), NoOpJobStatusListener.INSTANCE));
+
+    // this is also tests that latch is released in case of error. waitForMetadata should not hang in that case
+    job.getData().waitForMetadata();
+    assertEquals("batch schema should be empty for invalid query",true, job.getJobAttempt().getInfo().getBatchSchema() == null);
+  }
+
+  private void waitForCompletion(Job job) throws Exception {
+    while (true) {
+      JobState state = job.getJobAttempt().getState();
+
+      Assert.assertTrue("expected job to success successfully", Arrays.asList(JobState.RUNNING, JobState.ENQUEUED, JobState.STARTING, JobState.COMPLETED).contains(state));
+      if (state == JobState.COMPLETED) {
+        break;
+      } else {
+        Thread.sleep(TimeUnit.MILLISECONDS.toMillis(100));
+      }
+    }
   }
 }

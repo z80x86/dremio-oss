@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,9 +28,13 @@ import org.junit.Test;
 
 import com.dremio.exec.catalog.Catalog;
 import com.dremio.exec.expr.fn.FunctionImplementationRegistry;
+import com.dremio.exec.planner.physical.PlannerSettings;
 import com.dremio.exec.server.SabotContext;
+import com.dremio.exec.server.options.SystemOptionManager;
 import com.dremio.exec.store.CatalogService;
 import com.dremio.exec.store.SchemaConfig;
+import com.dremio.options.OptionValue;
+import com.dremio.sabot.rpc.user.UserSession;
 import com.dremio.service.users.SystemUser;
 
 /**
@@ -44,11 +48,18 @@ public class TestSQLAnalyzerFactory {
     FunctionImplementationRegistry functionImplementationRegistry = mock(FunctionImplementationRegistry.class);
     CatalogService catalogService = mock(CatalogService.class);
     Catalog catalog = mock(Catalog.class);
+    SystemOptionManager mockOptions = mock(SystemOptionManager.class);
 
     // Stub appropriate methods.
     when(sabotContext.getFunctionImplementationRegistry()).thenReturn(functionImplementationRegistry);
     when(sabotContext.getCatalogService()).thenReturn(catalogService);
     when(sabotContext.getCatalogService().getCatalog(any(SchemaConfig.class), anyLong())).thenReturn(catalog);
+    when(sabotContext.getOptionManager()).thenReturn(mockOptions);
+    when(mockOptions.getOption(PlannerSettings.ENABLE_DECIMAL_V2_KEY)).thenReturn(OptionValue
+        .createBoolean(OptionValue.OptionType.SYSTEM, PlannerSettings.ENABLE_DECIMAL_V2_KEY,
+          false));
+    when(mockOptions.getOption(UserSession.MAX_METADATA_COUNT.getOptionName())).thenReturn(OptionValue
+        .createLong(OptionValue.OptionType.SYSTEM, UserSession.MAX_METADATA_COUNT.getOptionName(), 0));
 
     // Test that the correct concrete implementation is created.
     SQLAnalyzer sqlAnalyzer = SQLAnalyzerFactory.createSQLAnalyzer(SystemUser.SYSTEM_USERNAME, sabotContext, null, true);

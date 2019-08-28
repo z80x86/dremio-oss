@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,22 @@ package com.dremio.exec.server;
 
 import java.util.concurrent.ExecutorService;
 
-import com.codahale.metrics.Gauge;
-import com.dremio.common.exceptions.UserException;
-import com.dremio.common.memory.DremioRootAllocator;
-import com.dremio.exec.store.sys.MemoryIterator;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.memory.RootAllocatorFactory;
 
+import com.codahale.metrics.Gauge;
 import com.codahale.metrics.MetricRegistry;
 import com.dremio.common.AutoCloseables;
-import com.dremio.common.config.SabotConfig;
 import com.dremio.common.config.LogicalPlanPersistence;
+import com.dremio.common.config.SabotConfig;
+import com.dremio.common.exceptions.UserException;
+import com.dremio.common.memory.DremioRootAllocator;
+import com.dremio.common.memory.MemoryDebugInfo;
 import com.dremio.common.scanner.persistence.ScanResult;
 import com.dremio.config.DremioConfig;
 import com.dremio.exec.rpc.CloseableThreadPool;
+import com.dremio.exec.store.sys.MemoryIterator;
 import com.dremio.metrics.Metrics;
 
 public class BootStrapContext implements AutoCloseable {
@@ -49,7 +51,7 @@ public class BootStrapContext implements AutoCloseable {
     this.config = config.getSabotConfig();
     this.classpathScan = classpathScan;
     this.metrics = Metrics.getInstance();
-    this.allocator = RootAllocatorFactory.newRoot(config.getSabotConfig());
+    this.allocator = RootAllocatorFactory.newRoot(config);
     this.executor = new CloseableThreadPool("dremio-general-");
     this.lpPersistance = new LogicalPlanPersistence(config.getSabotConfig(), classpathScan);
     this.dremioConfig = config;
@@ -131,7 +133,14 @@ public class BootStrapContext implements AutoCloseable {
 
     @Override
     public void addMemoryContext(UserException.Builder exceptionBuilder) {
-      rootAllocator.addUsageToExceptionContext(exceptionBuilder);
+      String detail = MemoryDebugInfo.getSummaryFromRoot(rootAllocator);
+      exceptionBuilder.addContext(detail);
+    }
+
+    @Override
+    public void addMemoryContext(UserException.Builder exceptionBuilder, OutOfMemoryException e) {
+      String detail = MemoryDebugInfo.getDetailsOnAllocationFailure(e, rootAllocator);
+      exceptionBuilder.addContext(detail);
     }
   }
 }

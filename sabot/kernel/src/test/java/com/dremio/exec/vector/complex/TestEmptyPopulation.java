@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,7 @@ package com.dremio.exec.vector.complex;
 import static com.dremio.TestBuilder.listOf;
 import static com.dremio.TestBuilder.mapOf;
 
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocatorFactory;
 import org.apache.arrow.vector.UInt4Vector;
-import org.apache.arrow.vector.complex.BaseRepeatedValueVector;
 import org.apache.arrow.vector.complex.EmptyValuePopulator;
 import org.junit.After;
 import org.junit.Assert;
@@ -41,7 +38,7 @@ public class TestEmptyPopulation extends BaseTestQuery {
   @Before
   public void initialize() {
     offsets = new UInt4Vector("offsets", allocator);
-    offsets.allocateNewSafe();
+    offsets.allocateNew();
     offsets.set(0, 0);
     offsets.setValueCount(1);
     Assert.assertTrue("offsets must have one value", offsets.getValueCount() == 1);

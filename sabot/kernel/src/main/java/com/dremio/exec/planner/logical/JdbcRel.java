@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,6 @@ import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
 
-import com.dremio.common.logical.data.LogicalOperator;
-import com.dremio.exec.planner.common.ContainerRel;
 import com.dremio.exec.planner.common.JdbcRelBase;
 
 public class JdbcRel extends JdbcRelBase implements Rel, CopyToCluster {
@@ -36,11 +34,6 @@ public class JdbcRel extends JdbcRelBase implements Rel, CopyToCluster {
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> ignored /* inputs */) {
     return new JdbcRel(getCluster(), traitSet, jdbcSubTree);
-  }
-
-  @Override
-  public LogicalOperator implement(LogicalPlanImplementor implementor) {
-    throw new UnsupportedOperationException();
   }
 
   @Override

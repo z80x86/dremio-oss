@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,8 @@ public class TestReIndexer {
   private static final byte[] one = "one".getBytes(StandardCharsets.UTF_8);
   private static final byte[] two = "two".getBytes(StandardCharsets.UTF_8);
 
-  private static final IndexKey indexKey = new IndexKey("test", "TEST", String.class, null, false, true);
+  private static final IndexKey indexKey = IndexKey.newBuilder("test", "TEST", String.class).setStored(true)
+    .build();
 
   private static class TestConverter implements KVStoreProvider.DocumentConverter<String, String> {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import com.dremio.dac.explore.model.DatasetName;
 import com.dremio.dac.explore.model.DatasetPath;
 import com.dremio.dac.explore.model.DatasetUI;
 import com.dremio.dac.explore.model.InitialDataPreviewResponse;
+import com.dremio.dac.model.job.JobData;
 import com.dremio.dac.model.job.JobUI;
 import com.dremio.dac.proto.model.dataset.VirtualDatasetUI;
 import com.dremio.dac.service.collaboration.CollaborationHelper;
@@ -208,7 +209,7 @@ public class DatasetResource {
     final AccelerationSettings settings = reflectionSettings.getReflectionSettings(datasetPath.toNamespaceKey());
     final AccelerationSettings descriptorSettings = new AccelerationSettings()
       .setAccelerationTTL(settings.getAccelerationTTL()) // needed to use protobuf equals
-      .setVersion(settings.getVersion()) // needed to use protobuf equals
+      .setTag(settings.getTag()) // needed to use protobuf equals
       .setRefreshPeriod(descriptor.getAccelerationRefreshPeriod())
       .setGracePeriod(descriptor.getAccelerationGracePeriod())
       .setMethod(descriptor.getMethod())
@@ -242,16 +243,16 @@ public class DatasetResource {
 
   @DELETE
   @Produces(APPLICATION_JSON)
-  public DatasetUI deleteDataset(@QueryParam("savedVersion") Long savedVersion)
+  public DatasetUI deleteDataset(@QueryParam("savedTag") String savedTag)
       throws DatasetNotFoundException, UserNotFoundException, NamespaceException {
-    if (savedVersion == null) {
-      throw new ClientErrorException("missing savedVersion parameter");
+    if (savedTag == null) {
+      throw new ClientErrorException("missing savedTag parameter");
     }
     final VirtualDatasetUI virtualDataset = datasetService.get(datasetPath);
 
     DatasetUI datasetUI = newDataset(virtualDataset);
 
-    datasetService.deleteDataset(datasetPath, savedVersion);
+    datasetService.deleteDataset(datasetPath, savedTag);
     reflectionSettings.removeSettings(datasetPath.toNamespaceKey());
     return datasetUI;
   }
@@ -274,7 +275,7 @@ public class DatasetResource {
     ds.setFullPathList(datasetPath.toPathList());
     ds.setVersion(DatasetVersion.newVersion());
     ds.setName(datasetPath.getLeaf().getName());
-    ds.setSavedVersion(null);
+    ds.setSavedTag(null);
     ds.setId(null);
     ds.setPreviousVersion(null);
     ds.setOwner(securityContext.getUserPrincipal().getName());
@@ -325,14 +326,19 @@ public class DatasetResource {
     final SqlQuery query = new SqlQuery(
         String.format("select * from %s", datasetPath.toPathString()),
         securityContext.getUserPrincipal().getName());
-    final JobUI job = new JobUI(jobsService.submitJob(JobRequest.newBuilder()
-        .setSqlQuery(query)
-        .setQueryType(QueryType.UI_PREVIEW)
-        .build(), NoOpJobStatusListener.INSTANCE));
+
+    final JobData jobData = JobUI.getJobData(
+      jobsService.submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(query)
+          .setQueryType(QueryType.UI_PREVIEW)
+          .build(),
+        NoOpJobStatusListener.INSTANCE)
+    );
     try {
-      return InitialDataPreviewResponse.of(job.getData().truncate(limit));
+      return InitialDataPreviewResponse.of(jobData.truncate(limit));
     } catch(UserException e) {
-      throw DatasetTool.toInvalidQueryException(e, query.getSql(), ImmutableList.<String> of());
+      throw DatasetTool.toInvalidQueryException(e, query.getSql(), ImmutableList.of());
     }
   }
 

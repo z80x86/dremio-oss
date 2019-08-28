@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,14 +25,12 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 
 import com.dremio.common.expression.SchemaPath;
-import com.dremio.common.logical.data.LogicalOperator;
 import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.planner.common.ScanRelBase;
-import com.dremio.exec.planner.logical.LogicalPlanImplementor;
 import com.dremio.exec.planner.logical.Rel;
+import com.dremio.exec.store.RelOptNamespaceTable;
 import com.dremio.exec.store.ScanFilter;
 import com.dremio.exec.store.TableMetadata;
-import com.dremio.exec.store.RelOptNamespaceTable;
 import com.dremio.exec.store.parquet.ParquetScanFilter;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -76,16 +74,12 @@ public class FilesystemScanDrel extends ScanRelBase implements Rel, FilterableSc
   }
 
   @Override
-  public LogicalOperator implement(LogicalPlanImplementor implementor) {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
   public FilesystemScanDrel applyFilter(ScanFilter scanFilter) {
     Preconditions.checkArgument(scanFilter instanceof ParquetScanFilter);
     return new FilesystemScanDrel(this, (ParquetScanFilter) scanFilter);
   }
 
+  @Override
   public FilesystemScanDrel applyDatasetPointer(TableMetadata newDatasetPointer) {
     return new FilesystemScanDrel(this, newDatasetPointer);
   }
@@ -99,6 +93,7 @@ public class FilesystemScanDrel extends ScanRelBase implements Rel, FilterableSc
     return filter != null ? filter.getCostAdjustment() : super.getCostAdjustmentFactor();
   }
 
+  @Override
   protected double getFilterReduction(){
     if(filter != null){
       return 0.15d;

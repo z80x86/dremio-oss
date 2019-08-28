@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.dremio;
 
+import static com.dremio.exec.store.parquet.ParquetFormatDatasetAccessor.PARQUET_SCHEMA_FALLBACK_DISABLED;
 import static java.lang.String.format;
 import static org.junit.Assert.fail;
 
@@ -25,14 +26,13 @@ import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
-import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
@@ -70,14 +70,14 @@ import com.dremio.exec.record.RecordBatchLoader;
 import com.dremio.exec.rpc.ConnectionThrottle;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.server.SabotNode;
+import com.dremio.exec.util.TestUtilities;
+import com.dremio.exec.util.VectorUtil;
+import com.dremio.exec.work.user.LocalQueryExecutor;
 import com.dremio.options.OptionValidator;
 import com.dremio.options.TypeValidators.BooleanValidator;
 import com.dremio.options.TypeValidators.DoubleValidator;
 import com.dremio.options.TypeValidators.LongValidator;
 import com.dremio.options.TypeValidators.StringValidator;
-import com.dremio.exec.util.TestUtilities;
-import com.dremio.exec.util.VectorUtil;
-import com.dremio.exec.work.user.LocalQueryExecutor;
 import com.dremio.sabot.rpc.user.AwaitableUserResultsListener;
 import com.dremio.sabot.rpc.user.QueryDataBatch;
 import com.dremio.sabot.rpc.user.UserResultsListener;
@@ -108,6 +108,7 @@ public class BaseTestQuery extends ExecTest {
   private static final Properties TEST_CONFIGURATIONS = new Properties() {
     {
       put(ExecConstants.HTTP_ENABLE, "false");
+      put(PARQUET_SCHEMA_FALLBACK_DISABLED, "true");
     }
   };
 
@@ -657,6 +658,20 @@ public class BaseTestQuery extends ExecTest {
 
   protected static void setSessionOption(final String option, final String value) {
     String str = String.format("alter session set %1$s%2$s%1$s = %3$s", SqlUtils.QUOTE, option, value);
+    try {
+      runSQL(str);
+    } catch(final Exception e) {
+      fail(String.format("Failed to run %s, Error: %s", str, e.toString()));
+    }
+  }
+
+  protected static void setSystemOption(final OptionValidator option, final String value) {
+    setSystemOption(option.getOptionName(), value);
+  }
+
+  protected static void setSystemOption(final String option, final String value) {
+    String str = String.format("alter system set %1$s%2$s%1$s = %3$s", SqlUtils.QUOTE, option,
+      value);
     try {
       runSQL(str);
     } catch(final Exception e) {

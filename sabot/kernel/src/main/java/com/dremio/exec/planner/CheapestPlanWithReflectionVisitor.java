@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.dremio.exec.planner;
+
+import static com.dremio.exec.store.parquet.ParquetFormatDatasetAccessor.ACCELERATOR_STORAGEPLUGIN_NAME;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,7 +36,6 @@ import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.util.Pair;
 
 import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableMap;
@@ -146,7 +147,7 @@ public class CheapestPlanWithReflectionVisitor {
     if (p.getInputs().size() == 0) {
       RelOptCost cost = p.getCluster().getMetadataQuery().getNonCumulativeCost(p);
 
-      if (p instanceof TableScan && p.getTable().getQualifiedName().get(0).equals("__accelerator")) {
+      if (p instanceof TableScan && p.getTable().getQualifiedName().get(0).equals(ACCELERATOR_STORAGEPLUGIN_NAME)) {
         TableScan tableScan = (TableScan) p;
         String reflection = tableScan.getTable().getQualifiedName().get(1);
         result = new Result(tableScan, cost, ImmutableMap.of(reflection, RelCostPair.of(p, cost)));

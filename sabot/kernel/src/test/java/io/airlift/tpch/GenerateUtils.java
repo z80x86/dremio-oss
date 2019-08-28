@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,12 +28,12 @@
  */
 package io.airlift.tpch;
 
-import com.google.common.collect.ImmutableList;
+import static java.util.Locale.ENGLISH;
 
 import java.math.BigDecimal;
 import java.util.List;
 
-import static java.util.Locale.ENGLISH;
+import com.google.common.collect.ImmutableList;
 
 public final class GenerateUtils {
   //
@@ -140,6 +140,6 @@ public final class GenerateUtils {
 
   public static String formatMoney(long value) {
     // todo there must be a better way to do this
-    return new BigDecimal(value).divide(new BigDecimal(100)).setScale(2).toString();
+    return BigDecimal.valueOf(value).divide(new BigDecimal(100)).setScale(2).toString();
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
 import java.io.Closeable;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -45,9 +44,9 @@ import com.dremio.common.Version;
 import com.dremio.common.concurrent.NamedThreadFactory;
 import com.dremio.common.config.SabotConfig;
 import com.dremio.common.exceptions.UserException;
+import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.ExecConstants;
-import com.dremio.exec.planner.PhysicalPlanReader;
-import com.dremio.exec.proto.CoordExecRPC.PlanFragment;
+import com.dremio.exec.proto.CoordExecRPC.PlanFragmentSet;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
 import com.dremio.exec.proto.UserBitShared;
@@ -75,7 +74,6 @@ import com.dremio.exec.proto.UserProtos.QueryPlanFragments;
 import com.dremio.exec.proto.UserProtos.RpcType;
 import com.dremio.exec.proto.UserProtos.RunQuery;
 import com.dremio.exec.proto.UserProtos.UserProperties;
-import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.rpc.BasicClientWithConnection.ServerConnection;
 import com.dremio.exec.rpc.ChannelClosedException;
 import com.dremio.exec.rpc.ConnectionFailedException;
@@ -92,18 +90,16 @@ import com.dremio.sabot.rpc.user.UserRpcUtils;
 import com.dremio.service.coordinator.ClusterCoordinator;
 import com.dremio.service.coordinator.DistributedSemaphore;
 import com.dremio.service.coordinator.ElectionListener;
+import com.dremio.service.coordinator.ElectionRegistrationHandle;
 import com.dremio.service.coordinator.ServiceSet;
-import com.dremio.service.coordinator.ServiceSet.RegistrationHandle;
 import com.dremio.service.coordinator.zk.ZKClusterCoordinator;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.AbstractCheckedFuture;
 import com.google.common.util.concurrent.SettableFuture;
 
-import io.netty.buffer.ArrowBuf;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.EventLoopGroup;
 
 /**
@@ -143,15 +139,24 @@ public class DremioClient implements Closeable, ConnectionThrottle {
       return clusterCoordinator.getServiceSet(role);
     }
 
-
     @Override
-    public DistributedSemaphore getSemaphore(String name, int maximumLeases) {
-      return clusterCoordinator.getSemaphore(name, maximumLeases);
+    public ServiceSet getOrCreateServiceSet(String serviceName) {
+      return clusterCoordinator.getOrCreateServiceSet(serviceName);
     }
 
     @Override
-    public RegistrationHandle joinElection(String name, ElectionListener listener) {
-      return clusterCoordinator.joinElection(name, listener);
+    public Iterable<String> getServiceNames() throws Exception {
+      return clusterCoordinator.getServiceNames();
+    }
+
+    @Override
+    public DistributedSemaphore getSemaphore(String name, int maximumLeases) {
+      throw new UnsupportedOperationException("registerService is not supported in client");
+    }
+
+    @Override
+    public ElectionRegistrationHandle joinElection(String name, ElectionListener listener) {
+      throw new UnsupportedOperationException("registerService is not supported in client");
     }
 
     @Override
@@ -530,31 +535,15 @@ public class DremioClient implements Closeable, ConnectionThrottle {
    * @param resultsListener
    * @throws RpcException
    */
-  public void runQuery(QueryType type, List<PlanFragment> planFragments, UserResultsListener resultsListener)
+  public void runQuery(QueryType type, PlanFragmentSet planFragments, UserResultsListener resultsListener)
       throws RpcException {
     // QueryType can be only executional
     checkArgument((QueryType.EXECUTION == type), "Only EXECUTION type query is supported with PlanFragments");
-    // setting Plan on RunQuery will be used for logging purposes and therefore can not be null
-    // since there is no Plan string provided we will create a JsonArray out of individual fragment Plans
-    ArrayNode jsonArray = objectMapper.createArrayNode();
-    for (PlanFragment fragment : planFragments) {
-      try {
-        jsonArray.add(objectMapper.readTree(PhysicalPlanReader.toInputStream(fragment.getFragmentJson(), fragment.getFragmentCodec())));
-      } catch (IOException e) {
-        logger.error("Exception while trying to read PlanFragment JSON for %s", fragment.getHandle().getQueryId(), e);
-        throw new RpcException(e);
-      }
-    }
-    final String fragmentsToJsonString;
-    try {
-      fragmentsToJsonString = objectMapper.writeValueAsString(jsonArray);
-    } catch (JsonProcessingException e) {
-      logger.error("Exception while trying to get JSONString from Array of individual Fragments Json for %s", e);
-      throw new RpcException(e);
-    }
-    final UserProtos.RunQuery query = newBuilder().setType(type).addAllFragments(planFragments)
-        .setPlan(fragmentsToJsonString)
-        .setResultsMode(STREAM_FULL).build();
+
+    final UserProtos.RunQuery query = newBuilder().setType(type)
+      .setFragmentSet(planFragments)
+      .setResultsMode(STREAM_FULL)
+      .build();
     client.submitQuery(resultsListener, query);
   }
 
@@ -847,7 +836,7 @@ public class DremioClient implements Closeable, ConnectionThrottle {
     }
 
     @Override
-    public ArrowBuf getBuffer() {
+    public ByteBuf getBuffer() {
       return null;
     }
   }

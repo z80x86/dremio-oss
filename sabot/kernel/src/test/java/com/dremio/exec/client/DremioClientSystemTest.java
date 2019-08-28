@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import com.dremio.exec.DremioSystemTestBase;
-import com.dremio.exec.client.DremioClient;
 import com.dremio.exec.proto.UserBitShared.QueryType;
 import com.dremio.sabot.rpc.user.QueryDataBatch;
 import com.google.common.base.Charsets;

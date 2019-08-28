@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,17 @@
  */
 package com.dremio.exec.store.easy.excel.xls.properties;
 
-import com.dremio.exec.store.easy.excel.xls.BlockStore;
-import com.dremio.exec.store.easy.excel.xls.XlsInputStream;
-import com.google.common.collect.Lists;
+import java.io.IOException;
+import java.util.List;
+import java.util.Stack;
 
 import org.apache.poi.poifs.common.POIFSConstants;
 import org.apache.poi.poifs.property.PropertyConstants;
 import org.apache.poi.poifs.storage.HeaderBlock;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.Stack;
+import com.dremio.exec.store.easy.excel.xls.BlockStore;
+import com.dremio.exec.store.easy.excel.xls.XlsInputStream;
+import com.google.common.collect.Lists;
 
 /**
  * DIRECTORY table. Contains meta information about the file's structure.<br>

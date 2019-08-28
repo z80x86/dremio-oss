@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import org.apache.arrow.vector.holders.VarCharHolder;
 import org.joda.time.chrono.ISOChronology;
 
 import com.dremio.common.util.DateTimes;
+import com.dremio.common.util.JodaDateUtility;
 import com.dremio.exec.expr.SimpleFunction;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
 import com.dremio.exec.expr.annotations.FunctionTemplate.FunctionSyntax;
@@ -263,7 +264,7 @@ public class DateTypeFunctions {
 
         @Override
         public void setup() {
-          formatter = org.apache.arrow.vector.util.DateUtility.formatTimeStampTZ.withZoneUTC();
+          formatter = JodaDateUtility.formatTimeStampTZ.withZoneUTC();
         }
 
         @Override

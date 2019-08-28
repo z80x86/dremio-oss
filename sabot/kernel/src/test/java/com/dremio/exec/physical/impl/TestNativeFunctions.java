@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,31 +15,53 @@
  */
 package com.dremio.exec.physical.impl;
 
-import static com.dremio.sabot.Fixtures.*;
+import static com.dremio.sabot.Fixtures.NULL_BIGINT;
+import static com.dremio.sabot.Fixtures.NULL_BINARY;
+import static com.dremio.sabot.Fixtures.NULL_BOOLEAN;
+import static com.dremio.sabot.Fixtures.NULL_DECIMAL;
+import static com.dremio.sabot.Fixtures.NULL_DOUBLE;
+import static com.dremio.sabot.Fixtures.NULL_FLOAT;
+import static com.dremio.sabot.Fixtures.NULL_INT;
+import static com.dremio.sabot.Fixtures.NULL_VARCHAR;
+import static com.dremio.sabot.Fixtures.date;
+import static com.dremio.sabot.Fixtures.t;
+import static com.dremio.sabot.Fixtures.th;
+import static com.dremio.sabot.Fixtures.time;
+import static com.dremio.sabot.Fixtures.tr;
+import static com.dremio.sabot.Fixtures.ts;
 
+import java.math.BigDecimal;
 import java.util.Arrays;
 
-import com.dremio.common.expression.EvaluationType;
-import com.dremio.exec.ExecConstants;
-import com.dremio.options.OptionValue;
+import org.apache.arrow.gandiva.evaluator.FunctionSignature;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.joda.time.LocalDate;
+import org.joda.time.LocalDateTime;
+import org.junit.Assert;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 
+import com.dremio.common.expression.SupportedEngines;
+import com.dremio.exec.ExecConstants;
+import com.dremio.exec.expr.InExpression;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.config.Project;
+import com.dremio.exec.planner.physical.PlannerSettings;
+import com.dremio.options.OptionValue;
 import com.dremio.sabot.BaseTestFunction;
+import com.dremio.sabot.Fixtures.Table;
+import com.dremio.sabot.op.llvm.expr.GandivaPushdownSieveHelper;
 import com.dremio.sabot.op.project.ProjectOperator;
+import com.google.common.collect.Lists;
 
 /*
  * This class tests native (LLVM) implementation of functions.
  */
-@Ignore
 public class TestNativeFunctions extends BaseTestFunction {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestNativeFunctions.class);
-  private static String execPreferenceGandivaOnly = EvaluationType.CodeGenOption.GandivaOnly.toString();
-  private static String execPreferenceMixed = EvaluationType.CodeGenOption.Gandiva.toString();
-  private static String execPreferenceJava = EvaluationType.CodeGenOption.Java.toString();
+  private static String execPreferenceGandivaOnly = SupportedEngines.CodeGenOption.GandivaOnly.toString();
+  private static String execPreferenceMixed = SupportedEngines.CodeGenOption.Gandiva.toString();
+  private static String execPreferenceJava = SupportedEngines.CodeGenOption.Java.toString();
 
 
   @BeforeClass
@@ -71,9 +93,62 @@ public class TestNativeFunctions extends BaseTestFunction {
   }
 
   @Test
+  public void testStringOutput() throws Exception {
+    testFunctions(new Object[][]{
+      {"case when c0 >= 10 then 'hello' else 'bye' end", 12, "hello"},
+      {"case when c0 >= 10 then 'hello' else 'bye' end", 5, "bye"},
+      {"upper(c0)", "hello", "HELLO"},
+      {"upper(c0)", NULL_VARCHAR, NULL_VARCHAR},
+    });
+  }
+
+  @Test
   public void testCastDate() throws Exception {
     testFunctions(new Object[][]{
+      {"extractYear(castDATE(c0))","0079:10:10", 79l}
+    });
+    testFunctions(new Object[][]{
       {"extractYear(castDATE(c0))","79:10:10", 1979l}
+    });
+    testFunctions(new Object[][]{
+      {"extractYear(castDATE(c0))","2079:10:10", 2079l}
+    });
+  }
+
+  @Test
+  public void testCastTimestamp() throws Exception {
+    testFunctions(new Object[][]{
+      {"extractYear(castTIMESTAMP(c0))","0079-10-10", 79l}
+    });
+    testFunctions(new Object[][]{
+      {"extractYear(castTIMESTAMP(c0))","1979-10-10", 1979l}
+    });
+  }
+
+  @Test
+  public void testDx14049() throws Exception {
+    try {
+      testContext.getOptions().setOption(OptionValue.createString(
+        OptionValue.OptionType.SYSTEM,
+        ExecConstants.QUERY_EXEC_OPTION_KEY,
+        execPreferenceJava
+      ));
+      testFunctionsCompiledOnly(new Object[][]{
+        {"months_between(c0, castDATE(c1))",new LocalDate(), new LocalDateTime(), 0.0}
+      });
+    } finally {
+      testContext.getOptions().setOption(OptionValue.createString(
+        OptionValue.OptionType.SYSTEM,
+        ExecConstants.QUERY_EXEC_OPTION_KEY,
+        execPreferenceGandivaOnly
+      ));
+    }
+  }
+
+  @Test
+  public void testGandivaOnlyFunctions() throws Exception {
+    testFunctionsCompiledOnly(new Object[][]{
+      {"starts_with(c0, 'test')","testMe", true}
     });
   }
 
@@ -136,7 +211,7 @@ public class TestNativeFunctions extends BaseTestFunction {
   public void testHash32() throws Exception {
     testFunctions(new Object[][]{
       {"hash32(c0)", NULL_INT, 0},
-      {"hash32(c0)", 10, -561650695},
+      {"hash32(c0)", 10, 918068555},
     });
   }
 
@@ -147,10 +222,12 @@ public class TestNativeFunctions extends BaseTestFunction {
       {"isnull(c0)", 10L, false},
       {"isnull(c0)", 10.0F, false},
       {"isnull(c0)", 10.0D, false},
+      {"isnull(c0)", "hello", false},
       {"isnull(c0)", NULL_INT, true},
       {"isnull(c0)", NULL_BIGINT, true},
       {"isnull(c0)", NULL_FLOAT, true},
       {"isnull(c0)", NULL_DOUBLE, true},
+      {"isnull(c0)", NULL_VARCHAR, true},
     });
   }
 
@@ -161,10 +238,12 @@ public class TestNativeFunctions extends BaseTestFunction {
       {"isnotnull(c0)", 10L, true},
       {"isnotnull(c0)", 10.0F, true},
       {"isnotnull(c0)", 10.0D, true},
+      {"isnotnull(c0)", "hello", true},
       {"isnotnull(c0)", NULL_INT, false},
       {"isnotnull(c0)", NULL_BIGINT, false},
       {"isnotnull(c0)", NULL_FLOAT, false},
       {"isnotnull(c0)", NULL_DOUBLE, false},
+      {"isnotnull(c0)", NULL_VARCHAR, false},
     });
   }
 
@@ -324,7 +403,7 @@ public class TestNativeFunctions extends BaseTestFunction {
   }
 
   private void validateMultiRow(String strExpr, Table input, Table output) throws Exception {
-    Project p = new Project(Arrays.asList(n(strExpr, "out")), null);
+    Project p = new Project(OpProps.prototype(), null, Arrays.asList(n(strExpr, "out")));
     validateSingle(p, ProjectOperator.class, input, output);
   }
 
@@ -444,5 +523,258 @@ public class TestNativeFunctions extends BaseTestFunction {
       tr(2)
     );
     validateMultiRow("case when c0 > 3 AND c0 < 6 then 1 else 2 end", input, output);
+  }
+
+  @Test
+  public void testInOptimization() {
+    try {
+      InExpression.COUNT.set(0);
+      testFunctions(new Object[][]{
+        {"booleanOr(c0 = 1i, c0 = 2i, c0 = 3i, c0 != 10, c0 = 4i, c0 = 5i, c0 = 6i, c0 = 7i, c0 = " +
+          "8i, c0 = 9i)", 10, false}}
+      );
+      //in optimization not enabled for integer types
+      Assert.assertEquals(0, InExpression.COUNT.get());
+    } finally {
+      InExpression.COUNT.set(0);
+    }
+  }
+
+  @Test
+  public void testInOptimizationWithCasts() {
+    try {
+      InExpression.COUNT.set(0);
+      testFunctions(new Object[][]{
+        {"booleanOr(c0 = 1i, c0 = 2i, c0 = 3i, c0 != 10, c0 = 4i, c0 = 5i, c0 = 6i, c0 = 7i, c0 =" +
+          " " +
+          "8i, c0 = 9i)", 10l, false}}
+      );
+      //in optimization not enabled for integer types
+      Assert.assertEquals(0, InExpression.COUNT.get());
+    } finally {
+      InExpression.COUNT.set(0);
+    }
+  }
+
+  @Test
+  public void testInOptimizationWithCastForField() {
+    try {
+      InExpression.COUNT.set(0);
+      testFunctions(new Object[][]{
+        {"booleanOr(c0 = 1l, c0 = 2l, c0 = 3l, c0 != 10l, c0 = 4l, c0 = 5l, c0 = 6l, c0 = 7l, c0 " +
+          "= 8l, c0 = 9l)", 10, false}}
+      );
+      Assert.assertEquals(0, InExpression.COUNT.get());
+    } finally {
+      InExpression.COUNT.set(0);
+    }
+  }
+
+  @Test
+  public void testInOptimizationWithStringCasts() {
+    try {
+        testContext.getOptions().setOption(OptionValue.createString(
+          OptionValue.OptionType.SYSTEM,
+          ExecConstants.QUERY_EXEC_OPTION_KEY,
+          execPreferenceMixed
+        ));
+      InExpression.COUNT.set(0);
+      // Note: This test casts the string as a BigINT. For now, this is not available in Gandiva
+      // Hence, this leads to excessive splits and will eventually be implemented in Java using
+      // the OrIn optimization
+      testFunctions(new Object[][]{
+        {"booleanOr(c0 = 1l, c0 = 2l, c0 = 3l, c0 != 10l, c0 = 4l, c0 = 5l, c0 = 6l, c0 = 7l, c0 " +
+          "= 8l, c0 = 9l)", "10", false}}
+      );
+      // should switch to java and evaluate an in
+      Assert.assertEquals(1, InExpression.COUNT.get());
+    } finally {
+      InExpression.COUNT.set(0);
+      testContext.getOptions().setOption(OptionValue.createString(
+        OptionValue.OptionType.SYSTEM,
+        ExecConstants.QUERY_EXEC_OPTION_KEY,
+        execPreferenceGandivaOnly
+      ));
+    }
+
+    try {
+      testContext.getOptions().setOption(OptionValue.createString(
+        OptionValue.OptionType.SYSTEM,
+        ExecConstants.QUERY_EXEC_OPTION_KEY,
+        execPreferenceMixed
+      ));
+      InExpression.COUNT.set(0);
+      testFunctions(new Object[][]{
+        {"booleanOr(c0 = '1', c0 = '2', c0 = '3', c0 != '4', c0 = '5', c0 = " +
+          "'6', c0 = '7', c0 = '8', c0 = '9', c0 = " +
+          "'10')", 9l, true}}
+      );
+      // should switch to java and evaluate an in
+      Assert.assertEquals(1, InExpression.COUNT.get());
+    } finally {
+      InExpression.COUNT.set(0);
+      testContext.getOptions().setOption(OptionValue.createString(
+        OptionValue.OptionType.SYSTEM,
+        ExecConstants.QUERY_EXEC_OPTION_KEY,
+        execPreferenceGandivaOnly
+      ));
+    }
+  }
+
+
+  @Test
+  public void testUnSupportedInOptimization() {
+    try {
+      InExpression.COUNT.set(0);
+      testFunctions(new Object[][]{
+        {"booleanOr((c0 + c1) = 1i, (c0 + c1) = 2i, (c0 + c1) = 3i, (c0 + c1) != 14, (c0 + c1) = " +
+          "cast(__$INTERNAL_NULL$__ as int), (c0 + c1) = 4i, (c0 + c1) = 5i, (c0 + c1) = 6i, (c0 " +
+          "+ c1) = 7i, (c0 + c1) = 8i, (c0 + c1) = 9i)", 4, 5, true}}
+      );
+      Assert.assertEquals(0, InExpression.COUNT.get());
+    } finally {
+      InExpression.COUNT.set(0);
+    }
+  }
+
+  @Test
+  public void testDecimalHashFunctions() throws Exception {
+    try {
+      testContext.getOptions().setOption(OptionValue.createBoolean(
+        OptionValue.OptionType.SYSTEM,
+        PlannerSettings.ENABLE_DECIMAL_V2_KEY,
+        true));
+      testFunctions(new Object[][]{
+        {"hash32(c0)", NULL_DECIMAL, 0},
+        {"hash64(c0)", NULL_DECIMAL, 0L},
+        {"hash(c0)", BigDecimal.valueOf(10, 2), 767196228},
+        {"hash32(c0)", BigDecimal.valueOf(10, 1), 767196228},
+        {"hash64(c0)", BigDecimal.valueOf(10, 1), 7567921574379139112L},
+        {"hash32AsDouble(c0)", BigDecimal.valueOf(10, 2), 767196228},
+        {"hash64AsDouble(c0)", BigDecimal.valueOf(10, 1), 7567921574379139112L},
+      });
+    } finally {
+      testContext.getOptions().setOption(OptionValue.createBoolean(
+        OptionValue.OptionType.SYSTEM,
+        PlannerSettings.ENABLE_DECIMAL_V2_KEY,
+        false));
+    }
+  }
+
+  @Test
+  public void testDecimalHashWithSeedFunctions() throws Exception {
+    try{
+      testContext.getOptions().setOption(OptionValue.createBoolean(
+        OptionValue.OptionType.SYSTEM,
+        PlannerSettings.ENABLE_DECIMAL_V2_KEY,
+        true));
+      testFunctions(new Object[][]{
+        {"hash32(c0, c1)", NULL_DECIMAL, 10, 10},
+        {"hash64(c0, c1)", NULL_DECIMAL, 10, 10L},
+        {"hash32(c0, c1)", BigDecimal.valueOf(11, 1), 10, -2080146543},
+        {"hash64(c0, c1)", BigDecimal.valueOf(10, 2), 10, -1652176568671252228L},
+        {"hash32AsDouble(c0, c1)", BigDecimal.valueOf(10, 2), 10, -268274402},
+        {"hash64AsDouble(c0, c1)", BigDecimal.valueOf(10, 1), 10, -1652176568671252228L},
+      });
+    } finally {
+      testContext.getOptions().setOption(OptionValue.createBoolean(
+        OptionValue.OptionType.SYSTEM,
+        PlannerSettings.ENABLE_DECIMAL_V2_KEY,
+        false));
+    }
+  }
+
+  @Test
+  public void testTimestampAddFunctions() throws Exception {
+      testFunctions(new Object[][]{
+        {"timestampaddSecond(c0, c1)", 30, ts("2000-05-01T10:20:34"),
+          ts("2000-05-01T10:21:04")},
+        {"timestampaddMinute(c0, c1)", -30L, ts("2000-05-01T10:20:34"), ts("2000-05-01T09:50:34")},
+        {"timestampaddHour(c0, c1)", 20, ts("2000-05-01T10:20:34"), ts("2000-05-02T06:20:34")},
+        {"timestampaddDay(c0, c1)", 10L, ts("2019-06-26T17:20:34"), ts("2019-07-06T17:20:34")},
+        {"timestampaddWeek(c0, c1)", 4L, ts("2019-06-26T17:20:34"), ts("2019-07-24T17:20:34")},
+        {"timestampaddMonth(c0, c1)", 7, ts("2019-06-26T17:20:34"), ts("2020-01-26T17:20:34")},
+        {"timestampaddQuarter(c0, c1)", 4, ts("2019-06-26T17:20:34"), ts("2020-06-26T17:20:34")},
+        {"timestampaddYear(c0, c1)", 1, ts("2019-06-26T17:20:34"), ts("2020-06-26T17:20:34")},
+      });
+  }
+
+  @Test
+  public void testDivFunction() throws Exception {
+    testFunctions(new Object[][]{
+      {"div(c0, c1)", 64, 3, 21},
+      {"div(c0, c1)", 64L, 3L, 21L},
+      {"div(c0, c1)", 2.5f, 1.2f, 2.0f},
+      {"div(c0, c1)", 10.0d, 3.1d, 3.0d},
+    });
+  }
+
+  @Test(expected = RuntimeException.class)
+  public void testDivFunctionExpectDivByZeroError() throws Exception {
+    try {
+      testFunctions(new Object[][] {
+        {"div(c0, c1)", 64, 0, 0},
+      });
+    } catch (RuntimeException re) {
+      Assert.assertTrue(re.getCause().getCause().getMessage().contains("divide by zero error"));
+      throw re;
+    }
+  }
+
+
+  @Test
+  public void testFlippedCodeGenerator() throws Exception {
+    ArrowType strType = new ArrowType.Utf8();
+    ArrowType bigIntType = new ArrowType.Int(64, true);
+    FunctionSignature substrFn = new FunctionSignature("substr", strType, Lists.newArrayList(strType, bigIntType, bigIntType));
+    GandivaPushdownSieveHelper helper = new GandivaPushdownSieveHelper();
+    try {
+      // hide substr function if implemented in Gandiva
+      helper.addFunctionToHide(substrFn);
+      // enable decimal
+      testContext.getOptions().setOption(OptionValue.createBoolean(
+        OptionValue.OptionType.SYSTEM,
+        PlannerSettings.ENABLE_DECIMAL_DATA_TYPE_KEY,
+        true));
+      // enable decimal v2
+      testContext.getOptions().setOption(OptionValue.createBoolean(
+        OptionValue.OptionType.SYSTEM,
+        PlannerSettings.ENABLE_DECIMAL_V2_KEY,
+        true));
+      // enabled mixed mode execution
+      testContext.getOptions().setOption(OptionValue.createString(
+      OptionValue.OptionType.SYSTEM,
+        ExecConstants.QUERY_EXEC_OPTION_KEY,
+        execPreferenceMixed
+      ));
+      // increase the threshold for flipping the code generator
+      testContext.getOptions().setOption(OptionValue.createDouble(
+        OptionValue.OptionType.SYSTEM,
+      ExecConstants.WORK_THRESHOLD_FOR_SPLIT_KEY,
+        10.0));
+      testFunctionsCompiledOnly(new Object[][]{
+        {"c1 = 'CA' or c1 = 'WA' or c1 = 'GA' or c2 > 500 or substr(c0,1,4) = '8566' or substr(c0, 1, 4) = '8619' or substr(c0, 1, 4) = '8827' or substr(c0, 1, 4) = '8340' or substr(c0, 1, 4) = '1111' or substr(c0, 1, 4) = '1234' or substr(c0, 1, 4) = 2222",
+          "3031", "TN", BigDecimal.valueOf(100, 2), false}
+      });
+    } finally {
+      testContext.getOptions().setOption(OptionValue.createBoolean(
+        OptionValue.OptionType.SYSTEM,
+        PlannerSettings.ENABLE_DECIMAL_DATA_TYPE_KEY,
+        PlannerSettings.ENABLE_DECIMAL_DATA_TYPE.getDefault().getBoolVal()));
+      testContext.getOptions().setOption(OptionValue.createBoolean(
+        OptionValue.OptionType.SYSTEM,
+        PlannerSettings.ENABLE_DECIMAL_V2_KEY,
+        PlannerSettings.ENABLE_DECIMAL_V2.getDefault().getBoolVal()));
+      testContext.getOptions().setOption(OptionValue.createDouble(
+        OptionValue.OptionType.SYSTEM,
+        ExecConstants.WORK_THRESHOLD_FOR_SPLIT_KEY,
+        ExecConstants.WORK_THRESHOLD_FOR_SPLIT.getDefault().getFloatVal()));
+      testContext.getOptions().setOption(OptionValue.createString(
+        OptionValue.OptionType.SYSTEM,
+        ExecConstants.QUERY_EXEC_OPTION_KEY,
+        execPreferenceGandivaOnly
+      ));
+      helper.removeFunctionToHide(substrFn);
+    }
   }
 }

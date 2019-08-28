@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import org.apache.arrow.memory.OutOfMemoryException;
 
 import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.exec.physical.config.SingleSender;
+import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
 import com.dremio.exec.proto.ExecRPC.FragmentStreamComplete;
 import com.dremio.exec.record.FragmentWritableBatch;
@@ -59,12 +60,14 @@ public class SingleSenderOperator extends BaseSender {
       super(config);
       this.context = context;
       this.handle = context.getFragmentHandle();
-      this.recMajor = config.getOppositeMajorFragmentId();
+      this.recMajor = config.getReceiverMajorFragmentId();
       this.oppositeHandle = handle.toBuilder()
-          .setMajorFragmentId(config.getOppositeMajorFragmentId())
-          .setMinorFragmentId(config.getOppositeMinorFragmentId())
+          .setMajorFragmentId(config.getReceiverMajorFragmentId())
+          .setMinorFragmentId(config.getReceiverMinorFragmentId())
           .build();
-      this.tunnel = tunnelProvider.getExecTunnel(config.getDestination());
+
+      NodeEndpoint ep = config.getDestinations(context.getEndpointsIndex()).get(0).getEndpoint();
+      this.tunnel = tunnelProvider.getExecTunnel(ep);
     }
 
     @Override

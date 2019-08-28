@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.dremio.exec.testing;
 
 import com.dremio.common.DeferredException;
-import com.dremio.exec.testing.Testable;
 import com.dremio.exec.testing.exception.ParameterizedTestFailure;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;

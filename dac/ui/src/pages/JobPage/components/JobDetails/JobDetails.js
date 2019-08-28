@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import socket from 'utils/socket';
 import { getViewState } from 'selectors/resources';
 import { getEntity } from 'selectors/resources';
 import { updateViewState } from 'actions/resources';
+import { flexElementAuto } from '@app/uiTheme/less/layout.less';
 
 import HeaderDetails from './HeaderDetails';
 import TabsNavigation from './TabsNavigation';
@@ -156,7 +157,7 @@ export class JobDetails extends Component {
                 showJobProfile={this.props.showJobProfile}
                 changeTab={this.changeTab}
                 activeTab={this.state.activeTab}
-                style={styles.content}
+                className={flexElementAuto} // take a rest of available space
               />
             </div>
           }
@@ -178,10 +179,6 @@ const styles = {
   },
   header: {
     flexShrink: 0
-  },
-  content: {
-    flex: 1,
-    overflowY: 'auto'
   }
 };
 

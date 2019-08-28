@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,9 +43,6 @@ public interface LogicalExpression extends Iterable<LogicalExpression>{
   static final Logger logger = LoggerFactory.getLogger(LogicalExpression.class);
 
   abstract CompleteType getCompleteType();
-  public boolean isEvaluationTypeSupported(EvaluationType.ExecutionType executionType);
-  public void addEvaluationType(EvaluationType.ExecutionType executionType);
-  public EvaluationType getEvaluationType();
 
   <T, V, E extends Exception> T accept(ExprVisitor<T, V, E> visitor, V value) throws E;
 

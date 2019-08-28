@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,16 @@ import { routerReducer } from 'react-router-redux';
 import { combineReducers } from 'redux';
 import { reducer as formReducer } from 'redux-form';
 
-import { LOGOUT_USER_START, LOGIN_USER_SUCCESS, NO_USERS_ERROR } from 'actions/account';
-import { APP_BOOT } from 'actions/app';
-import localStorageUtils from 'utils/storageUtils/localStorageUtils';
-import intercomUtils from 'utils/intercomUtils';
-import socket from 'utils/socket';
+import { LOGOUT_USER_START, NO_USERS_ERROR } from 'actions/account';
 import developmentOptions from 'dyn-load/reducers/developmentOptions';
-
-import explore from './explore/index';
+import admin from 'dyn-load/reducers/admin';
+import { getExploreState } from '@app/selectors/explore';
 
 import search from './search';
 
 import home from './home/home';
 import ui from './ui/ui';
 import account from './account';
-import admin from './admin';
 
 import jobs from './jobs/index';
 import modals from './modals/index';
@@ -41,11 +36,10 @@ import serverStatus from './serverStatus';
 import resources from './resources';
 import notification from './notification';
 import confirmation from './confirmation';
-import prodError from './prodError';
-import modulesState, { getData } from './modulesState';
+import prodError, { getError, getErrorId } from './prodError';
+import modulesState, { getData, isInitialized } from './modulesState';
 
 const appReducers = combineReducers({
-  explore,
   resources,
   ui,
   home,
@@ -60,7 +54,7 @@ const appReducers = combineReducers({
   form: formReducer,
   routing: routerReducer,
   confirmation,
-  prodError,
+  appError: prodError,
   modulesState
 });
 
@@ -75,28 +69,22 @@ export default function rootReducer(state, action) {
     // (this needs to happen before other reducers so that they go back to their initial state - thus why this is in this file)
     const { routing } = state || {};
     nextState = { routing };
-
-    localStorageUtils.clearUserData();
-    intercomUtils.shutdown();
-    socket.close();
-  }
-
-  if (action.type === LOGIN_USER_SUCCESS || action.type === APP_BOOT) {
-    if (action.type === LOGIN_USER_SUCCESS) {
-      localStorageUtils.setUserData(action.payload);
-    }
-
-    // also on boot, optimistically try to start intercom and open socket for cases where a user is already logged in
-    intercomUtils.boot();
-    socket.open();
-
-    // note: account.user state saved in ./account reducer
   }
 
   const result = appReducers(nextState, action);
   return result;
 }
 
-export const getIsExplorePreviewMode = state => state.explore.view.get('isPreviewMode');
+export const getIsExplorePreviewMode = state => {
+  const exploreState = getExploreState(state);
+  return exploreState ? exploreState.view.isPreviewMode : false;
+};
+export const getIsDatasetMetadataLoaded = state => {
+  const exploreState = getExploreState(state);
+  return exploreState ? exploreState.view.isDatasetMetadataLoaded : false;
+};
 export const getUser = state => state.account.get('user');
+export const isModuleInitialized = (state, moduleKey) => isInitialized(state.modulesState, moduleKey);
 export const getModuleState = (state, moduleKey) => getData(state.modulesState, moduleKey);
+export const getAppError = state => getError(state.appError);
+export const getAppErrorId = state => getErrorId(state.appError);

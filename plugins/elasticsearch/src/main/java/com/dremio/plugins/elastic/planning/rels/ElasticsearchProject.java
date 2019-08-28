@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,7 +76,7 @@ public class ElasticsearchProject extends ProjectRelBase implements Elasticsearc
       try {
         final RexNode expr = SchemaField.convert(originalExpression, scan, disallowedSpecialTypes);
         ProjectAnalyzer.getScript(expr, painlessAllowed, supportsV5Features, scriptsEnabled, true,
-            config.isAllowPushdownOnNormalizedOrAnalyzedFields());
+            config.isAllowPushdownOnNormalizedOrAnalyzedFields(), false);
       } catch (Exception e) {
         logger.debug("Exception while attempting pushdown.", e);
         return false;

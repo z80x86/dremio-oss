@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,14 @@ import org.junit.Test;
 import com.dremio.dac.server.BaseTestServer;
 import com.dremio.service.jobs.JobRequest;
 import com.dremio.service.jobs.JobsService;
+import com.dremio.service.jobs.JobsServiceUtil;
 import com.dremio.service.jobs.LocalJobsService;
 import com.dremio.service.jobs.NoOpJobStatusListener;
 import com.dremio.service.namespace.NamespaceKey;
-import com.dremio.service.namespace.dataset.DatasetVersion;
 import com.google.common.collect.ImmutableList;
 
 /**
- * Ensures following system tables work properly: sys.reflections, and sys.materializations
+ * Ensures following system tables work properly: sys.reflections, sys.dependencies, sys.refreshes, and sys.materializations
  */
 public class TestAccelerationSystemTables extends BaseTestServer {
   private static final NamespaceKey NONE_PATH = new NamespaceKey(ImmutableList.of("__none"));
@@ -43,17 +43,33 @@ public class TestAccelerationSystemTables extends BaseTestServer {
 
   @Test
   public void testReflectionsTable() {
-    jobsService.submitJob(JobRequest.newBuilder()
+    JobsServiceUtil.waitForJobCompletion(jobsService.submitJob(JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("SELECT * FROM sys.reflections"))
         .setDatasetPath(NONE_PATH)
-        .setDatasetVersion(DatasetVersion.NONE).build(), NoOpJobStatusListener.INSTANCE).getData().loadIfNecessary();
+        .build(), NoOpJobStatusListener.INSTANCE));
   }
 
   @Test
   public void testMaterializationsTable() {
-    jobsService.submitJob(JobRequest.newBuilder()
+    JobsServiceUtil.waitForJobCompletion(jobsService.submitJob(JobRequest.newBuilder()
         .setSqlQuery(getQueryFromSQL("SELECT * FROM sys.materializations"))
         .setDatasetPath(NONE_PATH)
-        .setDatasetVersion(DatasetVersion.NONE).build(), NoOpJobStatusListener.INSTANCE).getData().loadIfNecessary();
+        .build(), NoOpJobStatusListener.INSTANCE));
+  }
+
+  @Test
+  public void testDependenciesTable() {
+    JobsServiceUtil.waitForJobCompletion(jobsService.submitJob(JobRequest.newBuilder()
+        .setSqlQuery(getQueryFromSQL("SELECT * FROM sys.dependencies"))
+        .setDatasetPath(NONE_PATH)
+        .build(), NoOpJobStatusListener.INSTANCE));
+  }
+
+  @Test
+  public void testRefreshesTable() {
+    JobsServiceUtil.waitForJobCompletion(jobsService.submitJob(JobRequest.newBuilder()
+        .setSqlQuery(getQueryFromSQL("SELECT * FROM sys.refreshes"))
+        .setDatasetPath(NONE_PATH)
+        .build(), NoOpJobStatusListener.INSTANCE));
   }
 }

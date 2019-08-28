@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,6 @@
  */
 package com.dremio.exec.planner.sql.handlers;
 
-import com.dremio.exec.calcite.logical.JdbcCrel;
-import com.dremio.exec.calcite.logical.ScanCrel;
-import com.dremio.exec.catalog.StoragePluginId;
-import com.dremio.exec.planner.common.JdbcRelImpl;
-import com.dremio.exec.planner.common.ScanRelBase;
-import com.dremio.service.namespace.capabilities.SourceCapabilities;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelCollations;
 import org.apache.calcite.rel.RelNode;
@@ -31,10 +25,15 @@ import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 
+import com.dremio.exec.calcite.logical.JdbcCrel;
+import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.planner.PlannerPhase;
 import com.dremio.exec.planner.PlannerType;
 import com.dremio.exec.planner.StatelessRelShuttleImpl;
+import com.dremio.exec.planner.common.JdbcRelImpl;
+import com.dremio.exec.planner.common.ScanRelBase;
 import com.dremio.exec.planner.physical.DistributionTrait;
+import com.dremio.service.namespace.capabilities.SourceCapabilities;
 
 public final class RexSubQueryUtils {
 
@@ -99,8 +98,9 @@ public final class RexSubQueryUtils {
         transformed = PrelTransformer.transform(config, PlannerType.HEP_AC, PlannerPhase.JDBC_PUSHDOWN, subQuery.rel, traitSet, false);
 
         // We may need to run the planner again on the sub-queries in the sub-tree this produced.
-        transformed = transformed.accept(new RelsWithRexSubQueryTransformer(config));
-        if (!(transformed instanceof JdbcCrel)) {
+        final RelsWithRexSubQueryTransformer nestedSubqueryTransformer = new RelsWithRexSubQueryTransformer(config);
+        transformed = transformed.accept(nestedSubqueryTransformer);
+        if (!(transformed instanceof JdbcCrel) || nestedSubqueryTransformer.failed()) {
           failed = true;
           return subQuery;
         }
@@ -197,6 +197,7 @@ public final class RexSubQueryUtils {
       if (subQueryFinder.getFoundSubQuery()) {
         return true;
       }
+
       return false;
     }
   }
@@ -224,6 +225,7 @@ public final class RexSubQueryUtils {
     public RexNode visitSubQuery(RexSubQuery subQuery) {
       RexSubQueryUtils.RexSubQueryPushdownChecker checker = new RexSubQueryUtils.RexSubQueryPushdownChecker(pluginId);
       checker.visit(subQuery.rel);
+
       if (!checker.canPushdownRexSubQuery()) {
         canPushdownRexSubQuery = false;
       }
@@ -291,7 +293,13 @@ public final class RexSubQueryUtils {
         return canPushdownRexSubQuery;
       }
 
+      if (subQueryFinder.foundCorrelVariable &&
+        !pluginId.getCapabilities().getCapability(SourceCapabilities.CORRELATED_SUBQUERY_PUSHDOWN)) {
+          return false;
+      }
+
       foundRexSubQuery = true;
+
 
       // Check that the subquery has the same pluginId as well!
       final RexSubQueryPluginIdChecker subQueryConventionChecker = new RexSubQueryPluginIdChecker(pluginId);

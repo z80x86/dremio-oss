@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,17 @@
  * limitations under the License.
  */
 import { Component } from 'react';
+import ReactDOM from 'react-dom';
 import Radium from 'radium';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
 
-import MenuItemMaterial from 'material-ui/MenuItem';
-import { Popover } from 'material-ui/Popover';
-import getMuiTheme from 'material-ui/styles/getMuiTheme';
+import MenuItemMaterial from '@material-ui/core/MenuItem';
+import Popper from '@material-ui/core/Popper';
+import Paper from '@material-ui/core/Paper';
+import ClickAwayListener from '@material-ui/core/ClickAwayListener';
+import { PALE_NAVY } from 'uiTheme/radium/colors';
+
 
 import './MenuItem.less';
 
@@ -31,9 +35,11 @@ export default class MenuItem extends Component {
   static propTypes = {
     menuItems: PropTypes.array,
     rightIcon: PropTypes.object,
-    onTouchTap: PropTypes.func,
+    onClick: PropTypes.func,
     children: PropTypes.node,
     disabled: PropTypes.bool,
+    selected: PropTypes.bool,
+    style: PropTypes.object,
     isInformational: PropTypes.bool // shouldn't look intereactive
   };
 
@@ -57,7 +63,7 @@ export default class MenuItem extends Component {
     if (enteredElement === window) {
       return true; // have seen this case
     }
-    return (!this.refs.subMenu || !this.refs.subMenu.contains(enteredElement))
+    return (!this.refs.subMenu || !ReactDOM.findDOMNode(this.refs.subMenu).contains(enteredElement))
       && !this.refs.menuItem.contains(enteredElement);
   }
 
@@ -85,16 +91,14 @@ export default class MenuItem extends Component {
   }
 
   render() {
-    const { menuItems, rightIcon, onTouchTap, disabled, isInformational } = this.props;
-    const itemStyle = {...styles.menuItem, ...(isInformational && styles.informational)};
+    const { menuItems, rightIcon, onClick, disabled, selected, isInformational, style } = this.props;
+    const itemStyle = {...styles.menuItem, ...(isInformational && styles.informational), ...(selected && styles.selected), ...style};
     const className = classNames({disabled}, 'menu-item-inner');
     return (
       <div>
         <MenuItemMaterial
           style={styles.resetStyle}
-          innerDivStyle={styles.innerDivStyle}
-          onTouchTap={onTouchTap}
-          desktop>
+          onClick={onClick}>
           <div
             onMouseOver={this.handleMouseOver}
             onMouseLeave={this.handleMouseLeave}
@@ -119,19 +123,18 @@ export default class MenuItem extends Component {
           // Can go away with DX-5368
           menuItems
             && this.state.open
-            && <Popover
-              style={{overflow: 'visible', zIndex: getMuiTheme().zIndex.popover}}
-              useLayerForClickAway={false}
+            && <Popper
+              placement='right-start'
+              style={{overflow: 'visible', zIndex: 1300 }}
               open={this.state.open}
               anchorEl={this.refs.menuItem}
-              anchorOrigin={this.state.anchorOrigin}
-              targetOrigin={this.state.targetOrigin}
-              onRequestClose={this.handleRequestClose}
-              animated={false}>
-              <div ref='subMenu' onMouseLeave={this.handleMouseLeave} onMouseOver={this.handleMouseOver}>
-                {menuItems}
-              </div>
-            </Popover>
+            >
+              <ClickAwayListener mouseEvent='onMouseDown' onClickAway={this.handleRequestClose}>
+                <Paper ref='subMenu' onMouseLeave={this.handleMouseLeave} onMouseOver={this.handleMouseOver}>
+                  {menuItems}
+                </Paper>
+              </ClickAwayListener>
+            </Popper>
         }
       </div>
     );
@@ -152,12 +155,11 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between'
   },
-  innerDivStyle: {
-    paddingLeft: 0,
-    paddingRight: 0
-  },
   informational: {
     backgroundColor: '#fff',
     cursor: 'default'
+  },
+  selected: {
+    backgroundColor: PALE_NAVY
   }
 };

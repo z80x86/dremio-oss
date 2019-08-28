@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,30 @@
  */
 package com.dremio.sabot.op.common.ht2;
 
-import com.dremio.exec.record.VectorContainer;
-import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator;
-import com.dremio.sabot.op.aggregate.vectorized.SumAccumulators;
-import com.dremio.sabot.op.aggregate.vectorized.MaxAccumulators;
-import com.dremio.sabot.op.aggregate.vectorized.AccumulatorSet;
-import com.dremio.sabot.op.aggregate.vectorized.Accumulator;
-import com.koloboke.collect.hash.HashConfig;
-
-import org.junit.Test;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.VarCharVector;
-import org.apache.arrow.vector.BigIntVector;
-import org.apache.arrow.vector.FieldVector;
-import org.apache.arrow.vector.SimpleBigIntVector;
-
-import io.netty.buffer.ArrowBuf;
-import io.netty.util.internal.PlatformDependent;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 
 import java.util.Random;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.SimpleBigIntVector;
+import org.apache.arrow.vector.VarCharVector;
+import org.junit.Test;
+
+import com.dremio.exec.record.VectorContainer;
+import com.dremio.sabot.op.aggregate.vectorized.Accumulator;
+import com.dremio.sabot.op.aggregate.vectorized.AccumulatorSet;
+import com.dremio.sabot.op.aggregate.vectorized.MaxAccumulators;
+import com.dremio.sabot.op.aggregate.vectorized.SumAccumulators;
+import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator;
+import com.koloboke.collect.hash.HashConfig;
+
+import io.netty.buffer.ArrowBuf;
+import io.netty.util.internal.PlatformDependent;
 
 public class TestPreallocation {
   private static int MAX_VALUES_PER_BATCH = 0;
@@ -53,13 +53,6 @@ public class TestPreallocation {
     testPreallocationHelper();
 
     MAX_VALUES_PER_BATCH = 1024;
-    testPreallocationHelper();
-
-    /* try with HT batch size as arbitrary non power of 2 */
-    MAX_VALUES_PER_BATCH = 940;
-    testPreallocationHelper();
-
-    MAX_VALUES_PER_BATCH = 1017;
     testPreallocationHelper();
   }
 
@@ -231,7 +224,7 @@ public class TestPreallocation {
       assertArrayEquals(expectedOrdinals, actualOrdinals);
 
       /* accumulate */
-      accumulator.accumulate(offsets.memoryAddress(), records);
+      accumulator.accumulate(offsets.memoryAddress(), records, hashTable.getBitsInChunk(), hashTable.getChunkOffsetMask());
     }
   }
 }

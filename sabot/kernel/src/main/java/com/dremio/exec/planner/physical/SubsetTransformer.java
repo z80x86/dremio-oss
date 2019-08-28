@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
  */
 package com.dremio.exec.planner.physical;
 
-import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.plan.ConventionTraitDef;
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelTrait;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.plan.volcano.RelSubset;
+import org.apache.calcite.rel.RelNode;
 
 public abstract class SubsetTransformer<T extends RelNode, E extends Exception> {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(SubsetTransformer.class);
@@ -67,9 +67,4 @@ public abstract class SubsetTransformer<T extends RelNode, E extends Exception> 
   private boolean isPhysical(RelNode n){
     return n.getTraitSet().getTrait(ConventionTraitDef.INSTANCE).equals(Prel.PHYSICAL);
   }
-
-  private boolean isDefaultDist(RelNode n) {
-    return n.getTraitSet().getTrait(DistributionTraitDef.INSTANCE).equals(DistributionTrait.DEFAULT);
-  }
-
 }

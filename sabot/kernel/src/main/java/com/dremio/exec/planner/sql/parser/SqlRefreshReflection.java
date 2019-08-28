@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,7 +99,7 @@ public class SqlRefreshReflection extends SqlCall implements SqlToPlanHandler.Cr
   @Override
   public SqlToPlanHandler toPlanHandler() {
     try {
-      return (SqlToPlanHandler) Class.forName("com.dremio.service.reflection.RefreshHandler").newInstance();
+      return (SqlToPlanHandler) Class.forName("com.dremio.service.reflection.refresh.RefreshHandler").newInstance();
     } catch (ReflectiveOperationException e) {
       throw Throwables.propagate(e);
     }

@@ -1,6 +1,6 @@
 <!--
 
-    Copyright (C) 2017-2018 Dremio Corporation
+    Copyright (C) 2017-2019 Dremio Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
   <parent>
     <groupId>com.dremio.services</groupId>
     <artifactId>dremio-services-parent</artifactId>
-    <version>3.0.5-201812021947440442-9a23f45</version>
+    <version>3.3.2-201908142136370993-d60145d</version>
   </parent>
 
   <artifactId>dremio-services-accelerator</artifactId>
@@ -52,7 +52,7 @@
       <artifactId>dremio-sabot-kernel</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.dremio.plugin</groupId>
+      <groupId>com.dremio.plugins</groupId>
       <artifactId>dremio-pdfs-plugin</artifactId>
     </dependency>
     <dependency>

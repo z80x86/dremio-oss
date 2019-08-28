@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,17 +33,12 @@
  * NB: Source code generated using FreeMarker template ${.template_name}
  */
 public class APIJobResultsSerializer extends AbstractRowBasedRecordWriter {
-  private final JsonGenerator jsonGenerator;
-  private DataJsonOutput gen;
+  private final DataJsonOutput gen;
 
-  public APIJobResultsSerializer(final JsonGenerator jsonGenerator) {
-    this.jsonGenerator = jsonGenerator;
+  public APIJobResultsSerializer(final JsonGenerator jsonGenerator, final boolean convertNumbersToStrings) {
+    this.gen = new DataJsonOutput(jsonGenerator, convertNumbersToStrings);
   }
 
-  @Override
-  public void setup() throws IOException {
-    gen = new DataJsonOutput(jsonGenerator);
-  }
 
   @Override
   public void startRecord() throws IOException {

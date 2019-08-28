@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -633,5 +633,18 @@ public class TestStringFunctions extends BaseTestQuery {
         .sqlBaselineQuery(query_2)
         .build()
         .run();
+  }
+
+  @Test
+  public void testInitCap() throws Exception {
+    final String query_1 = "SELECT x, initcap(x) as y FROM (VALUES ('abc'), ('ABC'), ('12ABC')) as t1(x)";
+    final String expected = "SELECT x, y FROM (VALUES ('abc', 'Abc'), ('ABC', 'Abc'), ('12ABC', '12abc')) as t1(x, y)";
+
+    testBuilder()
+      .sqlQuery(query_1)
+      .unOrdered()
+      .sqlBaselineQuery(expected)
+      .build()
+      .run();
   }
 }

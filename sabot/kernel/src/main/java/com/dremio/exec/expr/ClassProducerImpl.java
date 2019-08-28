@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.dremio.exec.expr;
 import java.util.List;
 import java.util.Map;
 
-import com.dremio.options.OptionManager;
 import org.apache.arrow.memory.BufferManager;
 import org.apache.arrow.vector.holders.ValueHolder;
 import org.apache.arrow.vector.types.Types.MinorType;
@@ -34,6 +33,7 @@ import com.dremio.exec.expr.fn.FunctionErrorContext;
 import com.dremio.exec.expr.fn.FunctionErrorContextBuilder;
 import com.dremio.exec.expr.fn.FunctionLookupContext;
 import com.dremio.exec.planner.physical.PlannerSettings;
+import com.dremio.exec.record.BatchSchema;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.store.PartitionExplorer;
 import com.dremio.sabot.exec.context.CompilationOptions;
@@ -83,23 +83,34 @@ public class ClassProducerImpl implements ClassProducer {
   }
 
   @Override
+  public LogicalExpression materializeWithBatchSchema(LogicalExpression expr, BatchSchema batchSchema) {
+    try(ErrorCollector collector = new ErrorCollectorImpl()){
+      return ExpressionTreeMaterializer.materialize(expr, batchSchema, collector, functionLookupContext, false);
+    }
+  }
+
+  @Override
   public LogicalExpression materializeAndAllowComplex(LogicalExpression expr, VectorAccessible batch) {
     try(ErrorCollector collector = new ErrorCollectorImpl()){
       return ExpressionTreeMaterializer.materialize(expr, batch != null ? batch.getSchema() : null, collector, functionLookupContext, true);
     }
   }
 
+  /**
+   * ONLY for Projector and Filter to use for setting up code generation to follow.
+   */
   @Override
-  public LogicalExpression materializeAndAllowComplex(OptionManager optionManager, LogicalExpression expr, VectorAccessible batch) {
+  public LogicalExpression materializeAndAllowComplex(ExpressionEvaluationOptions options, LogicalExpression expr, VectorAccessible batch) {
     try(ErrorCollector collector = new ErrorCollectorImpl()){
-      return ExpressionTreeMaterializer.materialize(optionManager, expr, batch != null ? batch.getSchema() : null, collector, functionLookupContext, true);
+      return ExpressionTreeMaterializer.materialize(options, expr, batch != null ? batch.getSchema() : null, collector, functionLookupContext, true);
     }
   }
 
   @Override
   public LogicalExpression addImplicitCast(LogicalExpression fromExpr, CompleteType toType) {
     try(ErrorCollector collector = new ErrorCollectorImpl()){
-      return ExpressionTreeMaterializer.addImplicitCastExact(fromExpr, toType, functionLookupContext, collector);
+      return ExpressionTreeMaterializer.addImplicitCastExact(fromExpr, toType,
+        functionLookupContext, collector, false);
     }
 
   }
@@ -107,6 +118,11 @@ public class ClassProducerImpl implements ClassProducer {
   @Override
   public FunctionContext getFunctionContext() {
     return functionContext;
+  }
+
+  @Override
+  public FunctionLookupContext getFunctionLookupContext() {
+    return functionLookupContext;
   }
 
   public class ProducerFunctionContext implements FunctionContext {

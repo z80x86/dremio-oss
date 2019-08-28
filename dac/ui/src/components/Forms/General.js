@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ import { Component } from 'react';
 
 import PropTypes from 'prop-types';
 
-import { section, sectionTitle, formRow } from 'uiTheme/radium/forms';
+import { section, formRow } from 'uiTheme/radium/forms';
 
 import { FieldWithError, TextField } from 'components/Fields';
 import AccelerationSection from 'components/Forms/AccelerationSection';
@@ -31,7 +31,6 @@ export default class General extends Component {
   static propTypes = {
     fields: PropTypes.object,
     editing: PropTypes.bool,
-    sectionDescription: PropTypes.string,
     children: PropTypes.node,
     showAccelerationSection: PropTypes.bool
   };
@@ -58,7 +57,6 @@ export default class General extends Component {
     return (
       <div>
         <div className='general' style={section}>
-          <h2 style={sectionTitle}>{la('General')}</h2>
           <div style={{...formRow, display: 'flex', marginBottom: 10}}>
             <FieldWithError errorPlacement='top' label={la('Name')} {...name}
               style={fieldWithErrorStyle}>

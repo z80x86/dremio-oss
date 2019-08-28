@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import com.google.common.base.Charsets;
 import io.netty.buffer.ByteBufInputStream;
+import com.dremio.common.util.DremioGetObject;
 import com.dremio.common.util.DremioStringUtils;
 import com.dremio.exec.vector.accessor.sql.TimePrintMillis;
 import org.joda.time.Period;
@@ -107,7 +108,7 @@ public class ${name}Accessor extends AbstractSqlAccessor {
     }
     Nullable${name}Holder h = new Nullable${name}Holder();
     ac.get(index, h);
-    return new ByteBufInputStream(h.buffer.slice(h.start, h.end));
+    return new ByteBufInputStream(h.buffer.slice(h.start, h.end).asNettyBuffer());
   }
 
   @Override
@@ -233,7 +234,8 @@ public class ${name}Accessor extends AbstractSqlAccessor {
         if (ac.isNull(index)) {
         return null;
         }
-        return DremioStringUtils.formatIntervalDay(ac.getObject(index));
+        return DremioStringUtils.formatIntervalDay(
+          DremioGetObject.getPeriodObject(ac, index));
   }
   <#else>
 @Override
@@ -241,7 +243,8 @@ public Object getObject(int index) {
         if (ac.isNull(index)) {
         return null;
         }
-        return DremioStringUtils.formatIntervalYear(ac.getObject(index));
+        return DremioStringUtils.formatIntervalYear(
+          DremioGetObject.getPeriodObject(ac, index));
         }
   </#if>
 

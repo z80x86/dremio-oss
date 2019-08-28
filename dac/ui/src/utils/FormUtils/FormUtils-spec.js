@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,17 @@ describe('FormUtils', () => {
       expect(FormUtils.getMinDuration('hour')).to.equal(3600 * sec);
       expect(FormUtils.getMinDuration('day')).to.equal(24 * 3600 * sec);
       expect(FormUtils.getMinDuration('week')).to.equal(7 * 24 * 3600 * sec);
+    });
+  });
+
+  describe('addTrailingBrackets', () => {
+    it('should leave no name or name with brackets', () => {
+      expect(FormUtils.addTrailingBrackets('')).to.equal('');
+      expect(FormUtils.addTrailingBrackets('a[]')).to.equal('a[]');
+    });
+    it('should add missing trailing brackets', () => {
+      expect(FormUtils.addTrailingBrackets('a')).to.equal('a[]');
+      expect(FormUtils.addTrailingBrackets('a.b.@@@###.c')).to.equal('a.b.@@@###.c[]');
     });
   });
 

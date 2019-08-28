@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@ package com.dremio.common.util;
 import org.apache.arrow.vector.util.DateUtility;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.joda.time.Period;
-
-import com.dremio.common.exceptions.UserException;
 
 import io.netty.buffer.ArrowBuf;
 import io.netty.buffer.ByteBuf;
@@ -161,7 +159,7 @@ public class DremioStringUtils {
     result.append(String.format("%02X", ch));
   }
 
-  public static String toBinaryStringNoFormat(ArrowBuf buf, int strStart, int strEnd) {
+  public static String toBinaryStringNoFormat(ByteBuf buf, int strStart, int strEnd) {
     StringBuilder result = new StringBuilder();
     for (int i = strStart; i < strEnd ; ++i) {
       appendByteNoFormat(result, buf.getByte(i));
@@ -220,7 +218,7 @@ public class DremioStringUtils {
    * For example, the string "-001 18:25:16.766" defines an interval of - 1 day 18 hours 25 minutes 16 seconds and 766 milliseconds
    */
   public static String formatIntervalDay(final Period p) {
-    long millis = p.getDays() * (long) DateUtility.daysToStandardMillis + DateUtility.millisFromPeriod(p);
+    long millis = p.getDays() * (long) DateUtility.daysToStandardMillis + JodaDateUtility.millisFromPeriod(p);
 
     boolean neg = false;
     if (millis < 0) {

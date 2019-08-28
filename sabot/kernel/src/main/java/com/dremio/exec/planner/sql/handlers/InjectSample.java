@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,13 @@
  */
 package com.dremio.exec.planner.sql.handlers;
 
-import org.apache.calcite.plan.Convention;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.TableScan;
 
-import com.dremio.exec.calcite.logical.JdbcCrel;
 import com.dremio.exec.calcite.logical.SampleCrel;
 import com.dremio.exec.planner.StatelessRelShuttleImpl;
 
-class InjectSample extends StatelessRelShuttleImpl {
+public class InjectSample extends StatelessRelShuttleImpl {
 
   private final boolean addSample;
 

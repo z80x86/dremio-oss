@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,10 @@ import com.dremio.common.config.SabotConfig;
 import com.dremio.exec.server.BootStrapContext;
 import com.dremio.sabot.task.AsyncTaskWrapper;
 import com.dremio.sabot.task.GroupManager;
-import com.dremio.sabot.task.TaskManager;
 import com.dremio.sabot.task.TaskPool;
 import com.dremio.service.BindingCreator;
 import com.dremio.service.Service;
+import com.google.common.annotations.VisibleForTesting;
 
 /**
  * Service that creates the {@link WorkloadTicketDepot} singleton when started, and provides it through the registry
@@ -59,16 +59,17 @@ public class WorkloadTicketDepotService implements Service {
     AutoCloseables.close(ticketDepot);
   }
 
+  @VisibleForTesting
+  public WorkloadTicketDepot getTicketDepot() {
+    return ticketDepot;
+  }
+
   protected GroupManager<AsyncTaskWrapper> getGroupManager() {
     return taskPool.get().getGroupManager();
   }
 
   protected WorkloadTicketDepot newTicketDepot(BufferAllocator parentAllocator, SabotConfig config) {
     return new WorkloadTicketDepot(parentAllocator, config, getGroupManager());
-  }
-
-  protected WorkloadTicketDepot getTicketDepot() {
-    return ticketDepot;
   }
 
   protected BindingCreator getBindingCreator() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,6 @@
 package io.airlift.tpch;
 
 import org.apache.arrow.memory.BufferAllocator;
-
-import com.dremio.exec.record.VectorContainer;
 
 import io.airlift.tpch.GenerationDefinition.TpchTable;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,7 +67,6 @@ public interface GroupScan<T extends CompleteWork> extends Scan {
    * @return the minimum number of fragments that should run
    */
   int getMinParallelizationWidth();
-
 
   /**
    * Get the type of distribution expected by this operation.

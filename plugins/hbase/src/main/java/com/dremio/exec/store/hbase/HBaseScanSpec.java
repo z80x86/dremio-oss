@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,23 @@
  */
 package com.dremio.exec.store.hbase;
 
+import java.io.IOException;
+import java.util.List;
 
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.util.Bytes;
 
+import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.NamespaceKey;
-import com.dremio.service.namespace.dataset.proto.DatasetSplit;
+import com.dremio.service.namespace.PartitionChunkMetadata;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf.DatasetSplit;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.google.common.base.Objects;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
+import com.google.common.collect.ImmutableList;
 
 public class HBaseScanSpec {
 
@@ -72,7 +78,7 @@ public class HBaseScanSpec {
   }
 
   @JsonIgnore
-  public Predicate<DatasetSplit> getRowKeyPredicate() {
+  public Predicate<PartitionChunkMetadata> getRowKeyPredicate() {
     if( (startRow == null || startRow.length == 0) &&
         (stopRow == null || stopRow.length == 0)
         ){
@@ -82,7 +88,7 @@ public class HBaseScanSpec {
     return new SplitPrune(startRow, stopRow);
   }
 
-  private class SplitPrune implements Predicate<DatasetSplit> {
+  private class SplitPrune implements Predicate<PartitionChunkMetadata> {
     private final KeyRange range;
 
     private SplitPrune(byte[] start, byte[] stop){
@@ -90,8 +96,10 @@ public class HBaseScanSpec {
     }
 
     @Override
-    public boolean apply(DatasetSplit input) {
-      return KeyRange.fromSplit(input).overlaps(range);
+    public boolean apply(PartitionChunkMetadata input) {
+      final List<DatasetSplit> splits = ImmutableList.copyOf(input.getDatasetSplits());
+      Preconditions.checkArgument(splits.size() == 1, "HBase only supports a single split per partition chunk");
+      return KeyRange.fromSplit(splits.get(0)).overlaps(range);
     }
   }
 

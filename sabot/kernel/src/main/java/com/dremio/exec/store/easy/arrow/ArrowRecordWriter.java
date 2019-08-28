@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import static com.dremio.exec.store.easy.arrow.ArrowFormatPlugin.MAGIC_STRING;
 import java.io.IOException;
 import java.util.List;
 
-import com.dremio.sabot.exec.context.OperatorStats;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
@@ -53,7 +52,7 @@ public class ArrowRecordWriter implements RecordWriter {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(EventBasedRecordWriter.class);
 
   private final EasyWriter writerConfig;
-  private final OperatorStats stats;
+  private final OperatorContext context;
   private final List<Path> listOfFilesCreated;
   private final ArrowFileFooter.Builder footerBuilder;
 
@@ -73,11 +72,12 @@ public class ArrowRecordWriter implements RecordWriter {
   private long recordCount;
   private String relativePath;
 
-  public ArrowRecordWriter(OperatorContext context, final EasyWriter writerConfig, ArrowFormatPluginConfig formatConfig) {
+  public ArrowRecordWriter(OperatorContext context, final EasyWriter writerConfig,
+                           ArrowFormatPluginConfig formatConfig) {
     final FragmentHandle handle = context.getFragmentHandle();
 
     this.writerConfig = writerConfig;
-    this.stats = context.getStats();
+    this.context = context;
     this.listOfFilesCreated = Lists.newArrayList();
     this.footerBuilder = ArrowFileFooter.newBuilder();
     this.location = new Path(writerConfig.getLocation());
@@ -92,7 +92,7 @@ public class ArrowRecordWriter implements RecordWriter {
     this.incoming = incoming;
     this.outputEntryListener = outputEntryListener;
     this.writeStatsListener = writeStatsListener;
-    this.fs = FileSystemWrapper.get(location, writerConfig.getFsConf(), stats);
+    this.fs = writerConfig.getFormatPlugin().getFsPlugin().getFileSystem(writerConfig.getFsConf(), context);
     this.currentFile = fs.canonicalizePath(new Path(location, String.format("%s_%d.%s", prefix, nextFileIndex, extension)));
     this.relativePath = currentFile.getName();
     this.currentFileOutputStream = fs.create(currentFile);

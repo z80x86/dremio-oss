@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,15 +43,12 @@ import com.dremio.dac.daemon.DremioBinder;
 import com.dremio.dac.daemon.ServerHealthMonitor;
 import com.dremio.dac.server.socket.SocketServlet;
 import com.dremio.dac.server.tokens.TokenManager;
-import com.dremio.dac.support.SupportService;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.service.Service;
 import com.dremio.service.SingletonRegistry;
 import com.dremio.service.jobs.JobsService;
 import com.google.common.annotations.VisibleForTesting;
-
-import ch.qos.logback.access.jetty.RequestLogImpl;
 
 /**
  * Dremio web server.
@@ -103,6 +100,14 @@ public class WebServer implements Service {
    * Dremio hostname to use for response (usually match the Host header field).
    */
   public static final String X_DREMIO_HOSTNAME = "x-dremio-hostname";
+
+  /**
+   * Dremio header that forces numbers to be returned as strings for job data
+   *
+   * That header is also hardcoded in {@link /dac/ui/src/utils/apiUtils/apiUtils.js} for client side
+   */
+  public static final String X_DREMIO_JOB_DATA_NUMBERS_AS_STRINGS = "x-dremio-job-data-number-format";
+  public static final String X_DREMIO_JOB_DATA_NUMBERS_AS_STRINGS_SUPPORTED_VALUE = "number-as-string";
 
   // After being created in the start() method a reference to this
   // ResourceConfig for the rest server is maintained so that
@@ -169,7 +174,7 @@ public class WebServer implements Service {
     // root handler with request logging
     final RequestLogHandler rootHandler = new RequestLogHandler();
     embeddedJetty.setHandler(rootHandler);
-    RequestLogImpl requestLogger = new RequestLogImpl();
+    RequestLogImpl_Jetty_Fix requestLogger = new RequestLogImpl_Jetty_Fix();
     requestLogger.setResource("/logback-access.xml");
     rootHandler.setRequestLog(requestLogger);
 
@@ -186,6 +191,9 @@ public class WebServer implements Service {
 
     // gzip filter.
     servletContextHandler.addFilter(GzipFilter.class.getName(), "/*", EnumSet.of(DispatcherType.REQUEST));
+
+    // security header filters
+    servletContextHandler.addFilter(SecurityHeadersFilter.class.getName(), "/*", EnumSet.of(DispatcherType.REQUEST));
 
     // add the font mime type.
     final MimeTypes mimeTypes = servletContextHandler.getMimeTypes();
@@ -230,10 +238,8 @@ public class WebServer implements Service {
     if (config.serveUI) {
       final String basePath = "rest/dremio_static/";
       final String markerPath = String.format("META-INF/%s.properties", uiType);
-      final SupportService support = registry.lookup(SupportService.class);
 
-      final ServletHolder fallbackServletHolder = new ServletHolder("fallback-servlet",
-          new DremioServlet(config, serverHealthMonitor.get(), context.get().getOptionManager(), support));
+      final ServletHolder fallbackServletHolder = new ServletHolder("fallback-servlet", registry.lookup(DremioServlet.class));
       addStaticPath(fallbackServletHolder, basePath, markerPath);
       servletContextHandler.addServlet(fallbackServletHolder, "/*");
 

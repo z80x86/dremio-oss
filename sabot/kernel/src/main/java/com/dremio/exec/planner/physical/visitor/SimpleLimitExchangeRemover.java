@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,6 @@ import com.dremio.exec.planner.physical.PlannerSettings;
 import com.dremio.exec.planner.physical.Prel;
 import com.dremio.exec.planner.physical.SortPrel;
 import com.dremio.exec.planner.physical.TopNPrel;
-import com.dremio.exec.planner.physical.UnionDistinctPrel;
 import com.dremio.exec.planner.physical.WindowPrel;
 
 /**
@@ -60,7 +59,7 @@ public class SimpleLimitExchangeRemover {
 
     @Override
     public Boolean visitPrel(Prel prel, Boolean isTrivial) {
-      if(prel instanceof WindowPrel || prel instanceof JoinPrel || prel instanceof AggPrelBase || prel instanceof UnionDistinctPrel || prel instanceof SortPrel || prel instanceof TopNPrel || prel instanceof FilterPrel){
+      if(prel instanceof WindowPrel || prel instanceof JoinPrel || prel instanceof AggPrelBase || prel instanceof SortPrel || prel instanceof TopNPrel || prel instanceof FilterPrel){
         return false;
       }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,7 @@
 package com.dremio.exec.ops;
 
 import java.util.Optional;
-import java.util.function.BiConsumer;
 
-import com.dremio.sabot.op.common.hashtable.HashTableStats;
-import com.dremio.sabot.op.filter.FilterStats;
-import com.dremio.sabot.op.project.ProjectorStats;
 import org.apache.commons.lang3.ArrayUtils;
 
 import com.dremio.exec.proto.UserBitShared;
@@ -30,7 +26,10 @@ import com.dremio.exec.proto.UserBitShared.MetricsDef;
 import com.dremio.exec.store.parquet.ParquetRecordWriter;
 import com.dremio.sabot.exec.context.MetricDef;
 import com.dremio.sabot.op.aggregate.vectorized.HashAggStats;
+import com.dremio.sabot.op.filter.FilterStats;
+import com.dremio.sabot.op.join.nlje.NLJEOperator;
 import com.dremio.sabot.op.join.vhash.HashJoinStats;
+import com.dremio.sabot.op.project.ProjectorStats;
 import com.dremio.sabot.op.receiver.merging.MergingReceiverOperator;
 import com.dremio.sabot.op.receiver.unordered.UnorderedReceiverOperator;
 import com.dremio.sabot.op.scan.ScanOperator;
@@ -69,6 +68,7 @@ public class OperatorMetricRegistry {
     register(builder, CoreOperatorType.ARROW_WRITER_VALUE, WriterOperator.Metric.class);
     register(builder, CoreOperatorType.PROJECT_VALUE, ProjectorStats.Metric.class);
     register(builder, CoreOperatorType.FILTER_VALUE, FilterStats.Metric.class);
+    register(builder, CoreOperatorType.NESTED_LOOP_JOIN_VALUE, NLJEOperator.Metric.class);
     CORE_OPERATOR_TYPE_METRICS_MAP = builder.build();
   }
 

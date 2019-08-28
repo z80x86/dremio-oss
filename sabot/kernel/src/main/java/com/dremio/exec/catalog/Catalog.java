@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,17 @@
 package com.dremio.exec.catalog;
 
 import java.io.IOException;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.calcite.schema.Function;
-
+import com.dremio.common.expression.CompleteType;
 import com.dremio.exec.dotfile.View;
 import com.dremio.exec.physical.base.WriterOptions;
 import com.dremio.exec.planner.logical.CreateTableEntry;
+import com.dremio.exec.record.BatchSchema;
 import com.dremio.exec.store.DatasetRetrievalOptions;
 import com.dremio.exec.store.PartitionNotFoundException;
 import com.dremio.exec.store.StoragePlugin;
-import com.dremio.exec.store.ischema.tables.TablesTable;
 import com.dremio.service.namespace.NamespaceAttribute;
 import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.NamespaceKey;
@@ -41,7 +39,7 @@ import com.dremio.service.namespace.source.proto.SourceConfig;
  * Interface used to retrieve virtual and physical datasets. This is always contextualized to a single user and
  * default schema. Implementations must be thread-safe
  */
-public interface Catalog {
+public interface Catalog extends SimpleCatalog<Catalog> {
 
   /**
    * Retrieve a table ignoring the default schema.
@@ -50,14 +48,6 @@ public interface Catalog {
    * @return A DremioTable if found, otherwise null.
    */
   DremioTable getTableNoResolve(NamespaceKey key);
-
-  /**
-   * Retrieve a table, first checking the default schema.
-   *
-   * @param key
-   * @return
-   */
-  DremioTable getTable(NamespaceKey key);
 
   /**
    * Retrieve a table
@@ -94,27 +84,6 @@ public interface Catalog {
    */
   boolean containerExists(NamespaceKey path);
 
-  /**
-   * Get a list of all schemas.
-   *
-   * @param path
-   *          The path to contextualize to. If the path has no fields, get all schemas. Note
-   *          that this does include nested schemas.
-   * @return Iterable list of strings of each schema.
-   */
-  Iterable<String> listSchemas(NamespaceKey path);
-
-  Iterable<TablesTable.Table> listDatasets(NamespaceKey path);
-
-  /**
-   * Get a list of functions. Provided specifically for DremioCatalogReader.
-   * @param path
-   * @return
-   */
-  Collection<Function> getFunctions(NamespaceKey path);
-
-  NamespaceKey getDefaultSchema();
-
   String getUser();
 
   /**
@@ -124,14 +93,6 @@ public interface Catalog {
    */
   NamespaceKey resolveToDefault(NamespaceKey key);
 
-  /**
-   * Return a new Catalog contextualized to the provided username and default schema
-   *
-   * @param username
-   * @param newDefaultSchema
-   * @return
-   */
-  Catalog resolveCatalog(String username, NamespaceKey newDefaultSchema);
 
   /**
    * Return a new Catalog contextualized to the provided username
@@ -141,20 +102,13 @@ public interface Catalog {
    */
   Catalog resolveCatalog(String username);
 
-  /**
-   * Return a new Catalog contextualized to the provided default schema
-   * @param newDefaultSchema
-   * @return
-   */
-  Catalog resolveCatalog(NamespaceKey newDefaultSchema);
-
   MetadataStatsCollector getMetadataStatsCollector();
 
   CreateTableEntry createNewTable(final NamespaceKey key, final WriterOptions writerOptions, final Map<String, Object> storageOptions);
 
-  boolean createView(final NamespaceKey key, View view, NamespaceAttribute... attributes) throws IOException;
+  void createView(final NamespaceKey key, View view, NamespaceAttribute... attributes) throws IOException;
 
-  void updateView(final NamespaceKey key, View view, NamespaceAttribute... attributes);
+  void updateView(final NamespaceKey key, View view, NamespaceAttribute... attributes) throws IOException;
 
   void dropView(final NamespaceKey key) throws IOException;
 
@@ -167,7 +121,7 @@ public interface Catalog {
    */
   void createDataset(NamespaceKey key, com.google.common.base.Function<DatasetConfig, DatasetConfig> datasetMutator);
 
-  StoragePlugin.UpdateStatus refreshDataset(NamespaceKey key, DatasetRetrievalOptions retrievalOptions);
+  UpdateStatus refreshDataset(NamespaceKey key, DatasetRetrievalOptions retrievalOptions);
 
   SourceState refreshSourceStatus(NamespaceKey key) throws Exception;
 
@@ -175,6 +129,7 @@ public interface Catalog {
 
   /**
    * Create or update a physical dataset along with its read definitions and splits.
+   *
    * @param userNamespaceService namespace service for a user who is adding or modifying a dataset.
    * @param source source where dataset is to be created/updated
    * @param datasetPath dataset full path
@@ -184,6 +139,21 @@ public interface Catalog {
    * @throws NamespaceException
    */
   boolean createOrUpdateDataset(NamespaceService userNamespaceService, NamespaceKey source, NamespaceKey datasetPath, DatasetConfig datasetConfig, NamespaceAttribute... attributes) throws NamespaceException;
+
+  /**
+   * Update a dataset configuration with a newly detected schema.
+   * @param datasetKey the dataset NamespaceKey
+   * @param newSchema the detected schema from the executor
+   */
+  void updateDatasetSchema(NamespaceKey datasetKey, BatchSchema newSchema);
+
+  /**
+   * Update a dataset configuration with a newly detected schema.
+   * @param datasetKey the dataset NamespaceKey
+   * @param originField the original field
+   * @param fieldSchema the new schema
+   */
+  void updateDatasetField(NamespaceKey datasetKey, String originField, CompleteType fieldSchema);
 
   /**
    * Get a source based on the provided name. If the source doesn't exist, synchronize with the
@@ -239,4 +209,22 @@ public interface Catalog {
    * @return Last refreshed source state. Null if source is not found.
    */
   SourceState getSourceState(String name);
+
+  enum UpdateStatus {
+    /**
+     * Metadata hasn't changed.
+     */
+    UNCHANGED,
+
+
+    /**
+     * Metadata has changed.
+     */
+    CHANGED,
+
+    /**
+     * Dataset has been deleted.
+     */
+    DELETED
+  }
 }

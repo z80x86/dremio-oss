@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.dremio.sabot.op.spi.Operator;
  * @param <T> The operator type contained in this wrapper.
  */
 interface Wrapped<T> extends Operator, AutoCloseable {
+  int getOperatorId();
   T getInner();
   OperatorContext getContext();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,10 +38,6 @@ export default function sourceList(state = getInitialState(), action) {
     const decoratedSource = homeMapper.decorateSource(Immutable.fromJS(action.payload));
     const source = state.get(CREATED_SOURCE_NAME).merge(decoratedSource);
     return state.set(CREATED_SOURCE_NAME, source);
-  }
-  case AllSourcesActionTypes.SET_SOURCE_PIN_STATE: {
-    localStorageUtils.updatePinnedItemState(action.name, { isActivePin: action.isActivePin }, ENTITY_NAME);
-    return state.setIn(['sourcesById', action.name, 'isActivePin'], action.isActivePin);
   }
   case AllSourcesActionTypes.SOURCES_LIST_LOAD_START: {
     return state.set('isInProgress', true);

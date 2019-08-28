@@ -1,6 +1,6 @@
 <!--
 
-    Copyright (C) 2017-2018 Dremio Corporation
+    Copyright (C) 2017-2019 Dremio Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
   <parent>
     <groupId>com.dremio</groupId>
     <artifactId>dremio-dac-parent</artifactId>
-    <version>3.0.5-201812021947440442-9a23f45</version>
+    <version>3.3.2-201908142136370993-d60145d</version>
   </parent>
 
   <artifactId>dremio-dac-ui</artifactId>
@@ -75,7 +75,7 @@
                     <exclude>build/**</exclude>
                     <exclude>node_modules/**</exclude>
                     <exclude>src/main/resources/**</exclude>
-                    <exclude>${project.build.directory}/**</exclude>
+                    <exclude>target/**</exclude>
                   </excludes>
                   <filtering>false</filtering>
                 </resource>
@@ -113,6 +113,10 @@
             <NPM_CONFIG_REGISTRY>${npm.registry.url}</NPM_CONFIG_REGISTRY>
             <DREMIO_BETA>${dremio.beta}</DREMIO_BETA>
             <DREMIO_RELEASE>${dremio.release}</DREMIO_RELEASE>
+            <DREMIO_VERSION>${project.version}</DREMIO_VERSION>
+            <EDITION_TYPE>ce</EDITION_TYPE>
+            <SENTRY_AUTH_TOKEN>${project.sentry.token}</SENTRY_AUTH_TOKEN>
+            <SKIP_SENTRY_STEP>${project.sentry.skip}</SKIP_SENTRY_STEP>
           </environmentVariables>
         </configuration>
 
@@ -137,7 +141,7 @@
               <goal>npm</goal>
             </goals>
             <configuration>
-              <arguments>run test:only -- --reporter mocha-junit-reporter --reporter-options mochaFile=${project.build.directory}/mocha-reports/test-results.xml</arguments>
+              <arguments>run test:only -- --reporter mocha-junit-reporter --reporter-options mochaFile=${project.build.directory}/mocha-reports/test-results.xml,testsuitesTitle=dac-ui</arguments>
               <skip>${skipTests}</skip>
             </configuration>
           </execution>
@@ -212,6 +216,22 @@
               <excludes combine.children="append">
                 <exclude>**/sourcemaps/**</exclude>
               </excludes>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>mapr</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.github.eirslett</groupId>
+            <artifactId>frontend-maven-plugin</artifactId>
+            <configuration>
+              <environmentVariables>
+                <EDITION_TYPE>mapr-ce</EDITION_TYPE>
+              </environmentVariables>
             </configuration>
           </plugin>
         </plugins>

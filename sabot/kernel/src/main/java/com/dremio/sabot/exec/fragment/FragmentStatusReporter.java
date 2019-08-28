@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package com.dremio.sabot.exec.fragment;
 import org.apache.arrow.memory.BufferAllocator;
 
 import com.dremio.common.exceptions.UserException;
+import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.proto.CoordExecRPC.FragmentStatus;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
 import com.dremio.exec.proto.UserBitShared.FragmentState;
 import com.dremio.exec.proto.UserBitShared.MinorFragmentProfile;
-import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.sabot.exec.context.FragmentStats;
 import com.dremio.sabot.exec.rpc.ExecToCoordTunnel;
 

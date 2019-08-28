@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,9 @@ import static org.junit.Assert.assertNotEquals;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.Random;
+
+import javax.inject.Provider;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
@@ -45,6 +44,8 @@ import com.dremio.exec.ops.QueryContext;
 import com.dremio.exec.physical.PhysicalPlan;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.planner.PhysicalPlanReader;
+import com.dremio.exec.planner.fragment.ExecutionPlanningResources;
+import com.dremio.exec.planner.fragment.PlanFragmentFull;
 import com.dremio.exec.planner.fragment.PlanningSet;
 import com.dremio.exec.planner.logical.Rel;
 import com.dremio.exec.planner.observer.AttemptObserver;
@@ -53,20 +54,23 @@ import com.dremio.exec.planner.sql.SqlConverter;
 import com.dremio.exec.planner.sql.handlers.ConvertedRelNode;
 import com.dremio.exec.planner.sql.handlers.PrelTransformer;
 import com.dremio.exec.planner.sql.handlers.SqlHandlerConfig;
-import com.dremio.exec.proto.CoordExecRPC;
 import com.dremio.exec.proto.CoordinationProtos;
 import com.dremio.exec.proto.UserBitShared;
 import com.dremio.exec.proto.UserProtos;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.store.CatalogService;
 import com.dremio.exec.work.foreman.ExecutionPlan;
+import com.dremio.options.OptionManager;
 import com.dremio.options.OptionValue;
-import com.dremio.resource.ResourceAllocation;
 import com.dremio.resource.ResourceSet;
 import com.dremio.resource.basic.BasicResourceAllocator;
 import com.dremio.sabot.rpc.user.UserSession;
 import com.dremio.service.DirectProvider;
-import com.google.common.collect.Lists;
+import com.dremio.service.coordinator.ClusterCoordinator;
+import com.dremio.service.execselector.ExecutorSelectionService;
+import com.dremio.service.execselector.ExecutorSelectionServiceImpl;
+import com.dremio.service.execselector.ExecutorSelectorFactoryImpl;
+import com.dremio.service.execselector.ExecutorSelectorProvider;
 
 /**
  * To test BasicResourceAllocator Foreman interactions
@@ -106,6 +110,7 @@ public class ResourceAllocationsTest extends BaseTestQuery {
       " FULL JOIN " + yelpTable + " AS join_business ON nested_0.business_id = join_business.business_id";
 
     final SabotContext context = getSabotContext();
+    final long perNodeMemoryLimit = 4096;
     context.getOptionManager().setOption(
       OptionValue.createLong(OptionValue.OptionType.SYSTEM, "planner.slice_target", 1)
     );
@@ -116,7 +121,7 @@ public class ResourceAllocationsTest extends BaseTestQuery {
       OptionValue.createBoolean(OptionValue.OptionType.SYSTEM, "planner.enable_mux_exchange", true)
     );
     context.getOptionManager().setOption(
-      OptionValue.createLong(OptionValue.OptionType.SYSTEM, "exec.queue.memory.small", 4096)
+      OptionValue.createLong(OptionValue.OptionType.SYSTEM, "exec.queue.memory.small", perNodeMemoryLimit)
     );
 
     context.getOptionManager().setOption(
@@ -133,7 +138,9 @@ public class ResourceAllocationsTest extends BaseTestQuery {
       queryContext.getSession(),
       observer,
       queryContext.getCatalog(),
-      queryContext.getSubstitutionProviderFactory());
+      queryContext.getSubstitutionProviderFactory(),
+      queryContext.getConfig(),
+      queryContext.getScanResult());
     final SqlNode node = converter.parse(sql);
     final SqlHandlerConfig config = new SqlHandlerConfig(queryContext, converter, observer, null);
 
@@ -154,20 +161,23 @@ public class ResourceAllocationsTest extends BaseTestQuery {
       CoordinationProtos.NodeEndpoint.getDefaultInstance(),
       DirectProvider.wrap(Mockito.mock(CatalogService.class)), context);
 
-    final BasicResourceAllocator resourceAllocator = new BasicResourceAllocator(DirectProvider.wrap(clusterCoordinator));
+    Provider<ClusterCoordinator> clusterCoordinatorProvider = DirectProvider.wrap(clusterCoordinator);
+    Provider<OptionManager> optionProvider = DirectProvider.wrap(context.getOptionManager());
+    final BasicResourceAllocator resourceAllocator = new BasicResourceAllocator(clusterCoordinatorProvider);
     resourceAllocator.start();
+    final ExecutorSelectionService executorSelectionService = new ExecutorSelectionServiceImpl(clusterCoordinatorProvider, optionProvider,
+        ExecutorSelectorFactoryImpl::new, new ExecutorSelectorProvider());
 
-    final AsyncCommand asyncCommand = new AsyncCommand(queryContext, resourceAllocator, observer) {
-
-
+    final AsyncCommand asyncCommand = new AsyncCommand(queryContext, resourceAllocator, executorSelectionService,
+        observer, null, null) {
       @Override
-      public double plan() throws Exception {
-        return 0;
+      protected PhysicalPlan getPhysicalPlan() {
+        return null;
       }
 
       @Override
-      public Object execute() throws Exception {
-        return null;
+      public double plan() {
+        return 0;
       }
 
       @Override
@@ -176,50 +186,27 @@ public class ResourceAllocationsTest extends BaseTestQuery {
       }
     };
 
-    final PlanningSet planningSet = asyncCommand.allocateResourcesBasedOnPlan(plan);
+    asyncCommand.allocateResourcesBasedOnPlan(plan);
+    final ExecutionPlanningResources executionPlanningResources = ExecutionPlanCreator.getParallelizationInfo(queryContext,
+        observer, plan, executorSelectionService);
+    final PlanningSet planningSet = executionPlanningResources.getPlanningSet();
 
     final ExecutionPlan exec = ExecutionPlanCreator.getExecutionPlan(queryContext, pPlanReader, observer, plan,
-      asyncCommand.getResources(), planningSet);
-    List<CoordExecRPC.PlanFragment> fragments  = exec.getFragments();
+        asyncCommand.getResources(), planningSet, executorSelectionService);
+    List<PlanFragmentFull> fragments  = exec.getFragments();
 
     logger.info("Fragments size: " + fragments.size());
-    for (CoordExecRPC.PlanFragment fragment : fragments) {
+    for (PlanFragmentFull fragment : fragments) {
       logger.info(fragment.getHandle().getMajorFragmentId() + " : " +fragment.getHandle().getMinorFragmentId()
       + " : " + fragment.getAssignment().getUserPort() + ", "
       + fragment.getAssignment().getFabricPort());
       assertEquals(4096, fragment.getMemMax());
     }
 
-    // try to cheat to redo parallelization
-    List<ResourceAllocation> allocations = asyncCommand.getResources().getResourceAllocations();
-    allocations.sort(Comparator.comparing(ResourceAllocation::getMajorFragment));
-
-    logger.info("Allocations: " + allocations.size());
-
-    List<ResourceAllocation> copyAllocations = Lists.newArrayList();
-
-    int prevMajorFragmentId = -1;
-    for (ResourceAllocation allocation : allocations) {
-      int majorFragmentId = allocation.getMajorFragment();
-      if (majorFragmentId != prevMajorFragmentId) {
-        copyAllocations.add(resourceAllocator.createAllocation(nodes[0].getContext().getEndpoint(), allocation
-          .getMemory(), allocation.getMajorFragment()));
-        prevMajorFragmentId = majorFragmentId;
-      }
-    }
-
     ResourceSet copyResourceSet = new ResourceSet() {
-
-      private boolean isSet = false;
       @Override
-      public List<ResourceAllocation> getResourceAllocations() {
-        return isSet ? asyncCommand.getResources().getResourceAllocations() : copyAllocations;
-      }
-
-      @Override
-      public void reassignMajorFragments(Map<Integer, Map<CoordinationProtos.NodeEndpoint, Integer>> majorToEndpoinsMap) {
-        asyncCommand.getResources().reassignMajorFragments(majorToEndpoinsMap);
-        isSet = true;
+      public long getPerNodeQueryMemoryLimit() {
+        return perNodeMemoryLimit;
       }
 
       @Override
@@ -230,52 +217,27 @@ public class ResourceAllocationsTest extends BaseTestQuery {
 
     // copyAllocations should have one NodeEndPoint per major fragment
     final ExecutionPlan execUpdated = ExecutionPlanCreator.getExecutionPlan(queryContext, pPlanReader, observer, plan,
-      copyResourceSet, planningSet);
+        copyResourceSet, planningSet, executorSelectionService);
 
     fragments  = execUpdated.getFragments();
 
     logger.info("After reparallelization");
     logger.info("Fragments size: " + fragments.size());
 
-    for (CoordExecRPC.PlanFragment fragment : fragments) {
+    for (PlanFragmentFull fragment : fragments) {
       logger.info(fragment.getHandle().getMajorFragmentId() + " : " +fragment.getHandle().getMinorFragmentId()
         + " : " + fragment.getAssignment().getUserPort() + ", "
         + fragment.getAssignment().getFabricPort());
       assertEquals(4096, fragment.getMemMax());
     }
 
-    List<ResourceAllocation> copyAllocations2 = Lists.newArrayList();
 
     final String bogusAddress = "111.111.111.111";
-    final Random random = new Random();
-    for (ResourceAllocation allocation : allocations) {
-      // 50% chance of having a bogus node
-      if (random.nextInt(2) == 0) {
-        // the bogus node should be rejected when creating the execution plan (asserted below)
-        CoordinationProtos.NodeEndpoint bogusEndpoint =
-          CoordinationProtos.NodeEndpoint.newBuilder(nodes[0].getContext().getEndpoint())
-            .setAddress(bogusAddress)
-            .build();
-        copyAllocations2.add(resourceAllocator.createAllocation(bogusEndpoint, allocation.getMemory(), allocation.getMajorFragment()));
-      } else {
-        copyAllocations2.add(resourceAllocator.createAllocation(nodes[random.nextInt(5)].getContext().getEndpoint(),
-          allocation.getMemory(), allocation.getMajorFragment()));
-      }
-    }
 
     ResourceSet copyResourceSet2 = new ResourceSet() {
-
-      private boolean isSet = false;
-
       @Override
-      public List<ResourceAllocation> getResourceAllocations() {
-        return isSet ? asyncCommand.getResources().getResourceAllocations() : copyAllocations2;
-      }
-
-      @Override
-      public void reassignMajorFragments(Map<Integer, Map<CoordinationProtos.NodeEndpoint, Integer>> majorToEndpoinsMap) {
-        asyncCommand.getResources().reassignMajorFragments(majorToEndpoinsMap);
-        isSet = true;
+      public long getPerNodeQueryMemoryLimit() {
+        return perNodeMemoryLimit;
       }
 
       @Override
@@ -286,14 +248,14 @@ public class ResourceAllocationsTest extends BaseTestQuery {
 
     // copyAllocations should have one NodeEndPoint per major fragment
     final ExecutionPlan execUpdated2 = ExecutionPlanCreator.getExecutionPlan(queryContext, pPlanReader, observer, plan,
-      copyResourceSet2, planningSet);
+        copyResourceSet2, planningSet, executorSelectionService);
 
     fragments  = execUpdated2.getFragments();
 
     logger.info("After reparallelization");
     logger.info("Fragments size: " + fragments.size());
 
-    for (CoordExecRPC.PlanFragment fragment : fragments) {
+    for (PlanFragmentFull fragment : fragments) {
       logger.info(fragment.getHandle().getMajorFragmentId() + " : " +fragment.getHandle().getMinorFragmentId()
         + " : " + fragment.getAssignment().getUserPort() + ", "
         + fragment.getAssignment().getFabricPort());
@@ -301,13 +263,8 @@ public class ResourceAllocationsTest extends BaseTestQuery {
       assertNotEquals(fragment.getAssignment().getAddress(), bogusAddress);
     }
 
+    executionPlanningResources.close();
     asyncCommand.getResources().close();
-    for (ResourceAllocation resourceAllocation : copyAllocations) {
-      resourceAllocation.close();
-    }
-    for (ResourceAllocation resourceAllocation : copyAllocations2) {
-      resourceAllocation.close();
-    }
     resourceAllocator.close();
   }
 

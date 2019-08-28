@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.univocity.parsers.common.TextParsingException;
 import com.univocity.parsers.csv.CsvParserSettings;
 
 import io.netty.buffer.ArrowBuf;
+import io.netty.buffer.NettyArrowBuf;
 
 /*******************************************************************************
  * Portions Copyright 2014 uniVocity Software Pty Ltd
@@ -32,7 +33,7 @@ import io.netty.buffer.ArrowBuf;
  * ArrowBuf support.
  */
 final class TextReader implements AutoCloseable {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TextReader.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TextReader.class);
 
   private static final byte NULL_BYTE = (byte) '\0';
 
@@ -88,7 +89,6 @@ final class TextReader implements AutoCloseable {
 
     this.input = input;
     this.output = output;
-
   }
 
   public TextOutput getOutput(){
@@ -123,8 +123,6 @@ final class TextReader implements AutoCloseable {
   private boolean parseRecord() throws IOException {
     final byte newLine = this.newLine;
     final TextInput input = this.input;
-
-    input.mark();
 
     fieldIndex = 0;
     if (isWhite(ch) && ignoreLeadingWhitespace) {
@@ -262,7 +260,7 @@ final class TextReader implements AutoCloseable {
     // For example, in tab-separated files (TSV files), '\t' is used as delimiter and should not be ignored
     // Content after whitespaces may be parsed if 'parseUnescapedQuotes' is enabled.
     if (ch != newLine && ch <= ' ' && ch != delimiter) {
-      final ArrowBuf workBuf = this.workBuf;
+      final NettyArrowBuf workBuf = this.workBuf.asNettyBuffer();
       workBuf.resetWriterIndex();
       do {
         // saves whitespaces after value

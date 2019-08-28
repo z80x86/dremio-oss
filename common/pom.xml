@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
 
-    Copyright (C) 2017-2018 Dremio Corporation
+    Copyright (C) 2017-2019 Dremio Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@
 
   <parent>
     <groupId>com.dremio</groupId>
-    <artifactId>dremio-root</artifactId>
-    <version>3.0.5-201812021947440442-9a23f45</version>
+    <artifactId>dremio-parent</artifactId>
+    <version>3.3.2-201908142136370993-d60145d</version>
   </parent>
 
   <artifactId>dremio-common</artifactId>
@@ -78,7 +78,7 @@
             <configuration>
               <artifactItems>
                 <artifactItem>
-                  <groupId>com.vlkan</groupId>
+                  <groupId>com.github.icexelloss</groupId>
                   <artifactId>flatc-${os.detected.classifier}</artifactId>
                   <version>${fbs.version}</version>
                   <type>exe</type>
@@ -193,6 +193,10 @@
       <artifactId>jackson-databind</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.hubspot.jackson</groupId>
+      <artifactId>jackson-datatype-protobuf</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.github.slugify</groupId>
       <artifactId>slugify</artifactId>
     </dependency>
@@ -205,8 +209,8 @@
       <artifactId>config</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.vlkan</groupId>
-      <artifactId>flatbuffers</artifactId>
+      <groupId>com.google.flatbuffers</groupId>
+      <artifactId>flatbuffers-java</artifactId>
     </dependency>
     <dependency>
       <groupId>io.netty</groupId>

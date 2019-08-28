@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
  */
 package com.dremio.exec.vector.complex.fn;
 
-import io.netty.buffer.ArrowBuf;
-
 import java.io.IOException;
 
 import org.apache.arrow.vector.holders.VarBinaryHolder;
 import org.apache.arrow.vector.holders.VarCharHolder;
 
 import com.google.common.base.Charsets;
+
+import io.netty.buffer.ArrowBuf;
 
 public class WorkingBuffer {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(WorkingBuffer.class);

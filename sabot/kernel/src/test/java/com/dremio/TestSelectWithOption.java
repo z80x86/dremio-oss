@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,9 @@ package com.dremio;
 
 import static com.dremio.TestBuilder.listOf;
 import static java.lang.String.format;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -26,6 +29,8 @@ import java.util.List;
 
 import org.junit.Test;
 
+import com.dremio.common.exceptions.UserException;
+import com.dremio.exec.proto.UserBitShared;
 import com.google.common.base.Joiner;
 
 public class TestSelectWithOption extends BaseTestQuery {
@@ -55,6 +60,26 @@ public class TestSelectWithOption extends BaseTestQuery {
       builder = builder.baselineValues(o);
     }
     builder.build().run();
+  }
+
+  @Test
+  public void columnLimitExceeded() throws Exception {
+    String tableName = genCSVTable("columnLimitExceeded",
+        "\"a1\",\"a2\",\"a3\",\"a4\",\"a5\",\"a6\",\"a7\",\"a8\",\"a9\",\"a0\"",
+        "\"a1\",\"a2\",\"a3\",\"a4\",\"a5\",\"a6\",\"a7\",\"a8\",\"a9\",\"a0\""
+    );
+
+    String queryTemplate = "select columns from table(%s (type => 'TeXT', fieldDelimiter => '%s', extractHeader => true))";
+    try {
+      test("ALTER SYSTEM SET \"store.plugin.max_metadata_leaf_columns\" = 2");
+      test(format(queryTemplate, tableName, ","));
+      fail("query should have failed");
+    } catch (UserException e) {
+      assertEquals(e.getErrorType(), UserBitShared.DremioPBError.ErrorType.VALIDATION);
+      assertTrue(e.getMessage().contains("exceeded the maximum number of fields of 2"));
+    } finally {
+      test("ALTER SESSION RESET \"store.plugin.max_metadata_leaf_columns\"");
+    }
   }
 
   @Test

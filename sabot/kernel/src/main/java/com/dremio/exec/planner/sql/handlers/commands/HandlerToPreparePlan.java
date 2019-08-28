@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,11 +28,12 @@ import org.apache.calcite.sql.SqlNode;
 import com.dremio.exec.ops.QueryContext;
 import com.dremio.exec.physical.PhysicalPlan;
 import com.dremio.exec.planner.PlannerPhase;
+import com.dremio.exec.planner.acceleration.DremioMaterialization;
 import com.dremio.exec.planner.acceleration.substitution.SubstitutionInfo;
+import com.dremio.exec.planner.fragment.PlanFragmentsIndex;
 import com.dremio.exec.planner.observer.AbstractAttemptObserver;
 import com.dremio.exec.planner.observer.AttemptObserver;
 import com.dremio.exec.planner.observer.AttemptObservers;
-import com.dremio.exec.planner.sql.DremioRelOptMaterialization;
 import com.dremio.exec.planner.sql.SqlExceptionHelper;
 import com.dremio.exec.planner.sql.handlers.SqlHandlerConfig;
 import com.dremio.exec.planner.sql.handlers.query.SqlToPlanHandler;
@@ -96,7 +97,7 @@ public class HandlerToPreparePlan implements CommandRunner<CreatePreparedStateme
       planCache.put(handle, prepared);
 
       // record a partial plan so that we can grab metadata and use it (for example during view creation of via sql).
-      observers.planCompleted(new ExecutionPlan(plan, ImmutableList.of(), ImmutableList.of()));
+      observers.planCompleted(new ExecutionPlan(context.getQueryId(), plan, ImmutableList.of(), new PlanFragmentsIndex.Builder()));
       return 1;
     }catch(Exception ex){
       throw SqlExceptionHelper.coerceException(logger, sql, ex, true);
@@ -110,7 +111,7 @@ public class HandlerToPreparePlan implements CommandRunner<CreatePreparedStateme
 
   @Override
   public CreatePreparedStatementResp execute() {
-    return PreparedStatementProvider.build(plan.getRoot().getSchema(context.getFunctionRegistry()), state,
+    return PreparedStatementProvider.build(plan.getRoot().getProps().getSchema(), state,
       context.getQueryId(), context.getSession().getCatalogName());
   }
 
@@ -166,7 +167,7 @@ public class HandlerToPreparePlan implements CommandRunner<CreatePreparedStateme
     }
 
     @Override
-    public void planSubstituted(final DremioRelOptMaterialization materialization,
+    public void planSubstituted(final DremioMaterialization materialization,
                                 final List<RelNode> substitutions,
                                 final RelNode target, final long millisTaken) {
       calls.add(observer -> observer.planSubstituted(materialization, substitutions, target, millisTaken));

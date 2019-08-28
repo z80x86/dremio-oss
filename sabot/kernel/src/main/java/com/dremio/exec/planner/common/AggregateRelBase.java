@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,21 +19,35 @@ import java.util.List;
 
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.rel.InvalidRelException;
+import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.util.ImmutableBitSet;
 
+import com.google.common.collect.ImmutableList;
+
 
 /**
  * Base class for logical and physical Aggregations implemented in Dremio
  */
 public abstract class AggregateRelBase extends Aggregate {
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(AggregateRelBase.class);
 
-  public AggregateRelBase(RelOptCluster cluster, RelTraitSet traits, RelNode child, boolean indicator,
-      ImmutableBitSet groupSet, List<ImmutableBitSet> groupSets, List<AggregateCall> aggCalls) {
+  protected AggregateRelBase(RelOptCluster cluster, RelTraitSet traits, RelNode child, boolean indicator,
+      ImmutableBitSet groupSet, List<ImmutableBitSet> groupSets, List<AggregateCall> aggCalls) throws InvalidRelException {
     super(cluster, traits, child, indicator, groupSet, groupSets, aggCalls);
+    for(AggregateCall a: aggCalls) {
+      if (a.filterArg >= 0) {
+        throw new InvalidRelException("Inline aggregate filtering is not currently supported");
+      }
+    }
+  }
+
+  static protected RelTraitSet adjustTraits(RelTraitSet traitSet) {
+    return traitSet.replace(RelCollationTraitDef.INSTANCE, ImmutableList.of());
   }
 
   @Override public double estimateRowCount(RelMetadataQuery mq) {

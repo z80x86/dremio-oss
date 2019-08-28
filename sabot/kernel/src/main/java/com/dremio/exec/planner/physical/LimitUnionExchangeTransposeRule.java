@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package com.dremio.exec.planner.physical;
 
+import java.math.BigDecimal;
+
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.rel.RelNode;
@@ -22,8 +24,6 @@ import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 
 import com.dremio.exec.planner.logical.RelOptHelper;
-
-import java.math.BigDecimal;
 
 public class LimitUnionExchangeTransposeRule extends Prule{
   public static final RelOptRule INSTANCE = new LimitUnionExchangeTransposeRule();

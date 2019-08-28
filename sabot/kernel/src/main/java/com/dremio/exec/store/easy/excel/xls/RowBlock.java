@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 package com.dremio.exec.store.easy.excel.xls;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.poi.hssf.model.RecordStream;
 import org.apache.poi.hssf.record.ArrayRecord;
@@ -44,9 +47,6 @@ import org.apache.poi.hssf.record.aggregates.RowRecordsAggregate;
 import org.apache.poi.hssf.record.aggregates.SharedValueManager;
 import org.apache.poi.hssf.record.pivottable.ViewDefinitionRecord;
 import org.apache.poi.ss.util.CellReference;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Handles a Row block that contains all cell values of a sheet along with row formatting information.

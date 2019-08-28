@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -212,6 +212,33 @@ public final class SearchQueryUtils {
         .setType(SearchQuery.Type.WILDCARD)
         .setWildcard(SearchQuery.Wildcard.newBuilder().setField(field).setValue(value))
         .build();
+  }
+
+  /**
+   * Creates a contains term query
+   * @param field the field to scan
+   * @param value a value to look for
+   * @return a query instance
+   */
+  public static final SearchQuery newContainsTerm(String field, String value) {
+    final SearchQuery.Contains.Builder valueBuilder = SearchQuery.Contains.newBuilder()
+      .setField(field)
+      .setValue(value);
+
+    return SearchQuery.newBuilder()
+      .setType(SearchQuery.Type.CONTAINS)
+      .setContainsText(valueBuilder)
+      .build();
+  }
+
+  /**
+   * Creates a contains term query
+   * @param indexKey the index key to scan
+   * @param value a value to look for
+   * @return a query instance
+   */
+  public static final SearchQuery newContainsTerm(IndexKey indexKey, String value) {
+    return newContainsTerm(indexKey.getIndexFieldName(), value);
   }
 
   /**

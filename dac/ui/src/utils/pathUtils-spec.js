@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,9 @@ import {
   getRootEntityType,
   constructFullPath,
   getInitialResourceLocation,
-  getUniqueName
+  getUniqueName,
+  getRouteParamsFromLocation,
+  navigateToExploreDefaultIfNecessary
 } from './pathUtils';
 
 describe('pathUtils', () => {
@@ -49,19 +51,23 @@ describe('pathUtils', () => {
     });
 
     it('should return space name', () => {
-      expect(parseResourceId('/space/foo', 'test_user')).to.eql('foo');
+      expect(parseResourceId('/space/foo', 'test_user')).to.eql('"foo"');
     });
 
     it('should return source name', () => {
-      expect(parseResourceId('/source/foo', 'test_user')).to.eql('foo');
+      expect(parseResourceId('/source/foo', 'test_user')).to.eql('"foo"');
     });
 
     it('should return source name with folders', () => {
-      expect(parseResourceId('/source/foo/folder/f1/f2', 'test_user')).to.eql('foo.f1.f2');
+      expect(parseResourceId('/source/foo/folder/f1/f2', 'test_user')).to.eql('"foo"."f1"."f2"');
     });
 
     it('should return username for home path with folder', () => {
-      expect(parseResourceId('/home/@test_user/folder/ff', 'test_user')).to.eql('"@test_user".ff');
+      expect(parseResourceId('/home/@test_user/folder/ff', 'test_user')).to.eql('"@test_user"."ff"');
+    });
+
+    it('should handle folders with dot in name', () => {
+      expect(parseResourceId('/home/@test_user/folder/with.dot', 'test_user')).to.eql('"@test_user"."with.dot"');
     });
   });
 
@@ -163,6 +169,51 @@ describe('pathUtils', () => {
 
     it('should return name (3)', () => {
       expect(getUniqueName('name', (name) => (!['name', 'name (1)', 'name (2)'].includes(name)))).to.eql('name (3)');
+    });
+  });
+
+  describe('getRouteParamsFromLocation', () => {
+    it('should return empty strings props w/o location', () => {
+      const routParams = getRouteParamsFromLocation();
+      expect(routParams.resourceId).to.equal('');
+      expect(routParams.tableId).to.equal('');
+    });
+
+    it('should parse location pathname', () => {
+      const routParams = getRouteParamsFromLocation({pathname: 'a/b/c/d'});
+      expect(routParams.resourceId).to.equal('c');
+      expect(routParams.tableId).to.equal('d');
+    });
+
+    it('should decode pathname', () => {
+      let routParams = getRouteParamsFromLocation({pathname: 'a/b/"c"/%22d%22'});
+      expect(routParams.resourceId).to.equal('"c"');
+      expect(routParams.tableId).to.equal('"d"');
+
+      const spaceName = '@dremio space';
+      const datasetName = '@a test dataset';
+      const pathname = ['a', 'b', spaceName, datasetName].map(encodeURIComponent).join('/');
+      routParams = getRouteParamsFromLocation({ pathname });
+
+      expect(routParams).to.be.eql({
+        resourceId: spaceName,
+        tableId: datasetName
+      });
+    });
+  });
+
+  describe('navigateToExploreDefaultIfNecessary', () => {
+    const router = [];
+    const location = { pathname: '/a/b/c/d', hash: ''};
+    it('should not alter router for default page type', () => {
+      navigateToExploreDefaultIfNecessary('default', location, router);
+      expect(router.length).to.equal(0);
+    });
+    it('should add router entry', () => {
+      navigateToExploreDefaultIfNecessary('', location, router);
+      expect(router.length).to.equal(1);
+      expect(router[0].hash).to.equal('');
+      expect(router[0].pathname).to.equal('/a/b/c');
     });
   });
 });

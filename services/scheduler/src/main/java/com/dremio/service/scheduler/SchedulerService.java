@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,5 +34,4 @@ public interface SchedulerService extends Service {
    * @return a {@code Cancellable} instance, to cancel the periodic execution
    */
   Cancellable schedule(Schedule schedule, Runnable task);
-
 }

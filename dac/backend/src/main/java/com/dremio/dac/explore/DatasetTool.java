@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,9 @@ import java.util.UUID;
 import javax.ws.rs.core.SecurityContext;
 
 import com.dremio.common.exceptions.UserException;
+import com.dremio.common.utils.SqlUtils;
 import com.dremio.dac.explore.Transformer.DatasetAndJob;
+import com.dremio.dac.explore.model.Column;
 import com.dremio.dac.explore.model.DatasetName;
 import com.dremio.dac.explore.model.DatasetPath;
 import com.dremio.dac.explore.model.DatasetSummary;
@@ -43,10 +45,12 @@ import com.dremio.dac.explore.model.InitialPreviewResponse;
 import com.dremio.dac.explore.model.InitialRunResponse;
 import com.dremio.dac.explore.model.TransformBase;
 import com.dremio.dac.model.job.JobDataFragment;
+import com.dremio.dac.model.job.JobDataFragmentWrapper;
 import com.dremio.dac.model.job.JobDetailsUI;
 import com.dremio.dac.model.job.JobUI;
 import com.dremio.dac.model.job.QueryError;
 import com.dremio.dac.model.spaces.TempSpace;
+import com.dremio.dac.proto.model.dataset.DataType;
 import com.dremio.dac.proto.model.dataset.Derivation;
 import com.dremio.dac.proto.model.dataset.From;
 import com.dremio.dac.proto.model.dataset.FromType;
@@ -64,6 +68,7 @@ import com.dremio.dac.service.errors.DatasetNotFoundException;
 import com.dremio.dac.service.errors.DatasetVersionNotFoundException;
 import com.dremio.dac.service.errors.InvalidQueryException;
 import com.dremio.dac.service.errors.NewDatasetQueryException;
+import com.dremio.exec.record.BatchSchema;
 import com.dremio.exec.store.Views;
 import com.dremio.exec.util.ViewFieldsHelper;
 import com.dremio.service.job.proto.JobId;
@@ -85,6 +90,8 @@ import com.dremio.service.namespace.dataset.proto.ParentDataset;
 import com.dremio.service.namespace.dataset.proto.ViewFieldType;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
+
+import io.protostuff.ByteString;
 
 /**
  * Class that helps with generating common dataset patterns.
@@ -110,21 +117,21 @@ public class DatasetTool {
 
   /**
    * Helper method to create {@link InitialPreviewResponse} for existing dataset.
-   * @param datasetPath
    * @param newDataset
+   * @param tipVersion - a top level history version for a dataset.
    * @return
    * @throws DatasetVersionNotFoundException
    */
   InitialPreviewResponse createPreviewResponseForExistingDataset(
-      DatasetPath datasetPath,
       VirtualDatasetUI newDataset,
-      DatasetVersion tipVersion
-      ) throws DatasetVersionNotFoundException, NamespaceException {
+      DatasetVersionResourcePath tipVersion,
+      Integer limit
+      ) throws DatasetVersionNotFoundException, NamespaceException, JobNotFoundException {
 
     SqlQuery query = new SqlQuery(newDataset.getSql(), newDataset.getState().getContextList(), username());
-    JobUI job = executor.runQuery(query, QueryType.UI_PREVIEW, datasetPath, newDataset.getVersion());
+    JobUI job = executor.runQuery(query, QueryType.UI_PREVIEW, tipVersion.getDataset(), newDataset.getVersion());
 
-    return createPreviewResponse(newDataset, job, tipVersion, INITIAL_RESULTSET_SIZE, true);
+    return createPreviewResponse(newDataset, job, tipVersion, limit, true);
   }
 
   private String username(){
@@ -133,16 +140,32 @@ public class DatasetTool {
 
   /**
    * Helper method to create {@link InitialPreviewResponse} from given inputs
+   * @param datasetUI
+   * @param job
+   * @param tipVersion a combination of dataset verion + path to a dataset. It represent a top history version. Path here
+   *                   could differs from path that {@code datasetUI} has, as {@code datasetUI} could be
+   *                   a history version, that references on other dataset with different path.
+   * @param maxRecords
+   * @param catchExecutionError
    * @return
+   * @throws DatasetVersionNotFoundException
+   * @throws NamespaceException
+   * @throws JobNotFoundException
    */
-  InitialPreviewResponse createPreviewResponse(VirtualDatasetUI datasetUI, JobUI job, DatasetVersion tipVersion,
-      int maxRecords, boolean catchExecutionError) throws DatasetVersionNotFoundException, NamespaceException {
+  InitialPreviewResponse createPreviewResponse(VirtualDatasetUI datasetUI, JobUI job, DatasetVersionResourcePath tipVersion,
+      Integer maxRecords, boolean catchExecutionError) throws DatasetVersionNotFoundException, NamespaceException, JobNotFoundException {
     JobDataFragment dataLimited = null;
     ApiErrorModel<?> error = null;
+
+    if(maxRecords == null) {
+      maxRecords = INITIAL_RESULTSET_SIZE;
+    }
 
     try {
       if (maxRecords > 0) {
         dataLimited = job.getData().truncate(maxRecords);
+      } else {
+        dataLimited = getDataOnlyWithColumns(jobsService.getJob(job.getJobId()));
       }
     } catch (Exception ex) {
       if (!catchExecutionError) {
@@ -154,10 +177,68 @@ public class DatasetTool {
       }
       error = new ApiErrorModel<Void>(ApiErrorModel.ErrorType.INITIAL_PREVIEW_ERROR, ex.getMessage(), GenericErrorMessage.printStackTrace(ex), null);
     }
+    final History history = getHistory(tipVersion.getDataset(), datasetUI.getVersion(), tipVersion.getVersion());
+    // VBesschetnov 2019-01-08
+    // this is requires as BE generates apiLinks, that is used by UI to send requests for preview/run. In case, when history
+    // of a dataset reference on a version for other dataset. And a user navigate to that version and tries to preview it,
+    // we would not be resolve a tip version and preview will fail. We should always send requests to original dataset
+    // path (tip version path) to be able to get a preview/run data
+    // TODO(DX-14701) move links from BE to UI
+    datasetUI.setFullPathList(tipVersion.getDataset().toPathList());
+    return InitialPreviewResponse.of(newDataset(datasetUI, tipVersion.getVersion()), job.getJobId(), dataLimited, true,
+      history, error);
+  }
 
-    final History history = getHistory(new DatasetPath(datasetUI.getFullPathList()), datasetUI.getVersion(), tipVersion);
+  private JobDataFragment getDataOnlyWithColumns(Job job) {
+    job.getData().waitForMetadata();
+    ByteString batchSchema = job.getJobAttempt().getInfo().getBatchSchema();
 
-    return InitialPreviewResponse.of(newDataset(datasetUI, tipVersion), dataLimited, true, history, error);
+    if (batchSchema == null) {
+      return null;
+    }
+    BatchSchema schema = BatchSchema.deserialize(batchSchema);
+    List<Column> columns =  JobDataFragmentWrapper.getColumnsFromSchema(schema).values().asList();
+    return new JobDataFragment() {
+      @Override
+      public JobId getJobId() {
+        return job.getJobId();
+      }
+
+      @Override
+      public List<Column> getColumns() {
+        return columns;
+      }
+
+      @Override
+      public int getReturnedRowCount() {
+        return 0;
+      }
+
+      @Override
+      public Column getColumn(String name) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public String extractString(String column, int index) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public Object extractValue(String column, int index) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public DataType extractType(String column, int index) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public void close() throws Exception {
+
+      }
+    };
   }
 
   InitialRunResponse createRunResponse(VirtualDatasetUI datasetUI, JobUI job, DatasetVersion tipVersion) throws DatasetVersionNotFoundException, NamespaceException {
@@ -166,41 +247,51 @@ public class DatasetTool {
   }
 
   InitialPreviewResponse createPreviewResponse(DatasetPath path, DatasetAndJob datasetAndJob, int maxRecords, boolean catchExecutionError)
-      throws DatasetVersionNotFoundException, NamespaceException {
+      throws DatasetVersionNotFoundException, NamespaceException, JobNotFoundException {
     return createPreviewResponse(
-      datasetAndJob.getDataset(), datasetAndJob.getJob(), datasetAndJob.getDataset().getVersion(), maxRecords, catchExecutionError
+      datasetAndJob.getDataset(), datasetAndJob.getJob(), new DatasetVersionResourcePath(path, datasetAndJob.getDataset().getVersion()), maxRecords, catchExecutionError
     );
   }
 
   InitialPreviewResponse createReviewResponse(DatasetPath datasetPath,
                                               VirtualDatasetUI newDataset,
                                               String jobId,
-                                              DatasetVersion tipVersion)
+                                              DatasetVersion tipVersion,
+                                              Integer limit)
       throws DatasetVersionNotFoundException, NamespaceException, JobNotFoundException {
 
-    final JobUI job = new JobUI(jobsService.getJob(new JobId(jobId)));
-    final JobInfo jobInfo = job.getJobAttempt().getInfo();
+    final Job jobRawData = jobsService.getJob(new JobId(jobId));
+    final JobUI job = new JobUI(jobRawData);
+    final JobInfo jobInfo = jobRawData.getJobAttempt().getInfo();
     QueryType queryType = jobInfo.getQueryType();
     boolean isApproximate = queryType == QueryType.UI_PREVIEW || queryType == QueryType.UI_INTERNAL_PREVIEW || queryType == QueryType.UI_INITIAL_PREVIEW;
 
     JobDataFragment dataLimited = null;
     ApiErrorModel<?> error = null;
     JobState jobState = job.getJobAttempt().getState();
-    if (jobState == JobState.COMPLETED) {
-      try {
-        dataLimited = job.getData().truncate(INITIAL_RESULTSET_SIZE);
-      } catch (Exception ex) {
-        error = new ApiErrorModel<Void>(ApiErrorModel.ErrorType.INITIAL_PREVIEW_ERROR, ex.getMessage(), GenericErrorMessage.printStackTrace(ex), null);
+    switch (jobState) {
+    case COMPLETED : {
+      int finalLimit = limit == null ? INITIAL_RESULTSET_SIZE : limit;
+      if(finalLimit > 0) {
+        try {
+          dataLimited = job.getData().truncate(limit);
+        } catch (Exception ex) {
+          error = new ApiErrorModel<Void>(ApiErrorModel.ErrorType.INITIAL_PREVIEW_ERROR, ex.getMessage(), GenericErrorMessage.printStackTrace(ex), null);
+        }
+      } else {
+        dataLimited = getDataOnlyWithColumns(jobRawData);
       }
-    } else {
+      break;
+    }
+    case FAILED: {
       com.dremio.dac.model.job.JobFailureInfo failureInfo = JobDetailsUI.toJobFailureInfo(jobInfo);
       if (failureInfo.getMessage() != null) {
-        switch(failureInfo.getType()) {
+        switch (failureInfo.getType()) {
         case PARSE:
         case EXECUTION:
         case VALIDATION:
           error = new ApiErrorModel<>(ApiErrorModel.ErrorType.INVALID_QUERY, failureInfo.getMessage(), null,
-              new InvalidQueryException.Details(jobInfo.getSql(), ImmutableList.<String> of(), failureInfo.getErrors(), null));
+              new InvalidQueryException.Details(jobInfo.getSql(), ImmutableList.<String>of(), failureInfo.getErrors(), null));
           break;
 
         case UNKNOWN:
@@ -208,18 +299,29 @@ public class DatasetTool {
           error = new ApiErrorModel<Void>(ApiErrorModel.ErrorType.INITIAL_PREVIEW_ERROR, failureInfo.getMessage(), null, null);
         }
       }
+      break;
+    }
+    case CANCELED: {
+      // TODO(DX-14099): surface cancellation reason for initial preview
+      break;
+    }
+    default:
+      // nothing
+      break;
     }
 
     final History history = getHistory(datasetPath, newDataset.getVersion(), tipVersion);
-    return InitialPreviewResponse.of(newDataset(newDataset, null), dataLimited, isApproximate, history, error);
+    return InitialPreviewResponse.of(newDataset(newDataset, null), job.getJobId(), dataLimited, isApproximate,
+      history, error);
   }
 
   public InitialPreviewResponse newUntitled(
       FromBase from,
       DatasetVersion version,
-      List<String> context)
+      List<String> context,
+      Integer limit)
     throws DatasetNotFoundException, DatasetVersionNotFoundException, NamespaceException, NewDatasetQueryException {
-    return newUntitled(from, version, context, null, false);
+    return newUntitled(from, version, context, null, false, limit);
   }
 
   private List<String> getParentDataset(FromBase from) {
@@ -274,7 +376,6 @@ public class DatasetTool {
     }
   }
 
-
   /**
    * Create a new untitled dataset, and load preview data.
    *
@@ -287,11 +388,35 @@ public class DatasetTool {
    * @throws NamespaceException
    */
   public InitialPreviewResponse newUntitled(
+    FromBase from,
+    DatasetVersion version,
+    List<String> context,
+    DatasetSummary parentSummary,
+    boolean prepare,
+    Integer limit)
+      throws DatasetNotFoundException, DatasetVersionNotFoundException, NamespaceException, NewDatasetQueryException {
+    return newUntitled(from, version, context, parentSummary, prepare, limit, false);
+  }
+  /**
+   * Create a new untitled dataset, and load preview data.
+   *
+   * @param from Source from where the dataset is created (can be a query or other dataset)
+   * @param version Initial version of the new dataset
+   * @param context Dataset context or current schema
+   * @param runInSameThread runs metadata query in same AttemptManager thread
+   * @return
+   * @throws DatasetNotFoundException
+   * @throws DatasetVersionNotFoundException
+   * @throws NamespaceException
+   */
+  public InitialPreviewResponse newUntitled(
       FromBase from,
       DatasetVersion version,
       List<String> context,
       DatasetSummary parentSummary,
-      boolean prepare)
+      boolean prepare,
+      Integer limit,
+      boolean runInSameThread)
     throws DatasetNotFoundException, DatasetVersionNotFoundException, NamespaceException, NewDatasetQueryException {
 
     final VirtualDatasetUI newDataset = createNewUntitledMetadataOnly(from, version, context);
@@ -299,11 +424,19 @@ public class DatasetTool {
 
     try {
       final MetadataCollectingJobStatusListener listener = new MetadataCollectingJobStatusListener();
-      final JobUI job = executor.runQueryWithListener(query, prepare ? QueryType.PREPARE_INTERNAL : QueryType.UI_PREVIEW, TMP_DATASET_PATH, newDataset.getVersion(), listener);
+      final QueryType queryType = prepare ? QueryType.PREPARE_INTERNAL : QueryType.UI_PREVIEW;
+      final JobUI job = executor.runQueryWithListener(query, queryType, TMP_DATASET_PATH, newDataset.getVersion(), listener, runInSameThread);
 
       final QueryMetadata queryMetadata = listener.getMetadata();
       applyQueryMetaToDatasetAndSave(queryMetadata, newDataset, query, from);
-      return createPreviewResponse(newDataset, job, newDataset.getVersion(), prepare ? 0 : INITIAL_RESULTSET_SIZE, false);
+      if(prepare) {
+        limit = 0;
+      }
+      // in case of initial preview a returned dataset should be actual tip version. Dataset's path and version should
+      // be consistent and represent actual key in dataset version store. So use dataset's path and
+      // version as tipVersion
+      return createPreviewResponse(newDataset, job, new DatasetVersionResourcePath(new DatasetPath(newDataset.getFullPathList()), newDataset.getVersion()),
+        limit, false);
     } catch (Exception ex) {
       List<String> parentDataset = getParentDataset(from);
 
@@ -392,6 +525,15 @@ public class DatasetTool {
     vds.setSql(SQLGenerator.generateSQL(dss));
     vds.setId(UUID.randomUUID().toString());
     vds.setContextList(sqlContext);
+
+    // if we're doing a select * from table, and the context matches the base path of the table, let's avoid qualifying the table name.
+    if(from.getType() == FromType.Table) {
+      NamespaceKey path = new DatasetPath(from.getTable().getDatasetPath()).toNamespaceKey();
+      if(path.getParent().getPathComponents().equals(sqlContext)) {
+        vds.setSql(String.format("SELECT * FROM %s", SqlUtils.quoteIdentifier(path.getLeaf())));
+      }
+    }
+
     return vds;
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import PropTypes from 'prop-types';
 import isEmpty from 'lodash/isEmpty';
 
 import { getViewState } from 'selectors/resources';
+import { getExploreState } from '@app/selectors/explore';
 
 import dataStoreUtils from 'utils/dataStoreUtils';
 import exploreUtils from 'utils/explore/exploreUtils';
@@ -208,7 +209,7 @@ function mapStateToProps(state) {
   const transform = exploreUtils.getTransformState(location);
   return {
     transform,
-    sqlSize: state.explore.ui.get('sqlSize'),
+    sqlSize: getExploreState(state).ui.get('sqlSize'),
     cardsViewState: getViewState(state, LOAD_TRANSFORM_CARDS_VIEW_ID),
     location
   };
@@ -219,4 +220,4 @@ export default connect(mapStateToProps, {
   loadTransformCardPreview,
   loadTransformValuesPreview,
   resetViewState
-}, null, { withRef: true })(Transform);
+})(Transform);

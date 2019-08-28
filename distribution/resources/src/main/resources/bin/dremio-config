@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2017-2018 Dremio Corporation
+# Copyright (C) 2017-2019 Dremio Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -99,8 +99,6 @@ if [ ! -d "$DREMIO_LOG_DIR" ] || [ "$DREMIO_LOG_DIR_FALLBACK" = "1" ]; then
   DREMIO_LOG_DIR="$DREMIO_HOME/log"
 fi
 
-mkdir -p "$DREMIO_LOG_DIR/json"
-
 # Add Dremio conf folder at the beginning of the classpath
 DREMIO_CLASSPATH="$DREMIO_CONF_DIR"
 
@@ -171,6 +169,12 @@ EOF
     exit 1
   fi
 fi
+
+#Add tools.jar to support local-attach mode
+if [ -f "$JAVA_HOME/lib/tools.jar" ]; then
+  DREMIO_CLASSPATH="$DREMIO_CLASSPATH:$JAVA_HOME/lib/tools.jar"
+fi
+
 # Now, verify that 'java' binary exists and is suitable for Dremio.
 if $is_cygwin; then
   JAVA_BIN="java.exe"
@@ -238,6 +242,11 @@ else
   DREMIO_MAX_DIRECT_MEMORY_SIZE_MB=${DREMIO_MAX_DIRECT_MEMORY_SIZE_MB:-8192}
 fi
 
+#Set Timezone as UTC if DREMIO_FORCE_UTC is not set
+if [ "$DREMIO_FORCE_UTC" != "no" ]; then
+  export TZ=UTC
+fi
+
 # make sure allocator chunks are done as mmap'd memory (and reduce arena overhead)
 # Newer versions of glibc use an arena memory allocator that causes virtual
 # memory usage to explode. Tune the variable down to prevent vmem explosion.
@@ -258,3 +267,5 @@ export DREMIO_LOG_DIR
 export DREMIO_CLASSPATH
 export DREMIO_MAX_HEAP_MEMORY_SIZE_MB
 export DREMIO_MAX_DIRECT_MEMORY_SIZE_MB
+export DREMIO_ADMIN_LOG_DIR
+export DREMIO_ADMIN_LOG_VERBOSITY

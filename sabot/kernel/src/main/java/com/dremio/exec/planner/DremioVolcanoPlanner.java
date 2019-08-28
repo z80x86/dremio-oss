@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.dremio.exec.planner;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.calcite.plan.Context;
 import org.apache.calcite.plan.ConventionTraitDef;
@@ -23,28 +24,38 @@ import org.apache.calcite.plan.RelOptCostFactory;
 import org.apache.calcite.plan.volcano.VolcanoPlanner;
 import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.metadata.RelMetadataProvider;
 import org.apache.calcite.rex.RexExecutor;
-import org.apache.calcite.runtime.Hook;
 
-import com.dremio.common.VM;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.exec.planner.acceleration.substitution.SubstitutionProvider;
-import com.dremio.exec.planner.acceleration.substitution.SubstitutionProvider.Substitution;
+import com.dremio.exec.planner.acceleration.substitution.SubstitutionProvider.SubstitutionStream;
 import com.dremio.exec.planner.logical.CancelFlag;
 import com.dremio.exec.planner.logical.ConstExecutor;
 import com.dremio.exec.planner.physical.DistributionTraitDef;
+import com.dremio.exec.planner.physical.PlannerSettings;
 import com.dremio.exec.planner.sql.SqlConverter;
+import com.dremio.service.Pointer;
+import com.google.common.base.Throwables;
 
 public class DremioVolcanoPlanner extends VolcanoPlanner {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DremioVolcanoPlanner.class);
 
   private final SubstitutionProvider substitutionProvider;
 
-  private CancelFlag cancelFlag = null;
+  private final CancelFlag cancelFlag;
+
+  private RelNode originalRoot;
+  private PlannerPhase phase;
+  private MaxNodesListener listener;
 
   private DremioVolcanoPlanner(RelOptCostFactory costFactory, Context context, SubstitutionProvider substitutionProvider) {
     super(costFactory, context);
     this.substitutionProvider = substitutionProvider;
+    this.cancelFlag = new CancelFlag(context.unwrap(PlannerSettings.class).getMaxPlanningPerPhaseMS(), TimeUnit.MILLISECONDS);
+    this.phase = null;
+    this.listener = new MaxNodesListener(context.unwrap(PlannerSettings.class).getMaxNodesPerPlan());
+    addListener(listener);
   }
 
   public static DremioVolcanoPlanner of(final SqlConverter converter) {
@@ -55,7 +66,6 @@ public class DremioVolcanoPlanner extends VolcanoPlanner {
 
   public static DremioVolcanoPlanner of(RelOptCostFactory costFactory, Context context, SubstitutionProvider substitutionProvider, RexExecutor executor) {
     DremioVolcanoPlanner volcanoPlanner = new DremioVolcanoPlanner(costFactory, context, substitutionProvider);
-
     volcanoPlanner.setExecutor(executor);
     volcanoPlanner.clearRelTraitDefs();
     volcanoPlanner.addRelTraitDef(ConventionTraitDef.INSTANCE);
@@ -66,35 +76,80 @@ public class DremioVolcanoPlanner extends VolcanoPlanner {
   }
 
   @Override
-  protected void registerMaterializations() {
-    final List<Substitution> substitutions = substitutionProvider.findSubstitutions(getOriginalRoot());
-    LOGGER.debug("found {} substitutions", substitutions.size());
-    for (final Substitution substitution : substitutions) {
-      if (!isRegistered(substitution.getReplacement())) {
-        RelNode equiv = substitution.getEquivalent();
-        if (equiv == null) {
-          equiv = getRoot();
-        }
-        Hook.SUB.run(substitution);
-        register(substitution.getReplacement(), ensureRegistered(equiv, null));
+  public RelNode findBestExp() {
+    try {
+      cancelFlag.reset();
+      listener.reset();
+      return super.findBestExp();
+    } catch(RuntimeException ex) {
+      // if the planner is hiding a UserException, bubble it's message to the top.
+      Throwable t = Throwables.getRootCause(ex);
+      if(t instanceof UserException) {
+        throw UserException.parseError(ex).message(t.getMessage()).build(logger);
+      } else {
+        throw ex;
       }
     }
   }
 
-  public void setCancelFlag(CancelFlag cancelFlag) {
-    this.cancelFlag = cancelFlag;
+  public void setPlannerPhase(PlannerPhase phase) {
+    this.phase = phase;
+  }
+
+  @Override
+  protected void registerMaterializations() {
+    final SubstitutionStream result = substitutionProvider.findSubstitutions(getOriginalRoot());
+    Pointer<Integer> count = new Pointer<>(0);
+    try {
+      result.stream().forEach(substitution -> {
+        count.value++;
+        if (!isRegistered(substitution.getReplacement())) {
+          RelNode equiv = substitution.considerThisRootEquivalent() ? getRoot() : substitution.getEquivalent();
+          register(substitution.getReplacement(), ensureRegistered(equiv, null));
+        }
+      });
+    } catch (Exception | AssertionError e) {
+      result.failure(e);
+      logger.debug("found {} substitutions", count.value);
+      return;
+    }
+    result.success();
+    logger.debug("found {} substitutions", count.value);
   }
 
   @Override
   public void checkCancel() {
-    if(!VM.isDebugEnabled()){
-      if (cancelFlag != null && cancelFlag.isCancelRequested()) {
-        throw UserException.planError()
-            .message("Query was cancelled because planning time exceeded %d seconds", cancelFlag.getTimeoutInSecs())
-            .addContext("Planner Phase", cancelFlag.getPlannerPhase().description)
-            .build(logger);
+    if (cancelFlag.isCancelRequested()) {
+      UserException.Builder builder = UserException.planError()
+          .message("Query was cancelled because planning time exceeded %d seconds", cancelFlag.getTimeoutInSecs());
+      if (phase != null) {
+        builder = builder.addContext("Planner Phase", phase.description);
       }
-      super.checkCancel();
+      throw builder.build(logger);
     }
+    super.checkCancel();
+  }
+
+  @Override
+  public RelNode getOriginalRoot() {
+    return originalRoot;
+  }
+
+  @Override
+  public void setOriginalRoot(RelNode originalRoot) {
+    this.originalRoot = originalRoot;
+  }
+
+  @Override
+  public void setRoot(RelNode rel) {
+    if (originalRoot == null) {
+      originalRoot = rel;
+    }
+    super.setRoot(rel);
+  }
+
+  @Override
+  public void registerMetadataProviders(List<RelMetadataProvider> list) {
+    // Do nothing - in practice, prevent VolcanoRelMetadataProvider to be registered
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.dremio.exec.physical.config;
 import java.util.List;
 
 import com.dremio.common.logical.data.Order.Ordering;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.PhysicalVisitor;
 import com.dremio.exec.proto.UserBitShared.CoreOperatorType;
@@ -26,14 +27,19 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 
 @JsonTypeName("top-n")
-public class TopN extends Sort {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TopN.class);
+public class TopN extends AbstractSort {
 
   private final int limit;
 
   @JsonCreator
-  public TopN(@JsonProperty("child") PhysicalOperator child, @JsonProperty("orderings") List<Ordering> orderings, @JsonProperty("reverse") boolean reverse, @JsonProperty("limit") int limit) {
-    super(child, orderings, reverse);
+  public TopN(
+      @JsonProperty("props") OpProps props,
+      @JsonProperty("child") PhysicalOperator child,
+      @JsonProperty("limit") int limit,
+      @JsonProperty("orderings") List<Ordering> orderings,
+      @JsonProperty("reverse") boolean reverse
+      ) {
+    super(props, child, orderings, reverse);
     this.limit = limit;
   }
 
@@ -58,7 +64,7 @@ public class TopN extends Sort {
 
   @Override
   protected PhysicalOperator getNewWithChild(PhysicalOperator child) {
-    return new TopN(child, orderings, reverse, limit);
+    return new TopN(props, child, limit, orderings, reverse);
   }
 
   @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,10 @@ public class FilterStats {
     JAVA_BUILD_TIME,
     JAVA_EXECUTE_TIME,
     GANDIVA_BUILD_TIME,
-    GANDIVA_EXECUTE_TIME;
+    GANDIVA_EXECUTE_TIME,
+    JAVA_EXPRESSIONS,
+    GANDIVA_EXPRESSIONS,
+    MIXED_SPLITS;
 
     @Override
     public int metricId() {

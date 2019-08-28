@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,13 +37,6 @@ import com.dremio.common.exceptions.UserException;
 import com.dremio.exec.physical.base.WriterOptions;
 import com.dremio.exec.planner.physical.DistributionTrait;
 import com.dremio.exec.planner.physical.DistributionTrait.DistributionType;
-import com.dremio.exec.planner.sql.SqlOperatorImpl;
-import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.FluentIterable;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import com.dremio.exec.planner.physical.DistributionTraitDef;
 import com.dremio.exec.planner.physical.HashPrelUtil;
 import com.dremio.exec.planner.physical.Prel;
@@ -51,6 +44,13 @@ import com.dremio.exec.planner.physical.ProjectAllowDupPrel;
 import com.dremio.exec.planner.physical.ProjectPrel;
 import com.dremio.exec.planner.physical.SortPrel;
 import com.dremio.exec.planner.physical.WriterPrel;
+import com.dremio.exec.planner.sql.SqlOperatorImpl;
+import com.google.common.base.Function;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 
 /**
  * Insert additional operators before writing to impose various types of operations including:
@@ -78,7 +78,7 @@ public class WriterUpdater extends BasePrelVisitor<Prel, Void, RuntimeException>
       for(int i = 0; i < expectedRowType.getFieldCount(); i++) {
         refs.add(rb.makeInputRef(fields.get(i).getType(), i));
       }
-      return new ProjectPrel(initialInput.getCluster(), initialInput.getTraitSet(), initialInput, refs, expectedRowType);
+      return ProjectPrel.create(initialInput.getCluster(), initialInput.getTraitSet(), initialInput, refs, expectedRowType);
     } else {
       return initialInput;
     }
@@ -90,7 +90,7 @@ public class WriterUpdater extends BasePrelVisitor<Prel, Void, RuntimeException>
     final Prel initialInput = ((Prel) initialPrel.getInput()).accept(this, null);
 
     final Prel input = renameAsNecessary(initialPrel.getExpectedInboundRowType(), initialInput);
-    final WriterPrel prel = (WriterPrel) initialPrel.copy(initialPrel.getTraitSet(), ImmutableList.<RelNode>of(input));
+    final WriterPrel prel = initialPrel.copy(initialPrel.getTraitSet(), ImmutableList.<RelNode>of(input));
 
     if(options.hasDistributions()){
 
@@ -134,7 +134,7 @@ public class WriterUpdater extends BasePrelVisitor<Prel, Void, RuntimeException>
 
       final RelCollation collation = getCollation(prel.getTraitSet(), sortKeys);
 
-      final Prel sort = new SortPrel(project.getCluster(), project.getTraitSet().plus(collation), project, collation);
+      final Prel sort = SortPrel.create(project.getCluster(), project.getTraitSet().plus(collation), project, collation);
 
       List<Integer> fieldIndices = new ArrayList<>();
       // add bucket field.
@@ -170,7 +170,7 @@ public class WriterUpdater extends BasePrelVisitor<Prel, Void, RuntimeException>
       }
 
       final RelCollation collation = getCollation(prel.getTraitSet(), sortKeys);
-      final Prel sort = new SortPrel(input.getCluster(), input.getTraitSet().plus(collation), input, collation);
+      final Prel sort = SortPrel.create(input.getCluster(), input.getTraitSet().plus(collation), input, collation);
 
       // we need to sort by the partitions.
       final Prel changeDetectionPrel = addChangeDetectionProject(sort, getFieldIndices(options.getPartitionColumns(), input.getRowType()));
@@ -181,7 +181,7 @@ public class WriterUpdater extends BasePrelVisitor<Prel, Void, RuntimeException>
       // no partitions or distributions.
       // insert a sort on sort fields.
       final RelCollation collation = getCollation(prel.getTraitSet(), getFieldIndices(options.getSortColumns(), input.getRowType()));
-      final Prel sort = new SortPrel(input.getCluster(), input.getTraitSet().plus(collation), input, collation);
+      final Prel sort = SortPrel.create(input.getCluster(), input.getTraitSet().plus(collation), input, collation);
       final WriterPrel writer = new WriterPrel(prel.getCluster(), prel.getTraitSet(), sort, prel.getCreateTableEntry(), prel.getExpectedInboundRowType());
       return writer;
 
@@ -270,7 +270,7 @@ public class WriterUpdater extends BasePrelVisitor<Prel, Void, RuntimeException>
     exprs.add(partionColComp);
     final RelDataType rowTypeWithPCComp = RexUtil.createStructType(cluster.getTypeFactory(), exprs, fieldNames);
 
-    final ProjectPrel projectUnderWriter = new ProjectAllowDupPrel(cluster, cluster.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL), input, exprs, rowTypeWithPCComp);
+    final ProjectPrel projectUnderWriter = ProjectAllowDupPrel.create(cluster, cluster.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL), input, exprs, rowTypeWithPCComp);
     return projectUnderWriter;
   }
 

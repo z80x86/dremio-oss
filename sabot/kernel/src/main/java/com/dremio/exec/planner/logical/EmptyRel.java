@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
 
-import com.dremio.common.logical.data.LogicalOperator;
 import com.dremio.exec.record.BatchSchema;
 
 public class EmptyRel extends AbstractRelNode implements Rel, CopyToCluster {
@@ -53,11 +52,6 @@ public class EmptyRel extends AbstractRelNode implements Rel, CopyToCluster {
 
   public BatchSchema getSchema() {
     return schema;
-  }
-
-  @Override
-  public LogicalOperator implement(LogicalPlanImplementor implementor) {
-    throw new UnsupportedOperationException();
   }
 
   @Override

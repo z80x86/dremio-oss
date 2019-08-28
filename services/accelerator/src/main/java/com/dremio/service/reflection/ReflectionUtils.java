@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,15 +41,16 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.hadoop.fs.Path;
 
 import com.dremio.common.utils.PathUtils;
+import com.dremio.exec.planner.acceleration.ExternalMaterializationDescriptor;
 import com.dremio.exec.planner.acceleration.IncrementalUpdateSettings;
 import com.dremio.exec.planner.acceleration.JoinDependencyProperties;
-import com.dremio.exec.planner.sql.ExternalMaterializationDescriptor;
-import com.dremio.exec.planner.sql.MaterializationDescriptor;
-import com.dremio.exec.planner.sql.MaterializationDescriptor.ReflectionInfo;
+import com.dremio.exec.planner.acceleration.MaterializationDescriptor;
+import com.dremio.exec.planner.acceleration.MaterializationDescriptor.ReflectionInfo;
 import com.dremio.exec.proto.UserBitShared;
 import com.dremio.exec.proto.UserBitShared.ReflectionType;
 import com.dremio.exec.store.RecordWriter;
 import com.dremio.exec.work.user.SubstitutionSettings;
+import com.dremio.proto.model.UpdateId;
 import com.dremio.service.accelerator.AccelerationUtils;
 import com.dremio.service.job.proto.JobAttempt;
 import com.dremio.service.job.proto.JobId;
@@ -67,7 +68,6 @@ import com.dremio.service.jobs.SqlQuery;
 import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.NamespaceService;
-import com.dremio.service.namespace.dataset.DatasetVersion;
 import com.dremio.service.namespace.dataset.proto.DatasetConfig;
 import com.dremio.service.namespace.dataset.proto.DatasetType;
 import com.dremio.service.namespace.dataset.proto.ParentDataset;
@@ -102,6 +102,7 @@ import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.Futures;
 
 /**
  * Helper functions for Reflection management
@@ -146,23 +147,23 @@ public class ReflectionUtils {
       Materialization materialization, String sql, JobStatusListener jobStatusListener) {
     final SqlQuery query = new SqlQuery(sql, SYSTEM_USERNAME);
     NamespaceKey datasetPathList = new NamespaceKey(namespaceService.findDatasetByUUID(entry.getDatasetId()).getFullPathList());
-    DatasetVersion datasetVersion = DatasetVersion.fromExistingVersion(entry.getDatasetVersion());
     MaterializationSummary materializationSummary = new MaterializationSummary()
       .setDatasetId(entry.getDatasetId())
       .setReflectionId(entry.getId().getId())
-      .setLayoutVersion(entry.getVersion().intValue())
+      .setLayoutVersion(entry.getTag())
       .setMaterializationId(materialization.getId().getId())
       .setReflectionName(entry.getName())
       .setReflectionType(entry.getType().toString());
 
-    return jobsService.submitJob(
-      JobRequest.newMaterializationJobBuilder(materializationSummary,
-        new SubstitutionSettings(ImmutableList.of()))
-        .setSqlQuery(query)
-        .setQueryType(QueryType.ACCELERATOR_CREATE)
-        .setDatasetPath(datasetPathList)
-        .setDatasetVersion(datasetVersion)
-        .build(), jobStatusListener);
+    return Futures.getUnchecked(
+      jobsService.submitJob(
+        JobRequest.newMaterializationJobBuilder(materializationSummary, new SubstitutionSettings(ImmutableList.of()))
+          .setSqlQuery(query)
+          .setQueryType(QueryType.ACCELERATOR_CREATE)
+          .setDatasetPath(datasetPathList)
+          .build(),
+        jobStatusListener)
+    );
   }
 
   public static List<String> getMaterializationPath(Materialization materialization) {
@@ -218,7 +219,7 @@ public class ReflectionUtils {
     return new MaterializationDescriptor(
       toReflectionInfo(reflectionGoal),
       materialization.getId().getId(),
-      materialization.getVersion(),
+      materialization.getTag(),
       materialization.getExpiration(),
       materialization.getLogicalPlan().toByteArray(),
       getMaterializationPath(materialization),
@@ -226,7 +227,8 @@ public class ReflectionUtils {
       materialization.getInitRefreshSubmit(),
       getPartitionNames(materialization.getPartitionList()),
       updateSettings,
-      JoinDependencyProperties.NONE);
+      JoinDependencyProperties.NONE,
+      materialization.getLogicalPlanStrippedHash());
   }
 
   public static List<String> getPartitionNames(List<DataPartition> partitions) {
@@ -292,7 +294,7 @@ public class ReflectionUtils {
         null
       ),
       externalReflection.getId(),
-      Optional.fromNullable(externalReflection.getVersion()).or(Long.valueOf(0)),
+      Optional.fromNullable(externalReflection.getTag()).or(String.valueOf(0)),
       queryDataset.getFullPathList(),
       targetDataset.getFullPathList()
     );
@@ -487,7 +489,7 @@ public class ReflectionUtils {
     return new LogicalProject(node.getCluster(), node.getTraitSet(), node, projects, rowTypeBuilder.build());
   }
 
-  static RelNode removeColumns(RelNode node, Predicate<RelDataTypeField> predicate) {
+  public static RelNode removeColumns(RelNode node, Predicate<RelDataTypeField> predicate) {
     if (node.getTraitSet() == null) {
       // for test purposes.
       return node;
@@ -522,7 +524,7 @@ public class ReflectionUtils {
   }
 
   public static Refresh createRefresh(ReflectionId reflectionId, List<String> refreshPath, final long seriesId, final int seriesOrdinal,
-      final long updateId, JobDetails details, MaterializationMetrics metrics, List<DataPartition> dataPartitions) {
+                                      final UpdateId updateId, JobDetails details, MaterializationMetrics metrics, List<DataPartition> dataPartitions) {
     final String path = PathUtils.getPathJoiner().join(Iterables.skip(refreshPath, 1));
 
     return new Refresh()

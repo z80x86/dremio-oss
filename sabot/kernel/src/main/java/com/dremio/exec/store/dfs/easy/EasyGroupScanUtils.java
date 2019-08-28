@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.common.types.TypeProtos.MajorType;
 import com.dremio.common.types.TypeProtos.MinorType;
@@ -69,7 +70,7 @@ public class EasyGroupScanUtils {
 
 
   private void initFromSelection(FileSelection selection, EasyFormatPlugin<?> formatPlugin) throws IOException {
-    final FileSystemWrapper dfs = ImpersonationUtil.createFileSystem(userName, plugin.getFsConf());
+    final FileSystemWrapper dfs = ImpersonationUtil.createFileSystem(userName, plugin.getFsConf(), false);
     this.selection = selection;
     BlockMapBuilder b = new BlockMapBuilder(dfs, plugin.getContext().getExecutors());
     this.chunks = b.generateFileWork(selection.getStatuses(), formatPlugin.isBlockSplittable());

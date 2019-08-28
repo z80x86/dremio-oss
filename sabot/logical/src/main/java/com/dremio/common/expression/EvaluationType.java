@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,8 @@
 package com.dremio.common.expression;
 
 /**
- * Class to capture the supported evaluation types
+ * Dummy class carried forward for backward compatibility purposes,
+ * since in 3.0 expressions had this as one of the properties.
  */
 public class EvaluationType {
   public enum CodeGenOption {

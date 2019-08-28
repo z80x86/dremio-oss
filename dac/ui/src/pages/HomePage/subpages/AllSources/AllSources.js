@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import DocumentTitle from 'react-document-title';
 import { injectIntl } from 'react-intl';
 
 import HomePage from 'pages/HomePage/HomePage';
-import { loadSourceListData, setSourcePin } from 'actions/resources/sources';
-import { getSources } from 'selectors/resources';
+import { loadSourceListData } from 'actions/resources/sources';
+import { getSources } from 'selectors/home';
 
 import AllSourcesView from './AllSourcesView.js';
 
@@ -36,7 +36,6 @@ export class AllSources extends Component {
     location: PropTypes.object.isRequired,
     sources: PropTypes.instanceOf(Immutable.List),
     loadSourceListData: PropTypes.func,
-    setSourcePin: PropTypes.func,
     intl: PropTypes.object.isRequired
   };
 
@@ -44,10 +43,6 @@ export class AllSources extends Component {
     if (!shallowEqual(this.props.location.query, nextProps.location.query)) {
       this.props.loadSourceListData();
     }
-  }
-
-  toggleActivePin = (name, pinState) => {
-    this.props.setSourcePin(name, !pinState);
   }
 
   render() {
@@ -58,7 +53,6 @@ export class AllSources extends Component {
         <AllSourcesView
           filters={this.filters}
           sources={sources}
-          toggleActivePin={this.toggleActivePin}
         />
       </HomePage>
     );
@@ -72,6 +66,5 @@ function mapStateToProps(state) {
 }
 
 export default connect(mapStateToProps, {
-  loadSourceListData,
-  setSourcePin
+  loadSourceListData
 })(AllSources);

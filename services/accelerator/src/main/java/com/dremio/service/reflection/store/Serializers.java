@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package com.dremio.service.reflection.store;
 
-import com.dremio.service.accelerator.store.serializer.SchemaSerializer;
 import com.dremio.service.reflection.proto.ExternalReflection;
 import com.dremio.service.reflection.proto.Materialization;
 import com.dremio.service.reflection.proto.MaterializationId;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,6 @@ import com.dremio.exec.expr.ClassGenerator.HoldingContainer;
 import com.dremio.exec.expr.CodeGenerator;
 import com.dremio.exec.expr.fn.FunctionGenerationHelper;
 import com.dremio.exec.physical.config.MergingReceiverPOP;
-import com.dremio.exec.proto.ExecRPC.FragmentRecordBatch;
 import com.dremio.exec.record.ArrowRecordBatchLoader;
 import com.dremio.exec.record.ExpandableHyperContainer;
 import com.dremio.exec.record.VectorAccessible;
@@ -97,10 +96,10 @@ public class MergingReceiverOperator implements ProducerOperator {
     this.streamProvider = streamProvider;
     this.stats = context.getStats();
     this.config = config;
-    this.outgoingContainer = context.createOutputVectorContainer(config.getSchema(null));
+    this.outgoingContainer = context.createOutputVectorContainer(config.getSchema());
     this.stats.setLongStat(Metric.NUM_SENDERS, config.getNumSenders());
     this.nodes = new Node[config.getNumSenders()];
-    RawFragmentBatchProvider[] fragProviders = streamProvider.getBuffers(config.getOppositeMajorFragmentId());
+    RawFragmentBatchProvider[] fragProviders = streamProvider.getBuffers(config.getSenderMajorFragmentId());
     assert fragProviders.length == config.getNumSenders();
     for(int i = 0; i < nodes.length; i++){
       nodes[i] = new Node(i, fragProviders[i]);
@@ -201,7 +200,7 @@ public class MergingReceiverOperator implements ProducerOperator {
       if (v instanceof FixedWidthVector) {
         AllocationHelper.allocate(v, context.getTargetBatchSize(), 1);
       } else {
-        v.allocateNewSafe();
+        v.allocateNew();
       }
     }
   }

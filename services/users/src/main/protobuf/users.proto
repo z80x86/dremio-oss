@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,8 @@ message UserConfig {
   optional uint64 createdAt = 6; // date added
   optional uint64 modifiedAt = 7;
   repeated GID groupMemberships = 8;
-  optional int64 version = 9;
+  optional int64 version = 9 [deprecated = true];
+  optional string tag = 10;
 }
 
 message UserAuth {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ public class Limit0Converter extends BasePrelVisitor<Prel, Void, IOException> {
       LimitPrel limit = (LimitPrel) prel;
       if(isLimit0(limit.getFetch())){
         PhysicalOperator op = PrelTransformer.convertToPop(config, prel);
-        BatchSchema schema = op.getSchema(config.getContext().getFunctionRegistry());
+        BatchSchema schema = op.getProps().getSchema();
 
         // make sure to remove any selection vector modes since we're now the leaf node.
         schema = schema.clone(SelectionVectorMode.NONE);

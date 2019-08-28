@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,21 +32,20 @@ import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.UnionMode;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 
+import com.dremio.common.Version;
 import com.dremio.common.utils.PathUtils;
 import com.dremio.dac.proto.model.dataset.VirtualDatasetVersion;
 import com.dremio.dac.service.datasets.DatasetVersionMutator;
 import com.dremio.datastore.IndexedStore;
 import com.dremio.datastore.KVStore;
 import com.dremio.datastore.LocalKVStoreProvider;
-import com.dremio.service.accelerator.proto.Acceleration;
-import com.dremio.service.accelerator.proto.AccelerationId;
-import com.dremio.service.accelerator.store.AccelerationStore;
 import com.dremio.service.namespace.DatasetHelper;
 import com.dremio.service.namespace.NamespaceServiceImpl;
 import com.dremio.service.namespace.dataset.proto.DatasetConfig;
 import com.dremio.service.namespace.proto.NameSpaceContainer;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.flatbuffers.FlatBufferBuilder;
 
@@ -56,10 +55,23 @@ import io.protostuff.ByteString;
  * To upgrade Arrow Binary Schema to latest Arrow release Dremio uses as of 2.1.0 release
  * Looks like we have 3 stores that store DatasetConfig that contains binary Schema
  */
-public class DatasetConfigUpgrade extends UpgradeTask {
+public class DatasetConfigUpgrade extends UpgradeTask implements LegacyUpgradeTask {
+
+  //DO NOT MODIFY
+  static final String taskUUID = "18df9bdf-9186-4780-b6bb-91bcb14a7a8b";
 
   public DatasetConfigUpgrade() {
-    super("Upgrade Arrow Schema", VERSION_106, VERSION_210, FIRST_ORDER);
+    super("Upgrade Arrow Schema", ImmutableList.of());
+  }
+
+  @Override
+  public Version getMaxVersion() {
+    return VERSION_210;
+  }
+
+  @Override
+  public String getTaskUUID() {
+    return taskUUID;
   }
 
   @Override
@@ -70,12 +82,8 @@ public class DatasetConfigUpgrade extends UpgradeTask {
     final KVStore<DatasetVersionMutator.VersionDatasetKey, VirtualDatasetVersion> vdsVersionStore =
       localStore.getStore(DatasetVersionMutator.VersionStoreCreator.class);
 
-    final IndexedStore<AccelerationId, Acceleration> accelStore =
-      localStore.getStore(AccelerationStore.AccelerationStoreCreator.class);
-
     final IndexedStore<byte[], NameSpaceContainer> namespaceStore =
       localStore.getStore(NamespaceServiceImpl.NamespaceStoreCreator.class);
-
 
     Iterable<Map.Entry<byte[], NameSpaceContainer>> nameSpaces = namespaceStore.find();
     StreamSupport.stream(nameSpaces.spliterator(), false)
@@ -99,21 +107,6 @@ public class DatasetConfigUpgrade extends UpgradeTask {
       }
       vdv.setDataset(datasetConfig);
       vdsVersionStore.put(vdsEntry.getKey(), vdv);
-    }
-
-    Iterable<Map.Entry<AccelerationId, Acceleration>> accelEntries = accelStore.find();
-
-    for (Map.Entry<AccelerationId, Acceleration> accelEntry : accelEntries) {
-      Acceleration acceleration = accelEntry.getValue();
-      if (acceleration.getContext() == null) {
-        continue;
-      }
-      DatasetConfig datasetConfig = update(acceleration.getContext().getDataset());
-      if (datasetConfig == null) {
-        continue;
-      }
-      acceleration.getContext().setDataset(datasetConfig);
-      accelStore.put(accelEntry.getKey(), acceleration);
     }
   }
 
@@ -320,5 +313,10 @@ public class DatasetConfigUpgrade extends UpgradeTask {
       default:
         throw new UnsupportedOperationException("Unsupported type: " + field.typeType());
     }
+  }
+
+  @Override
+  public String toString() {
+    return String.format("'%s' up to %s)", getDescription(), getMaxVersion());
   }
 }

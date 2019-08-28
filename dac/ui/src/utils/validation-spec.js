@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 import {
   applyValidators,
   isRequired, isNumber, isInteger, isWholeNumber,
-  isRegularExpression, isEmail, confirmPassword
+  isRegularExpression, isEmail, confirmPassword,
+  makeLabelFromKey, isIntegerWithLimits
 } from './validation';
 
 describe('validation', () => {
@@ -100,6 +101,114 @@ describe('validation', () => {
         isRequired('foo.a'),
         isRequired('foo.b')]
       )).to.eql({foo: {a: 'Foo.a is required.', b: 'Foo.b is required.'}});
+    });
+  });
+
+  describe('makeLabelFromKey', () => {
+    it('should return capitalized simple key', () => {
+      expect(makeLabelFromKey('abc')).to.equal('Abc');
+      expect(makeLabelFromKey('ABC')).to.equal('Abc');
+    });
+    it('should take last token from complex key', () => {
+      expect(makeLabelFromKey('a.b.cde')).to.equal('Cde');
+    });
+    it('should handle empty key', () => {
+      expect(makeLabelFromKey('')).to.equal('');
+      expect(makeLabelFromKey(null)).to.equal(null);
+    });
+  });
+
+  describe('isIntegerWithLimits', () => {
+    it('throws exception if inputs are invalid', () => {
+      expect(() => isIntegerWithLimits('field', 'field', 5, 4)).to.throw();
+    });
+
+    describe('fallbacks to isInteger', () => {
+      itShouldFailForBadValues(isIntegerWithLimits, ['a', 'sdf', 1.1, '1.1']);
+      itShouldIgnoreMissingValues(isIntegerWithLimits);
+    });
+
+    describe('lowLimit only', () => {
+      const testCase = (value, limit, isInvalidValue = true) => {
+        it(`'${value}' does${isInvalidValue ? ' not' : ''} meet '${limit}' low limit`, () => {
+          const fieldName = 'f1';
+          const data = {
+            [fieldName]: value
+          };
+          const validator = isIntegerWithLimits(fieldName, fieldName, limit);
+          if (isInvalidValue) {
+            expect(validator(data)).to.be.eql({
+              [fieldName]: `${fieldName} must be an integer greater than or equal to ${limit}.`
+            });
+          } else {
+            expect(validator(data)).to.be.empty;
+          }
+        });
+      };
+
+      // invalid values
+      testCase(1, 2);
+      testCase(-5, 0);
+      testCase(-5, -4);
+      // valid values
+      testCase(10, 2, false);
+      testCase(11, -5, false);
+      testCase(3, 3, false);
+    });
+
+    describe('topLimit only', () => {
+      const testCase = (value, limit, isInvalidValue = true) => {
+        it(`'${value}' does${isInvalidValue ? ' not' : ''} meet '${limit}' top limit`, () => {
+          const fieldName = 'f1';
+          const data = {
+            [fieldName]: value
+          };
+          const validator = isIntegerWithLimits(fieldName, fieldName, null, limit);
+          if (isInvalidValue) {
+            expect(validator(data)).to.be.eql({
+              [fieldName]: `${fieldName} must be an integer less than or equal ${limit}.`
+            });
+          } else {
+            expect(validator(data)).to.be.empty;
+          }
+        });
+      };
+
+      // invalid values
+      testCase(2, 1);
+      testCase(0, -5);
+      testCase(-4, -5);
+      // valid values
+      testCase(2, 10, false);
+      testCase(-5, 11, false);
+      testCase(3, 3, false);
+    });
+
+    describe('both limits', () => {
+      const testCase = (value, lowLimit, topLimit, isInvalidValue = true) => {
+        it(`'${value}' does${isInvalidValue ? ' not' : ''} lie between '${lowLimit}' and '${topLimit}'`, () => {
+          const fieldName = 'f1';
+          const data = {
+            [fieldName]: value
+          };
+          const validator = isIntegerWithLimits(fieldName, fieldName, lowLimit, topLimit);
+          if (isInvalidValue) {
+            expect(validator(data)).to.be.eql({
+              [fieldName]: `${fieldName} must be an integer between ${lowLimit} and ${topLimit}.`
+            });
+          } else {
+            expect(validator(data)).to.be.empty;
+          }
+        });
+      };
+
+      // invalid values
+      testCase(0, 1, 5);
+      testCase(6, 1, 5);
+      // valid values
+      testCase(1, 1, 5, false);
+      testCase(5, 1, 5, false);
+      testCase(3, 1, 5, false);
     });
   });
 });

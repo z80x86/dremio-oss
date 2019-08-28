@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package com.dremio.exec.work.protector;
 
+import static com.dremio.exec.ExecConstants.MAX_FOREMEN_PER_COORDINATOR;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -26,6 +28,7 @@ import javax.inject.Provider;
 
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.concurrent.ExtendedLatch;
+import com.dremio.common.exceptions.UserException;
 import com.dremio.common.utils.protos.ExternalIdHelper;
 import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.ExecConstants;
@@ -65,7 +68,9 @@ import com.dremio.sabot.rpc.user.UserRpcUtils;
 import com.dremio.sabot.rpc.user.UserSession;
 import com.dremio.service.BindingCreator;
 import com.dremio.service.Service;
+import com.dremio.service.commandpool.CommandPool;
 import com.dremio.service.coordinator.ClusterCoordinator;
+import com.dremio.service.execselector.ExecutorSelectionService;
 import com.dremio.services.fabric.api.FabricRunnerFactory;
 import com.dremio.services.fabric.api.FabricService;
 import com.google.common.base.Optional;
@@ -106,6 +111,8 @@ public class ForemenWorkManager implements Service, SafeExit {
   private final Provider<FabricService> fabric;
   private final BindingCreator bindingCreator;
   private final Provider<ResourceAllocator> queryResourceManager;
+  private final Provider<CommandPool> commandPool;
+  private final Provider<ExecutorSelectionService> executorSelectionService;
 
   private ClusterCoordinator coordinator;
   private ExtendedLatch exitLatch = null; // This is used to wait to exit when things are still running
@@ -117,12 +124,16 @@ public class ForemenWorkManager implements Service, SafeExit {
       final Provider<FabricService> fabric,
       final Provider<SabotContext> dbContext,
       final Provider<ResourceAllocator> queryResourceManager,
+      final Provider<CommandPool> commandPool,
+      final Provider<ExecutorSelectionService> executorSelectionService,
       final BindingCreator bindingCreator) {
     this.coord = coord;
     this.dbContext = dbContext;
     this.fabric = fabric;
     this.bindingCreator = bindingCreator;
     this.queryResourceManager = queryResourceManager;
+    this.commandPool = commandPool;
+    this.executorSelectionService = executorSelectionService;
   }
 
   @Override
@@ -167,6 +178,11 @@ public class ForemenWorkManager implements Service, SafeExit {
     AutoCloseables.close(pool);
   }
 
+  private boolean canAcceptWork() {
+    final long foremenLimit = dbContext.get().getOptionManager().getOption(MAX_FOREMEN_PER_COORDINATOR);
+    return externalIdToForeman.size() < foremenLimit;
+  }
+
   public void submit(
           final ExternalId externalId,
           final QueryObserver observer,
@@ -177,20 +193,20 @@ public class ForemenWorkManager implements Service, SafeExit {
           final ReAttemptHandler attemptHandler) {
 
     final DelegatingCompletionListener delegate = new DelegatingCompletionListener();
-    final Foreman foreman = newForeman(pool, delegate, externalId, observer, session, request, config,
-      attemptHandler, tunnelCreator, preparedHandles);
+    final Foreman foreman = newForeman(pool, commandPool.get(), delegate, externalId, observer, session, request,
+      config, attemptHandler, tunnelCreator, preparedHandles);
     final ManagedForeman managed = new ManagedForeman(registry, foreman);
     externalIdToForeman.put(foreman.getExternalId(), managed);
     delegate.setListener(managed);
     foreman.start();
   }
 
-  protected Foreman newForeman(Executor executor, CompletionListener listener, ExternalId externalId,
+  protected Foreman newForeman(Executor executor, CommandPool commandPool, CompletionListener listener, ExternalId externalId,
       QueryObserver observer, UserSession session, UserRequest request, OptionProvider config,
       ReAttemptHandler attemptHandler, CoordToExecTunnelCreator tunnelCreator,
       Cache<Long, PreparedPlan> plans) {
-    return new Foreman(dbContext.get(), executor, listener, externalId, observer, session, request, config,
-      attemptHandler, tunnelCreator, plans, queryResourceManager.get());
+    return new Foreman(dbContext.get(), executor, commandPool, listener, externalId, observer, session, request, config,
+      attemptHandler, tunnelCreator, plans, queryResourceManager.get(), executorSelectionService.get());
   }
 
   private class RunningQueryProviderImpl implements RunningQueryProvider {
@@ -252,7 +268,7 @@ public class ForemenWorkManager implements Service, SafeExit {
 
       @Override
       public void operationComplete(Future<Void> future) throws Exception {
-        foreman.cancel(null);
+        foreman.cancel("User - Connection closed", false);
       }
     }
 
@@ -277,28 +293,40 @@ public class ForemenWorkManager implements Service, SafeExit {
 
     @Override
     public void nodesUnregistered(Set<NodeEndpoint> unregisteredNodes) {
-      for(ManagedForeman f : externalIdToForeman.values()){
-        f.foreman.nodesUnregistered(unregisteredNodes);
+      for (ManagedForeman f : externalIdToForeman.values()) {
+        try {
+          f.foreman.nodesUnregistered(unregisteredNodes);
+        } catch (Exception e) {
+          logger.warn("Foreman {} failed to handle unregistered nodes {}", ExternalIdHelper.toString(f.foreman.getExternalId()), unregisteredNodes, e);
+        }
       }
     }
 
     @Override
     public void nodesRegistered(Set<NodeEndpoint> registeredNodes) {
       for(ManagedForeman f : externalIdToForeman.values()){
-        f.foreman.nodesRegistered(registeredNodes);
+        try {
+          f.foreman.nodesRegistered(registeredNodes);
+        } catch (Exception e) {
+          logger.warn("Foreman {} failed to handle registered nodes {}", ExternalIdHelper.toString(f.foreman.getExternalId()), registeredNodes, e);
+        }
       }
     }
 
   }
 
-  public boolean cancel(ExternalId externalId) {
-    return cancel(externalId, null);
-  }
-
-  public boolean cancel(ExternalId externalId, String reason) {
+  /**
+   * Cancel the query.
+   *
+   * @param externalId      id of the query
+   * @param reason          description of the cancellation
+   * @param clientCancelled true if the client application explicitly issued a cancellation (via end user action), or
+   *                        false otherwise (i.e. when pushing the cancellation notification to the end user)
+   */
+  public boolean cancel(ExternalId externalId, String reason, boolean clientCancelled) {
     final ManagedForeman managed = externalIdToForeman.get(externalId);
     if (managed != null) {
-      managed.foreman.cancel(reason);
+      managed.foreman.cancel(reason, clientCancelled);
       return true;
     }
 
@@ -339,9 +367,7 @@ public class ForemenWorkManager implements Service, SafeExit {
       ExternalId id = ExternalIdHelper.toExternal(status.getHandle().getQueryId());
       ManagedForeman managed = externalIdToForeman.get(id);
       if (managed == null) {
-        // TODO(DX-7242): this is a little chatty since a failed query will often log a bunch of fragments
-        // We need a better mechanism to debug this.
-        logger.info("A fragment status message arrived post query termination, dropping. Fragment [{}] reported a state of {}.", QueryIdHelper.getFragmentId(status.getHandle()), status.getProfile().getState());
+        logger.debug("A fragment status message arrived post query termination, dropping. Fragment [{}] reported a state of {}.", QueryIdHelper.getFragmentId(status.getHandle()), status.getProfile().getState());
       } else {
         managed.foreman.updateStatus(status);
       }
@@ -353,7 +379,7 @@ public class ForemenWorkManager implements Service, SafeExit {
       ExternalId id = ExternalIdHelper.toExternal(header.getQueryId());
       ManagedForeman managed = externalIdToForeman.get(id);
       if (managed == null) {
-        logger.info("User data arrived post query termination, dropping. Data was from QueryId: {}.", QueryIdHelper.getQueryId(header.getQueryId()));
+        logger.debug("User data arrived post query termination, dropping. Data was from QueryId: {}.", QueryIdHelper.getQueryId(header.getQueryId()));
       } else {
         managed.foreman.dataFromScreenArrived(header, data, sender);
       }
@@ -364,9 +390,7 @@ public class ForemenWorkManager implements Service, SafeExit {
       ExternalId id = ExternalIdHelper.toExternal(status.getId());
       ManagedForeman managed = externalIdToForeman.get(id);
       if (managed == null) {
-        // TODO(DX-7242): this is a little chatty since a failed query will often log a bunch of fragments
-        // We need a better mechanism to debug this.
-        logger.info("A node query status message arrived post query termination, dropping. Query [{}] from node {}.",
+        logger.debug("A node query status message arrived post query termination, dropping. Query [{}] from node {}.",
           QueryIdHelper.getQueryId(status.getId()), status.getEndpoint());
       } else {
         managed.foreman.updateNodeQueryStatus(status);
@@ -421,12 +445,18 @@ public class ForemenWorkManager implements Service, SafeExit {
     }
 
     @Override
+    public boolean canAcceptWork() {
+      return ForemenWorkManager.this.canAcceptWork();
+    }
+
+    @Override
     public void submitLocalQuery(
         ExternalId externalId,
         QueryObserver observer,
         Object query,
         boolean prepare,
-        LocalExecutionConfig config) {
+        LocalExecutionConfig config,
+        boolean runInSameThread) {
       try{
         // make sure we keep a local observer out of band.
         final QueryObserver oobJobObserver = new OutOfBandQueryObserver(observer, executor);
@@ -444,15 +474,11 @@ public class ForemenWorkManager implements Service, SafeExit {
             .build();
 
         final ReAttemptHandler attemptHandler = newInternalAttemptHandler(options, config.isFailIfNonEmptySent());
-        submit(externalId, oobJobObserver, session, new UserRequest(prepare ? RpcType.CREATE_PREPARED_STATEMENT : RpcType.RUN_QUERY, query), TerminationListenerRegistry.NOOP, config, attemptHandler);
+        final UserRequest userRequest = new UserRequest(prepare ? RpcType.CREATE_PREPARED_STATEMENT : RpcType.RUN_QUERY, query, runInSameThread);
+        submit(externalId, oobJobObserver, session, userRequest, TerminationListenerRegistry.NOOP, config, attemptHandler);
       }catch(Exception ex){
         throw Throwables.propagate(ex);
       }
-    }
-
-    @Override
-    public void cancelLocalQuery(ExternalId query) {
-      cancel(query);
     }
   }
 
@@ -472,21 +498,34 @@ public class ForemenWorkManager implements Service, SafeExit {
     }
 
     @Override
-    public ExternalId submitWork(UserSession session, UserResponseHandler responseHandler, UserRequest request,
-        TerminationListenerRegistry registry) {
-      final ExternalId externalId = ExternalIdHelper.generateExternalId();
-      session.incrementQueryCount();
-      final QueryObserver observer = dbContext.get().getQueryObserverFactory().get().createNewQueryObserver(
-          externalId, session, responseHandler);
-      final QueryObserver oobObserver = new OutOfBandQueryObserver(observer, executor);
-      final ReAttemptHandler attemptHandler = newExternalAttemptHandler(session.getOptions());
-      submit(externalId, oobObserver, session, request, registry, null, attemptHandler);
-      return externalId;
+    public void submitWork(ExternalId externalId, UserSession session,
+      UserResponseHandler responseHandler, UserRequest request, TerminationListenerRegistry registry) {
+      commandPool.get().<Void>submit(CommandPool.Priority.HIGH,
+        ExternalIdHelper.toString(externalId) + ":work-submission",
+        (waitInMillis) -> {
+          if (!canAcceptWork()) {
+            throw UserException.resourceError()
+              .message(UserException.QUERY_REJECTED_MSG)
+              .buildSilently();
+          }
+
+          if (waitInMillis > CommandPool.WARN_DELAY_MS) {
+            logger.warn("Work submission {} waited too long in the command pool: wait was {}ms",
+              ExternalIdHelper.toString(externalId), waitInMillis);
+          }
+          session.incrementQueryCount();
+          final QueryObserver observer = dbContext.get().getQueryObserverFactory().get().createNewQueryObserver(
+            externalId, session, responseHandler);
+          final QueryObserver oobObserver = new OutOfBandQueryObserver(observer, executor);
+          final ReAttemptHandler attemptHandler = newExternalAttemptHandler(session.getOptions());
+          submit(externalId, oobObserver, session, request, registry, null, attemptHandler);
+          return null;
+        }, false);
     }
 
     @Override
-    public Ack cancelQuery(ExternalId query) {
-      cancel(query);
+    public Ack cancelQuery(ExternalId query, String username) {
+      cancel(query, String.format("Query cancelled by user '%s'", username), true);
       return Acks.OK;
     }
 
@@ -507,7 +546,7 @@ public class ForemenWorkManager implements Service, SafeExit {
 
     @Override
     public boolean cancel(ExternalId id, String reason) {
-      return ForemenWorkManager.this.cancel(id, reason);
+      return ForemenWorkManager.this.cancel(id, reason, false);
     }
 
     @Override
@@ -525,7 +564,7 @@ public class ForemenWorkManager implements Service, SafeExit {
 
     @Override
     public boolean cancel(ExternalId id, String reason) {
-      return ForemenWorkManager.this.cancel(id, reason);
+      return ForemenWorkManager.this.cancel(id, reason, false);
     }
   }
 }

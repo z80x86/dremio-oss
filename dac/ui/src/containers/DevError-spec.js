@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 import { shallow } from 'enzyme';
 
-import DevError from './DevError';
+import { DevErrorView as DevError } from './DevError';
 
 describe('DevError', () => {
 
@@ -37,9 +37,9 @@ describe('DevError', () => {
 
   it('should render CustomRedBox only if props.error is set', () => {
     const wrapper = shallow(<DevError {...commonProps}/>);
-    expect(wrapper.node).to.be.null;
+    expect(wrapper.getElement()).to.be.null;
 
     wrapper.setProps({error: new Error()});
-    expect(wrapper.node.type.displayName).to.eql('RedBox');
+    expect(wrapper.getElement().type.displayName).to.eql('RedBox');
   });
 });

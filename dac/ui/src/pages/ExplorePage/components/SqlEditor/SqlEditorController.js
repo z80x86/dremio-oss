@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import { FormattedMessage } from 'react-intl';
 import PropTypes from 'prop-types';
 
 import SimpleButton from 'components/Buttons/SimpleButton';
+import { getExploreState } from '@app/selectors/explore';
 
 import { editOriginalSql } from 'actions/explore/dataset/reapply';
 import { setCurrentSql, setQueryContext } from 'actions/explore/view';
@@ -76,7 +77,7 @@ export class SqlEditorController extends Component {
     this.insertFullPathAtCursor = this.insertFullPathAtCursor.bind(this);
     this.state = {
       funcHelpPanel: false,
-      datasetsPanel: false
+      datasetsPanel: !!(props.dataset && props.dataset.get('isNewQuery'))
     };
     this.receiveProps(this.props, {});
   }
@@ -86,14 +87,17 @@ export class SqlEditorController extends Component {
   }
 
   componentDidUpdate(prevProps) {
+    const isNewQueryClick = this.props.dataset.get('isNewQuery')
+      && this.props.currentSql === null
+      && (!prevProps.dataset.get('isNewQuery') || this.props.exploreViewState !== prevProps.exploreViewState);
     // refocus the SQL editor if you click New Query again
     // but otherwise do not yank focus due to other changes
-    if ((this.props.dataset.get('isNewQuery') &&
-      this.props.currentSql === undefined &&
-      (!prevProps.dataset.get('isNewQuery') || this.props.exploreViewState !== prevProps.exploreViewState)
-      || (this.props.focusKey && prevProps.focusKey !== this.props.focusKey)) //focus input is focus key is changed
-    ) {
+    if (isNewQueryClick || this.props.focusKey && prevProps.focusKey !== this.props.focusKey) { //focus input is focus key is changed
       this.refs.editor.focus();
+    }
+    // open right datasets panel after new query click
+    if (isNewQueryClick) { //TODO: is there a cleaner way?
+      this.setState({datasetsPanel: true}); // eslint-disable-line react/no-did-update-set-state
     }
   }
 
@@ -104,8 +108,8 @@ export class SqlEditorController extends Component {
     // Sql editor needs to update sql on dataset load, or new query.
     // Normally this is picked up when defaultValue changes in CodeMirror.js. However there is an edge case for
     // new query => new query. In this case, defaultValue1 == defaultValue2 == '', So need to detect it here, when
-    // currentSql is reset to undefined.
-    if (nextProps.currentSql === undefined && oldProps.currentSql !== undefined && this.refs.editor) {
+    // currentSql is reset to null.
+    if (nextProps.currentSql === null && oldProps.currentSql !== null && this.refs.editor) {
       this.refs.editor.resetValue();
     }
     if ((dataset && constructFullPath(dataset.get('context'))) !== constructFullPath(nextDataset.get('context'))) {
@@ -158,7 +162,7 @@ export class SqlEditorController extends Component {
     } = this.props;
 
     const reapply = () => {
-      editSql(dataset.get('id'), dataset.getIn(['apiLinks', 'self']), null, null, true);
+      editSql(dataset.get('id'), dataset.getIn(['apiLinks', 'self']));
     };
 
     if (this.isDatasetReadyForReapply()) {
@@ -298,10 +302,11 @@ export class SqlEditorController extends Component {
 }
 
 function mapStateToProps(state) {
+  const explorePageState = getExploreState(state);
   return {
-    currentSql: state.explore.view.get('currentSql'),
-    queryContext: state.explore.view.get('queryContext'),
-    focusKey: state.explore.view.get('sqlEditorFocusKey'),
+    currentSql: explorePageState.view.currentSql,
+    queryContext: explorePageState.view.queryContext,
+    focusKey: explorePageState.view.sqlEditorFocusKey,
     datasetSummary: state.resources.entities.get('datasetSummary')
   };
 }

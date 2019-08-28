@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
  */
 package com.dremio.sabot.op.join.nlj;
 
+import java.util.LinkedList;
+import java.util.List;
+
+import javax.inject.Named;
+
 import com.dremio.exec.record.ExpandableHyperContainer;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.sabot.exec.context.FunctionContext;
-
-import java.util.LinkedList;
-import java.util.List;
-import javax.inject.Named;
 
 /*
  * Template class that combined with the runtime generated source implements the NestedLoopJoin interface. This

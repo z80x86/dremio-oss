@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNull;
 
 import java.io.IOException;
 
+import org.junit.Ignore;
 import org.junit.Test;
 
 import com.dremio.exec.exception.FragmentSetupException;
@@ -43,7 +44,7 @@ public class TestFragmenter extends PopUnitTestBase {
   }
 
 
-  @Test
+  @Ignore
   public void ensureThreeFragments() throws FragmentSetupException, IOException, ForemanSetupException {
     PhysicalPlanReader ppr = PhysicalPlanReaderTestFactory.defaultPhysicalPlanReader(DEFAULT_SABOT_CONFIG, CLASSPATH_SCAN_RESULT);
     Fragment b = getRootFragment(ppr, "/physical_double_exchange.json");

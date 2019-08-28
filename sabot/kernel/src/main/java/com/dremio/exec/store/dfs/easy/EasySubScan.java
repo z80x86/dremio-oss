@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,19 @@ import java.util.List;
 
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.exec.catalog.StoragePluginId;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.SubScanWithProjection;
+import com.dremio.exec.planner.fragment.MinorDataReader;
+import com.dremio.exec.planner.fragment.MinorDataWriter;
+import com.dremio.exec.planner.fragment.SplitNormalizer;
 import com.dremio.exec.record.BatchSchema;
-import com.dremio.service.namespace.dataset.proto.DatasetSplit;
+import com.dremio.exec.store.SplitAndPartitionInfo;
 import com.dremio.service.namespace.file.proto.FileConfig;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
+import com.google.common.collect.ImmutableList;
 
 import io.protostuff.ByteString;
 
@@ -34,24 +40,27 @@ import io.protostuff.ByteString;
  */
 @JsonTypeName("easy-sub-scan")
 public class EasySubScan extends SubScanWithProjection {
+  private static final String SPLITS_ATTRIBUTE_KEY = "easy-sub-scan-splits";
+
   private final FileConfig fileConfig;
-  private final List<DatasetSplit> splits;
   private final StoragePluginId pluginId;
   private final ByteString extendedProperty;
   private final List<String> partitionColumns;
 
-  @JsonCreator
+  @JsonIgnore
+  private List<SplitAndPartitionInfo> splits;
+
   public EasySubScan(
-    @JsonProperty("settings") FileConfig config,
-    @JsonProperty("splits") List<DatasetSplit> splits,
-    @JsonProperty("userName") String userName,
-    @JsonProperty("schema") BatchSchema schema,
-    @JsonProperty("tableSchemaPath") List<String> tablePath,
-    @JsonProperty("pluginId") StoragePluginId pluginId,
-    @JsonProperty("columns") List<SchemaPath> columns,
-    @JsonProperty("partitionColumns") List<String> partitionColumns,
-    @JsonProperty("extendedProperty") ByteString extendedProperty) {
-    super(userName, schema, tablePath, columns);
+    OpProps props,
+    FileConfig config,
+    List<SplitAndPartitionInfo> splits,
+    BatchSchema fullSchema,
+    List<String> tablePath,
+    StoragePluginId pluginId,
+    List<SchemaPath> columns,
+    List<String> partitionColumns,
+    ByteString extendedProperty) {
+    super(props, fullSchema, (tablePath == null) ? null : ImmutableList.of(tablePath), columns);
     this.fileConfig = config;
     this.splits = splits;
     this.pluginId = pluginId;
@@ -59,7 +68,21 @@ public class EasySubScan extends SubScanWithProjection {
     this.partitionColumns = partitionColumns;
   }
 
-  public List<DatasetSplit> getSplits() {
+  @JsonCreator
+  public EasySubScan(
+    @JsonProperty("props") OpProps props,
+    @JsonProperty("settings") FileConfig config,
+    @JsonProperty("fullSchema") BatchSchema fullSchema,
+    @JsonProperty("tableSchemaPath") List<String> tablePath,
+    @JsonProperty("pluginId") StoragePluginId pluginId,
+    @JsonProperty("columns") List<SchemaPath> columns,
+    @JsonProperty("partitionColumns") List<String> partitionColumns,
+    @JsonProperty("extendedProperty") ByteString extendedProperty) {
+
+    this(props, config, null, fullSchema, tablePath, pluginId, columns, partitionColumns, extendedProperty);
+  }
+
+  public List<SplitAndPartitionInfo> getSplits() {
     return splits;
   }
 
@@ -82,5 +105,15 @@ public class EasySubScan extends SubScanWithProjection {
   @Override
   public int getOperatorType() {
     return EasyGroupScan.getEasyScanOperatorType(fileConfig.getType());
+  }
+
+  @Override
+  public void collectMinorSpecificAttrs(MinorDataWriter writer) {
+    SplitNormalizer.write(getProps(), writer, splits);
+  }
+
+  @Override
+  public void populateMinorSpecificAttrs(MinorDataReader reader) throws Exception {
+    splits = SplitNormalizer.read(getProps(), reader);
   }
 }

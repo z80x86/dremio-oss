@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 package com.dremio;
-
-import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -45,19 +43,6 @@ public class TestFilterPastJoin extends PlanTestBase {
       "FROM cp.\"tpch/lineitem.parquet\" l1 RIGHT JOIN cp.\"tpch/lineitem.parquet\" l2\n" +
       "ON l1.l_shipdate = l2.l_receiptdate AND l1.l_orderkey = 32";
     testPlanMatchingPatterns(sql, new String[]{ "(?s)Join.*Filter" }, "(?s)Filter.*Join");
-  }
-
-  @Test
-  public void filterInOnClauseLeftJoinNegativeTest() throws Exception {
-    String sql = "SELECT count(*)\n" +
-      "FROM cp.\"tpch/lineitem.parquet\" l1 LEFT JOIN cp.\"tpch/lineitem.parquet\" l2\n" +
-      "ON l1.l_shipdate = l2.l_receiptdate AND l1.l_orderkey = 32";
-
-    try {
-      test(sql);
-    } catch (Exception e) {
-      assertTrue(e.getMessage().contains("cartesian"));
-    }
   }
 
   @Test

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,6 @@ import com.dremio.exec.record.VectorWrapper;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.exec.context.OperatorStats;
 import com.dremio.sabot.op.aggregate.vectorized.VariableLengthValidator;
-import com.dremio.sabot.op.join.vhash.HashJoinStats.Metric;
 import com.dremio.sabot.op.common.hashtable.Comparator;
 import com.dremio.sabot.op.common.hashtable.HashTable;
 import com.dremio.sabot.op.common.ht2.FieldVectorPair;
@@ -50,6 +49,7 @@ import com.dremio.sabot.op.common.ht2.PivotBuilder;
 import com.dremio.sabot.op.common.ht2.PivotDef;
 import com.dremio.sabot.op.join.JoinUtils;
 import com.dremio.sabot.op.join.hash.BuildInfo;
+import com.dremio.sabot.op.join.vhash.HashJoinStats.Metric;
 import com.dremio.sabot.op.spi.DualInputOperator;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
@@ -507,7 +507,8 @@ public class VectorizedHashJoinOperator implements DualInputOperator {
       return;
     }
 
-    this.probe = new VectorizedProbe(
+    this.probe = new VectorizedProbe();
+    this.probe.setup(
         context.getAllocator(),
         hyperContainer,
         left,

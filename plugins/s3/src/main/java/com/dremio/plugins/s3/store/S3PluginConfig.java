@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.List;
 import javax.inject.Provider;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.s3a.Constants;
 
 import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.catalog.conf.AWSAuthenticationType;
@@ -31,6 +32,7 @@ import com.dremio.exec.catalog.conf.SourceType;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.store.dfs.FileSystemConf;
 import com.dremio.exec.store.dfs.SchemaMutability;
+import com.google.common.collect.ImmutableList;
 
 import io.protostuff.Tag;
 
@@ -40,14 +42,30 @@ import io.protostuff.Tag;
 @SourceType(value = "S3", label = "Amazon S3")
 public class S3PluginConfig extends FileSystemConf<S3PluginConfig, S3StoragePlugin> {
 
-  //  optional string access_key = 1;
-  //  optional string access_secret = 2;
-  //  optional bool secure = 3;
-  //  repeated string external_bucket = 4;
-  //  repeated Property property = 5;
-  //  optional bool allow_create_drop = 6;
-  //  optional string root_path = 7;
-  //  optional AWSAuthenticationType credential_type = 8;
+  static final List<String> UNIQUE_CONN_PROPS = ImmutableList.of(
+    Constants.ACCESS_KEY,
+    Constants.SECRET_KEY,
+    Constants.SECURE_CONNECTIONS,
+    Constants.ENDPOINT,
+    Constants.AWS_CREDENTIALS_PROVIDER,
+    Constants.MAXIMUM_CONNECTIONS,
+    Constants.MAX_ERROR_RETRIES,
+    Constants.ESTABLISH_TIMEOUT,
+    Constants.SOCKET_TIMEOUT,
+    Constants.SOCKET_SEND_BUFFER,
+    Constants.SOCKET_RECV_BUFFER,
+    Constants.SIGNING_ALGORITHM,
+    Constants.USER_AGENT_PREFIX,
+    Constants.PROXY_HOST,
+    Constants.PROXY_PORT,
+    Constants.PROXY_DOMAIN,
+    Constants.PROXY_USERNAME,
+    Constants.PROXY_PASSWORD,
+    Constants.PROXY_WORKSTATION,
+    Constants.PATH_STYLE_ACCESS,
+    S3FileSystem.COMPATIBILITY_MODE,
+    S3FileSystem.REGION_OVERRIDE
+  );
 
   @Tag(1)
   @DisplayMetadata(label = "AWS Access Key")
@@ -59,6 +77,7 @@ public class S3PluginConfig extends FileSystemConf<S3PluginConfig, S3StoragePlug
   public String accessSecret = "";
 
   @Tag(3)
+  @NotMetadataImpacting
   @DisplayMetadata(label = "Encrypt connection")
   public boolean secure;
 
@@ -80,6 +99,15 @@ public class S3PluginConfig extends FileSystemConf<S3PluginConfig, S3StoragePlug
 
   @Tag(8)
   public AWSAuthenticationType credentialType = AWSAuthenticationType.ACCESS_KEY;
+
+  @Tag(9)
+  @NotMetadataImpacting
+  @DisplayMetadata(label = "Enable asynchronous access when possible")
+  public boolean enableAsync = true;
+
+  @Tag(10)
+  @DisplayMetadata(label = "Enable compatibility mode (experimental)")
+  public boolean compatibilityMode = false;
 
   @Override
   public S3StoragePlugin newPlugin(SabotContext context, String name, Provider<StoragePluginId> pluginIdProvider) {
@@ -107,7 +135,17 @@ public class S3PluginConfig extends FileSystemConf<S3PluginConfig, S3StoragePlug
   }
 
   @Override
+  public List<String> getConnectionUniqueProperties() {
+    return UNIQUE_CONN_PROPS;
+  }
+
+  @Override
   public List<Property> getProperties() {
     return propertyList;
+  }
+
+  @Override
+  public boolean isAsyncEnabled() {
+    return enableAsync;
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,7 @@ import com.dremio.exec.record.WritableBatch;
 import com.dremio.exec.rpc.RpcOutcomeListener;
 import com.dremio.exec.testing.Controls;
 import com.dremio.exec.testing.ControlsInjectionUtil;
+import com.dremio.exec.testing.InjectedOutOfMemoryError;
 import com.dremio.exec.work.AttemptId;
 import com.dremio.exec.work.user.LocalUserUtil;
 import com.dremio.options.OptionManager;
@@ -143,6 +144,7 @@ public class TestQueryReAttempt extends BaseTestQuery {
 
   @BeforeClass
   public static void enableReAttempts() {
+    setSessionOption(ExecConstants.ENABLE_VECTORIZED_HASHAGG, "false");
     setSessionOption(ExecConstants.ENABLE_REATTEMPTS.getOptionName(), "true");
   }
 
@@ -150,10 +152,19 @@ public class TestQueryReAttempt extends BaseTestQuery {
    * Injects an OOM in HashAgg and confirm that the query succeeds anyway
    */
   @Test
-  public void testOOMReAttempt() throws Exception {
+  public void testOOMExceptionReAttempt() throws Exception {
     final String controls = Controls.newBuilder()
-            .addException(HashAggOperator.class, HashAggOperator.INJECTOR_DO_WORK, OutOfMemoryException.class)
+            .addException(HashAggOperator.class, HashAggOperator.INJECTOR_DO_WORK_OOM, OutOfMemoryException.class)
             .build();
+    ControlsInjectionUtil.setControls(client, controls);
+    test(getFile("queries/tpch/01.sql"));
+  }
+
+  @Test
+  public void testOOMErrorReAttempt() throws Exception {
+    final String controls = Controls.newBuilder()
+      .addException(HashAggOperator.class, HashAggOperator.INJECTOR_DO_WORK_OOM_ERROR, InjectedOutOfMemoryError.class)
+      .build();
     ControlsInjectionUtil.setControls(client, controls);
     test(getFile("queries/tpch/01.sql"));
   }

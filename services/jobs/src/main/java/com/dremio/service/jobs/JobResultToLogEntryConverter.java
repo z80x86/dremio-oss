@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.function.Function;
 
 import com.dremio.service.job.proto.JobInfo;
+import com.dremio.service.job.proto.JobState;
 
 /**
  * Converts a job to a log entry
@@ -36,6 +37,7 @@ public class JobResultToLogEntryConverter implements Function<Job, LoggedQuery> 
       info.getStartTime(),
       info.getFinishTime(),
       job.getJobAttempt().getState(),
+      job.getJobAttempt().getState() == JobState.CANCELED ? info.getCancellationInfo().getMessage() : null,
       info.getUser()
     );
   }

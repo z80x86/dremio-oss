@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,12 @@ package com.dremio.sabot.driver;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 
-import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.vector.ValueVector;
 
+import com.dremio.common.exceptions.ErrorHelper;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.expression.Describer;
-import com.dremio.common.memory.DremioRootAllocator;
 import com.dremio.exec.expr.fn.FunctionLookupContext;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
@@ -36,14 +35,13 @@ import com.dremio.exec.util.BatchPrinter;
 import com.dremio.exec.util.VectorUtil;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.exec.context.OperatorStats;
+import com.dremio.sabot.exec.fragment.OutOfBandMessage;
 import com.dremio.sabot.op.scan.ScanOperator;
 import com.dremio.sabot.op.spi.DualInputOperator;
 import com.dremio.sabot.op.spi.Operator;
 import com.dremio.sabot.op.spi.ProducerOperator;
 import com.dremio.sabot.op.spi.SingleInputOperator;
 import com.dremio.sabot.op.spi.TerminalOperator;
-import com.google.common.base.Supplier;
-import com.google.common.base.Suppliers;
 
 import io.netty.util.internal.OutOfDirectMemoryError;
 
@@ -73,27 +71,28 @@ abstract class SmartOp<T extends Operator> implements Wrapped<T> {
     this.functionLookupContext = functionLookupContext;
     this.stats = context.getStats();
   }
-
-  private final Supplier<BatchSchema> schemaSupplier = Suppliers.memoize(new Supplier<BatchSchema>() {
-    @Override
-    public BatchSchema get() {
-      return popConfig.getSchema(functionLookupContext);
-    }
-  });
-
   void checkSchema(BatchSchema initialSchema) {
-    BatchSchema expectedSchema = schemaSupplier.get();
-    checkState(initialSchema.getFields().equals(expectedSchema.getFields()),
-      String.format("Schema does not match expected schema:\nExpected:%s\nActual:%s",
-        expectedSchema.toStringVerbose(), initialSchema.toStringVerbose())
-    );
+    int propsSchemaHashCode = popConfig.getProps().getSchemaHashCode();
+    int initialSchemaHashCode = initialSchema.clone(BatchSchema.SelectionVectorMode.NONE).toByteString().hashCode();
+    checkState( propsSchemaHashCode == initialSchemaHashCode,
+      String.format("Schema checksums do not match. Actual schema:%d Config Schema:%d", initialSchemaHashCode, propsSchemaHashCode
+    ));
+  }
+
+  public int getOperatorId() {
+    return popConfig.getProps().getOperatorId();
+  }
+
+  @Override
+  public void workOnOOB(OutOfBandMessage message) {
+    inner.workOnOOB(message);
   }
 
   public T getInner(){
     return inner;
   }
 
-  public OperatorContext getContext(){
+  public OperatorContext getContext() {
     return context;
   }
 
@@ -130,7 +129,11 @@ abstract class SmartOp<T extends Operator> implements Wrapped<T> {
       .addContext("SqlOperatorImpl", operatorName)
       .addContext("Location",
         String.format("%d:%d:%d", h.getMajorFragmentId(), h.getMinorFragmentId(), operatorId));
-    if (e instanceof OutOfMemoryException || e instanceof OutOfDirectMemoryError) {
+
+    OutOfMemoryException oom = ErrorHelper.findWrappedCause(e, OutOfMemoryException.class);
+    if (oom != null) {
+      context.getNodeDebugContextProvider().addMemoryContext(builder, oom);
+    } else if (ErrorHelper.findWrappedCause(e, OutOfDirectMemoryError.class) != null) {
       context.getNodeDebugContextProvider().addMemoryContext(builder);
     }
 

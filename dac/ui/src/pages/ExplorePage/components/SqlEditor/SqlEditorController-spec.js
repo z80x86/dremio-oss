@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,7 +92,7 @@ describe('SqlEditorController', () => {
           }
         };
       });
-      it('should call editor.resetValue if currentSql changes to undefined', () => {
+      it('should call editor.resetValue if currentSql changes to null', () => {
 
         instance.receiveProps({...commonProps, currentSql: 'some sql'}, {});
         expect(instance.refs.editor.resetValue).to.not.be.called;
@@ -100,7 +100,7 @@ describe('SqlEditorController', () => {
         instance.receiveProps({...commonProps, currentSql: 'some sql'}, {...commonProps, currentSql: 'different sql'});
         expect(instance.refs.editor.resetValue).to.not.be.called;
 
-        instance.receiveProps({...commonProps, currentSql: undefined}, {...commonProps, currentSql: 'some sql'});
+        instance.receiveProps({...commonProps, currentSql: null}, {...commonProps, currentSql: 'some sql'});
         expect(instance.refs.editor.resetValue).to.be.called;
       });
 
@@ -136,7 +136,7 @@ describe('SqlEditorController', () => {
         instance.componentDidUpdate(commonProps);
         expect(instance.refs.editor.focus).to.not.be.called;
 
-        wrapper.setProps({currentSql: undefined});
+        wrapper.setProps({currentSql: null});
         instance.componentDidUpdate(commonProps);
         expect(instance.refs.editor.focus).to.be.called;
       });
@@ -152,7 +152,7 @@ describe('SqlEditorController', () => {
           exploreViewState: Immutable.Map({isFailed: true})});
         expect(instance.refs.editor.focus).to.not.be.called;
 
-        wrapper.setProps({currentSql: undefined});
+        wrapper.setProps({currentSql: null});
         instance.componentDidUpdate({...commonProps,
           dataset: newQueryDataset,
           exploreViewState: Immutable.Map({isFailed: true})});

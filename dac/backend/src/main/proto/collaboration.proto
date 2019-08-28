@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,9 @@ message CollaborationTag {
   required string id = 1;
   required string entityId = 2;
   repeated string tags = 3;
-  optional int64 version = 4;
+  optional int64 version = 4 [deprecated = true];
   optional uint64 lastModified = 5;
+  optional string tag = 6;
 }
 
 message CollaborationWiki {

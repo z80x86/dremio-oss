@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.dremio.exec.planner.observer;
 import java.util.concurrent.Executor;
 
 import com.dremio.common.SerializedExecutor;
+import com.dremio.exec.planner.fragment.PlanningSet;
 import com.dremio.exec.work.AttemptId;
 import com.dremio.exec.work.protector.UserResult;
 import com.dremio.proto.model.attempts.AttemptReason;
@@ -51,10 +52,20 @@ public class OutOfBandQueryObserver extends AbstractQueryObserver {
     });
   }
 
-  private final class Exec extends SerializedExecutor {
+  @Override
+  public void planParallelized(PlanningSet planningSet) {
+    serializedExec.execute(new Runnable() {
+      @Override
+      public void run() {
+        observer.planParallelized(planningSet);
+      }
+    });
+  }
+
+  private final class Exec extends SerializedExecutor<Runnable> {
 
     Exec(Executor underlyingExecutor) {
-      super("out-of-band-observer", underlyingExecutor);
+      super("out-of-band-observer", underlyingExecutor, false);
     }
 
     @Override

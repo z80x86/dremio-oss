@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,27 +29,31 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocatorFactory;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.config.LogicalPlanPersistence;
 import com.dremio.common.config.SabotConfig;
+import com.dremio.config.DremioConfig;
 import com.dremio.datastore.KVStoreProvider;
 import com.dremio.datastore.LocalKVStoreProvider;
 import com.dremio.exec.catalog.CatalogServiceImpl;
 import com.dremio.exec.catalog.ConnectionReader;
-import com.dremio.exec.catalog.TestCatalogServiceImpl;
 import com.dremio.exec.catalog.conf.Property;
 import com.dremio.exec.rpc.CloseableThreadPool;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.server.options.SystemOptionManager;
 import com.dremio.exec.store.CatalogService;
+import com.dremio.exec.store.dfs.FileSystemWrapperCreator;
 import com.dremio.exec.store.dfs.InternalFileConf;
 import com.dremio.exec.store.sys.SystemTablePluginConfigProvider;
 import com.dremio.exec.store.sys.store.provider.KVPersistentStoreProvider;
 import com.dremio.service.DirectProvider;
 import com.dremio.service.coordinator.ClusterCoordinator;
 import com.dremio.service.coordinator.local.LocalClusterCoordinator;
+import com.dremio.service.listing.DatasetListingService;
+import com.dremio.service.listing.DatasetListingServiceImpl;
 import com.dremio.service.namespace.NamespaceService;
 import com.dremio.service.namespace.NamespaceServiceImpl;
 import com.dremio.service.namespace.source.proto.SourceConfig;
@@ -58,6 +62,7 @@ import com.dremio.service.scheduler.SchedulerService;
 import com.dremio.services.fabric.FabricServiceImpl;
 import com.dremio.services.fabric.api.FabricService;
 import com.dremio.test.DremioTest;
+import com.dremio.test.TemporarySystemProperties;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 
@@ -72,22 +77,26 @@ public class TestSystemStoragePluginInitializer {
   private static final long MAX_ALLOCATION = Long.MAX_VALUE;
   private static final int TIMEOUT = 0;
 
-  private static TestCatalogServiceImpl.MockUpPlugin mockUpPlugin;
-
   private ConnectionReader reader;
 
   private KVStoreProvider storeProvider;
   private NamespaceService namespaceService;
+  private DatasetListingService datasetListingService;
   private BufferAllocator allocator;
   private LocalClusterCoordinator clusterCoordinator;
   private CloseableThreadPool pool;
   private FabricService fabricService;
   private CatalogService catalogService;
+  private FileSystemWrapperCreator fileSystemWrapperCreator;
 
+  @Rule
+  public TemporarySystemProperties properties = new TemporarySystemProperties();
 
   @Before
   public void setup() throws Exception {
+    properties.set("dremio_masterless", "false");
     final SabotConfig sabotConfig = SabotConfig.create();
+    final DremioConfig dremioConfig = DremioConfig.create();
     final SabotContext sabotContext = mock(SabotContext.class);
 
     storeProvider = new LocalKVStoreProvider(CLASSPATH_SCAN_RESULT, null, true, false);
@@ -99,6 +108,10 @@ public class TestSystemStoragePluginInitializer {
     namespaceService = new NamespaceServiceImpl(storeProvider);
     when(sabotContext.getNamespaceService(anyString()))
       .thenReturn(namespaceService);
+
+    datasetListingService = new DatasetListingServiceImpl(DirectProvider.wrap(userName -> namespaceService));
+    when(sabotContext.getDatasetListing())
+        .thenReturn(datasetListingService);
 
     when(sabotContext.getClasspathScan())
       .thenReturn(CLASSPATH_SCAN_RESULT);
@@ -116,6 +129,8 @@ public class TestSystemStoragePluginInitializer {
       .thenReturn(storeProvider);
     when(sabotContext.getConfig())
       .thenReturn(DremioTest.DEFAULT_SABOT_CONFIG);
+    when(sabotContext.getDremioConfig())
+      .thenReturn(dremioConfig);
 
     allocator = RootAllocatorFactory.newRoot(sabotConfig);
     when(sabotContext.getAllocator())
@@ -133,6 +148,12 @@ public class TestSystemStoragePluginInitializer {
 
     when(sabotContext.getRoles())
       .thenReturn(Sets.newHashSet(ClusterCoordinator.Role.MASTER, ClusterCoordinator.Role.COORDINATOR));
+    when(sabotContext.isCoordinator())
+      .thenReturn(true);
+
+    fileSystemWrapperCreator = FileSystemWrapperCreator.DEFAULT_INSTANCE;
+    when(sabotContext.getFileSystemWrapperCreator())
+      .thenReturn(fileSystemWrapperCreator);
 
     pool = new CloseableThreadPool("catalog-test");
     fabricService = new FabricServiceImpl(HOSTNAME, 45678, true, THREAD_COUNT, allocator, RESERVATION,
@@ -199,7 +220,7 @@ public class TestSystemStoragePluginInitializer {
     assertEquals("file:///", decryptedUpdatedConfig.getConnection());
     assertNotEquals(decryptedConf.isInternal, decryptedUpdatedConfig.isInternal);
     assertEquals(decryptedConf.path, decryptedUpdatedConfig.path);
-    assertEquals(config.getVersion().longValue()+1, updatedConfig.getVersion().longValue());
+    assertNotEquals(config.getTag(), updatedConfig.getTag());
 
     SourceConfig updatedC2 = new SourceConfig();
     InternalFileConf updatedCConf2 = new InternalFileConf();
@@ -217,7 +238,7 @@ public class TestSystemStoragePluginInitializer {
     InternalFileConf decryptedConf2 = (InternalFileConf) reader.getConnectionConf(updatedConfig2);
     assertTrue(decryptedConf2.getProperties().isEmpty());
 
-    assertEquals(updatedConfig.getVersion().longValue(), updatedConfig2.getVersion().longValue());
+    assertEquals(updatedConfig.getTag(), updatedConfig2.getTag());
 
 
     catalog.deleteSource("mytest");

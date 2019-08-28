@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 import { shallow } from 'enzyme';
 import Immutable from 'immutable';
 
-import SelectWithPopover from 'components/Fields/SelectWithPopover';
+import Select from '@app/components/Fields/Select';
 import JoinColumnMenu from 'pages/ExplorePage/components/JoinTypes/components/JoinColumnMenu';
 import JoinDragArea from 'pages/ExplorePage/components/JoinTypes/components/JoinDragArea';
 
@@ -141,9 +141,9 @@ describe('InnerJoin', () => {
     expect(instance.items).to.eql(items);
   });
 
-  it('should renders inner-join, SelectWithPopover, JoinColumnMenu', () => {
+  it('should renders inner-join, Select, JoinColumnMenu', () => {
     expect(wrapper.find('.inner-join')).to.have.length(1);
-    expect(wrapper.find(SelectWithPopover)).to.have.length(1);
+    expect(wrapper.find(Select)).to.have.length(1);
     expect(wrapper.find(JoinColumnMenu)).to.have.length(2);
   });
 

@@ -1,5 +1,8 @@
+import { ENTITY_TYPES } from '@app/constants/Constants';
+import { manageSourceRule, manageSpaceRule } from '@app/utils/authUtils';
+
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +23,12 @@ export default function(input) {
       const { entity } = this.props;
       const buttons = [];
 
-      if (entity.get('entityType') === 'space') {
+      if (entity.get('entityType') === ENTITY_TYPES.space) {
         buttons.push({
           qa: 'settings',
           iconType: 'Settings',
-          to: {...location, state: {modal: 'SpaceModal', entityId: entity.get('id')}}
+          to: {...location, state: {modal: 'SpaceModal', entityId: entity.get('id')}},
+          authRule: manageSpaceRule
         });
       }
 
@@ -53,7 +57,8 @@ export default function(input) {
               modal: 'EditSourceModal',
               query: { name: entity.get('name'), type: entity.get('type') }
             }
-          }
+          },
+          authRule: manageSourceRule
         });
       }
 

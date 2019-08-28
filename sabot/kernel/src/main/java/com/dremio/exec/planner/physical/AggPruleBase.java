@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,23 @@ public abstract class AggPruleBase extends Prule {
 
   protected AggPruleBase(RelOptRuleOperand operand, String description) {
     super(operand, description);
+  }
+
+  protected List<DistributionField> getInputDistributionField(AggregateRel rel, boolean allFields) {
+    List<DistributionField> groupByFields = Lists.newArrayList();
+
+    for (int i : rel.getGroupSet()) {
+      DistributionField field = new DistributionField(i);
+      groupByFields.add(field);
+      if (!allFields && groupByFields.size() == 1) {
+        // if we are only interested in 1 grouping field, pick the first one for now..
+        // but once we have num distinct values (NDV) statistics, we should pick the one
+        // with highest NDV.
+        break;
+      }
+    }
+
+    return groupByFields;
   }
 
   protected List<DistributionField> getDistributionField(AggregateRel rel, boolean allFields) {

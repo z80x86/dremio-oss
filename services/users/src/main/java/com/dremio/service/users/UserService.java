@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ public interface UserService {
 
   User updateUserName(String oldUserName, String newUserName, User userConfig, String authKey) throws IOException, IllegalArgumentException, UserNotFoundException;
 
-  void deleteUser(String userName, long version) throws UserNotFoundException, IOException;
+  void deleteUser(String userName, String version) throws UserNotFoundException, IOException;
 
   void authenticate(String userName, String password) throws UserLoginException;
 
@@ -47,5 +47,17 @@ public interface UserService {
 
   boolean hasAnyUser() throws IOException;
 
+  /**
+   * Performs case SENSITIVE search for the users.
+   *
+   * Search looking through full name, first name, last name and email fields and returns any record that has
+   * {@code searchTerm} as substring.
+   * @param searchTerm - a string to search
+   * @param sortColumn - sort column
+   * @param order - sort order
+   * @param limit - number of records to return
+   * @return a collection of users that not exceeds {@code limit} number
+   * @throws IOException
+   */
   Iterable<? extends User> searchUsers(final String searchTerm, String sortColumn, SortOrder order, Integer limit) throws IOException;
 }

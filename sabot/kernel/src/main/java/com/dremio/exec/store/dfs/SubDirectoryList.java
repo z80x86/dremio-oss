@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  */
 package com.dremio.exec.store.dfs;
 
+import java.util.Iterator;
+import java.util.List;
+
 import org.apache.hadoop.fs.FileStatus;
 
 import com.dremio.exec.store.PartitionExplorer;
-
-import java.util.Iterator;
-import java.util.List;
 
 public class SubDirectoryList implements Iterable<String>{
   final List<FileStatus> fileStatuses;

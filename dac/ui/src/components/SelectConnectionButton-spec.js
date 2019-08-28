@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ describe('SelectConnectionButton', () => {
 
   it('should render label and icon', () => {
     expect(wrapper.text()).to.contain(commonProps.label);
-    expect(wrapper.find('Art').props().src).to.equal(`${commonProps.iconType}.svg`);
+    expect(wrapper.find('SourceIcon').props().src).to.equal(`${commonProps.iconType}.svg`);
   });
 
   it('should render pillText if set', () => {

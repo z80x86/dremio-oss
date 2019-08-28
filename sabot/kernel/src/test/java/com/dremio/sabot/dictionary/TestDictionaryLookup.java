@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -122,7 +122,7 @@ public class TestDictionaryLookup extends BaseTestOperator {
 
       BaseTestOperator.testContext.setRegistry(registry);
 
-      DictionaryLookupPOP lookup = new DictionaryLookupPOP(null, null, dictionaryFieldInfoMap);
+      DictionaryLookupPOP lookup = new DictionaryLookupPOP(null, PROPS, null, dictionaryFieldInfoMap);
       Table input = t(
         th("c0", "c1", "c2"),
         tr(0, 1, 2),

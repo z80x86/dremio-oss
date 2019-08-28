@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,5 +116,17 @@ public class TestHyperLogLog extends PlanTestBase {
     } finally {
       testNoResult("set planner.slice_target = " + ExecConstants.SLICE_TARGET_DEFAULT);
     }
+  }
+
+  @Test
+  public void testNdvDecimal() throws Exception {
+    // Uses the actual decimal hll function. Gets a better estimate. Actual number of values is 1000
+    String sql = "SELECT ndv(expr$0) from cp.\"parquet/decimals.parquet\"";
+    testBuilder()
+      .sqlQuery(sql)
+      .ordered()
+      .baselineColumns("EXPR$0")
+      .baselineValues(1004l)
+      .go();
   }
 }

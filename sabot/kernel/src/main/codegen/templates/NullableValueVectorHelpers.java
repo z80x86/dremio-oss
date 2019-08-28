@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -177,6 +177,23 @@ public final class ${className} extends BaseValueVectorHelper {
     loadDataBuffer(valuesField, buffer.slice(bitsLength, valuesLength));
     </#if>
     vector.valueCount = metadata.getValueCount();
+  }
+
+  public void loadFromValidityAndDataBuffers(SerializedField metadata, ArrowBuf dataBuffer, ArrowBuf validityBuffer) {
+    <#if type.major == "VarLen" >
+    throw new UnsupportedOperationException("this loader is not supported for variable width vectors");
+    <#else>
+    /* clear the current buffers (if any) */
+    vector.clear();
+      /* get the metadata children */
+    final SerializedField bitsField = metadata.getChild(0);
+    final SerializedField valuesField = metadata.getChild(1);
+    /* load inner validity buffer */
+    loadValidityBuffer(bitsField, validityBuffer);
+    /* load inner value buffer */
+    loadDataBuffer(valuesField, dataBuffer);
+    vector.valueCount = metadata.getValueCount();
+    </#if>
   }
 
   private void loadValidityBuffer(SerializedField metadata, ArrowBuf buffer) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,33 +19,31 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.common.expression.SchemaPath;
-import com.dremio.exec.expr.fn.FunctionLookupContext;
 import com.dremio.exec.physical.base.AbstractBase;
 import com.dremio.exec.physical.base.GroupScan;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.PhysicalVisitor;
 import com.dremio.exec.physical.base.SubScan;
-import com.dremio.exec.proto.beans.CoreOperatorType;
+import com.dremio.exec.proto.UserBitShared.CoreOperatorType;
 import com.dremio.exec.record.BatchSchema;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
 public class EmptyValues extends AbstractBase implements SubScan {
-
-  @SuppressWarnings("unused")
-  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(EmptyValues.class);
 
   private final BatchSchema schema;
 
   @JsonCreator
   public EmptyValues(
-      @JsonProperty("schema") BatchSchema schema){
-    this.schema = Preconditions.checkNotNull(schema);
+      @JsonProperty("props") OpProps props,
+      @JsonProperty("fullSchema") BatchSchema schema
+      ) {
+    super(props);
+    this.schema = schema;
   }
 
   @Override
@@ -54,9 +52,9 @@ public class EmptyValues extends AbstractBase implements SubScan {
   }
 
   @Override
-  public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) throws ExecutionSetupException {
+  public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) {
     assert children.isEmpty();
-    return new EmptyValues(schema);
+    return new EmptyValues(props, schema);
   }
 
   @Override
@@ -80,12 +78,7 @@ public class EmptyValues extends AbstractBase implements SubScan {
     return false;
   }
 
-  @Override
-  protected BatchSchema constructSchema(FunctionLookupContext context) {
-    return schema;
-  }
-
-  public BatchSchema getSchema(){
+  public BatchSchema getFullSchema(){
     return schema;
   }
 

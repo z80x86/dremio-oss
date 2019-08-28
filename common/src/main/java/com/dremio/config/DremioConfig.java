@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,8 +58,7 @@ public class DremioConfig extends NestedConfig {
   public static final String EMBEDDED_MASTER_ZK_ENABLED_PORT_INT = "services.coordinator.master.embedded-zookeeper.port";
   public static final String EMBEDDED_MASTER_ZK_ENABLED_PATH_STRING = "services.coordinator.master.embedded-zookeeper.path";
   public static final String WEB_ENABLED_BOOL = "services.coordinator.web.enabled";
-  public static final String WEB_AUTH_TYPE = "services.coordinator.web.auth.type"; // Possible values are "internal", "ldap"
-  public static final String WEB_AUTH_LDAP_CONFIG_FILE = "services.coordinator.web.auth.ldap_config";
+  public static final String WEB_AUTH_TYPE = "services.coordinator.web.auth.type";
   public static final String WEB_PORT_INT = "services.coordinator.web.port";
   public static final String WEB_TOKEN_CACHE_SIZE = "services.coordinator.web.tokens.cache.size";
   public static final String SCHEDULER_SERVICE_THREAD_COUNT = "services.coordinator.scheduler.threads";
@@ -91,7 +90,6 @@ public class DremioConfig extends NestedConfig {
   public static final String ZOOKEEPER_QUORUM = "zookeeper";
   public static final String ZK_CLIENT_SESSION_TIMEOUT = "zk.client.session.timeout";
 
-
   // Provisioning options
   public static final String YARN_JVM_OPTIONS = "provisioning.yarn.jvmoptions";
   public static final String YARN_CLASSPATH = "provisioning.yarn.classpath";
@@ -116,6 +114,14 @@ public class DremioConfig extends NestedConfig {
   public static final String DEBUG_ALLOW_NEWER_KVSTORE = "debug.allowNewerKVStore";
   public static final String DEBUG_DISABLE_MASTER_ELECTION_SERVICE_BOOL = "debug.master.election.disabled";
 
+  public static final String DEBUG_DIST_ASYNC_ENABLED = "debug.dist.async.enabled";
+  public static final String DEBUG_UPLOADS_ASYNC_ENABLED = "debug.uploads.async.enabled";
+  public static final String DEBUG_SUPPORT_ASYNC_ENABLED = "debug.support.async.enabled";
+  public static final String DEBUG_JOBS_ASYNC_ENABLED = "debug.results.async.enabled";
+  public static final String DEBUG_SCRATCH_ASYNC_ENABLED = "debug.scratch.async.enabled";
+  public static final String DEBUG_DOWNLOAD_ASYNC_ENABLED = "debug.download.async.enabled";
+  public static final String DEBUG_LOGS_ASYNC_ENABLED = "debug.logs.async.enabled";
+
   public static final String FABRIC_MEMORY_RESERVATION = "services.fabric.memory.reservation";
 
   public static final String SSL_ENABLED = "enabled";
@@ -132,10 +138,26 @@ public class DremioConfig extends NestedConfig {
   // web SSL configuration
   public static final String WEB_SSL_PREFIX = "services.coordinator.web.ssl.";
 
+  // datastore
+  public static final String DATASTORE_TYPE = "services.datastore.type";
+  public static final String DATASTORE_CONFIG = "services.datastore.config";
+
+  // liveness
+  public static final String LIVENESS_ENABLED = "services.web-admin.enabled";
+  public static final String LIVENESS_PORT = "services.web-admin.port";
+
+  // yarn watchdog
+  public static final String POLL_TIMEOUT_MS = "provisioning.yarn.watchdog.poll.timeout";
+  public static final String POLL_INTERVAL_MS = "provisioning.yarn.watchdog.poll.interval";
+  public static final String MISSED_POLLS_BEFORE_KILL = "provisioning.yarn.watchdog.missed.polls.before.kill";
+  public static final String MAX_KILL_ATTEMPTS = "provisioning.yarn.watchdog.max.kill.attempts";
+  public static final String KILL_REATTEMPT_INTERVAL_MS = "provisioning.yarn.watchdog.kill.reattempt.interval";
+
   private final Config unresolved;
   private final Config reference;
   private final SabotConfig sabot;
   private final String thisNode;
+  private final boolean isMasterlessEnabled;
 
   /**
    * We maintain both the reference and the unresolved data so any withValue layering can be done against unresolved values.
@@ -148,6 +170,7 @@ public class DremioConfig extends NestedConfig {
     this.reference = reference;
     this.sabot = sabot;
     this.thisNode = thisNode;
+    this.isMasterlessEnabled = Boolean.getBoolean("dremio_masterless");
     check();
   }
 
@@ -203,6 +226,10 @@ public class DremioConfig extends NestedConfig {
 
   public SabotConfig getSabotConfig(){
     return sabot;
+  }
+
+  public boolean isMasterlessEnabled() {
+    return isMasterlessEnabled;
   }
 
   private static Config inverseMerge(Config userConfig, Config fallback){

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,6 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.util.Arrays;
 
-import com.dremio.exec.planner.types.JavaTypeFactoryImpl;
-import com.dremio.exec.planner.types.RelDataTypeSystemImpl;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.type.RelDataType;
@@ -41,6 +39,8 @@ import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import com.dremio.exec.planner.types.JavaTypeFactoryImpl;
+import com.dremio.exec.planner.types.RelDataTypeSystemImpl;
 import com.google.common.collect.ImmutableList;
 
 /**

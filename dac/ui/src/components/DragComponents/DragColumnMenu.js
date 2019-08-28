@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ export default class DragColumnMenu extends Component {
           onChange={this.onFilterChange}
           className={search}
         />
-        <div style={{flexGrow: 1}}>
+        <div style={{flexGrow: 1, overflow: 'hidden'}}>
           <AutoSizer>
             {({ height, width }) => (
               <List

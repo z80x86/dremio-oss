@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,9 @@ export default class ValueListConfig extends FormElementConfig {
   constructor(props) {
     super(props);
     this._renderer = ValueListWrapper;
+    // adding brackets to the name, so the wrapper will get field prop as an array
+    this._config.propertyName = FormUtils.addTrailingBrackets(this._config.propertyName);
+    this._config.propName = FormUtils.addTrailingBrackets(this._config.propName);
   }
 
   getRenderer() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
-import javax.annotation.Nullable;
-
 import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -43,7 +41,6 @@ import com.dremio.exec.store.dfs.FileSystemWrapper;
 import com.dremio.options.OptionManager;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.op.scan.OutputMutator;
-import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.univocity.parsers.common.TextParsingException;
@@ -53,9 +50,9 @@ import io.netty.buffer.ArrowBuf;
 
 // New text reader, complies with the RFC 4180 standard for text/csv files
 public class CompliantTextRecordReader extends AbstractRecordReader {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(CompliantTextRecordReader.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(CompliantTextRecordReader.class);
 
-  static final int READ_BUFFER = 1024 * 1024;
+  private static final int READ_BUFFER = 1024 * 1024;
   private static final int WHITE_SPACE_BUFFER = 64 * 1024;
 
   // settings to be used while parsing
@@ -81,12 +78,7 @@ public class CompliantTextRecordReader extends AbstractRecordReader {
   @Override
   public boolean isStarQuery() {
     if (settings.isUseRepeatedVarChar()) {
-      return super.isStarQuery() || Iterables.tryFind(getColumns(), new Predicate<SchemaPath>() {
-        @Override
-        public boolean apply(@Nullable SchemaPath path) {
-          return path.equals(RepeatedVarCharOutput.COLUMNS);
-        }
-      }).isPresent();
+      return super.isStarQuery() || Iterables.tryFind(getColumns(), path -> path.equals(RepeatedVarCharOutput.COLUMNS)).isPresent();
     }
     return super.isStarQuery();
   }
@@ -103,9 +95,7 @@ public class CompliantTextRecordReader extends AbstractRecordReader {
   public void setup(OutputMutator outputMutator) throws ExecutionSetupException {
     // setup Output, Input, and Reader
     try {
-      TextOutput output = null;
-      TextInput input = null;
-      InputStream stream = null;
+      final TextOutput output;
 
       if (isSkipQuery()) {
         if (settings.isHeaderExtractionEnabled()) {
@@ -114,20 +104,20 @@ public class CompliantTextRecordReader extends AbstractRecordReader {
         // When no columns are projected try to make the parser do less work by turning off options that have extra cost
         settings.setIgnoreLeadingWhitespaces(false);
         settings.setIgnoreTrailingWhitespaces(false);
-        settings.setParseUnescapedQuotes(false);
-        output = new TextCountOutput(outputMutator);
+        output = new TextCountOutput();
       } else {
+        final int sizeLimit = Math.toIntExact(this.context.getOptions().getOption(ExecConstants.LIMIT_FIELD_SIZE_BYTES));
         // setup Output using OutputMutator
         if (settings.isHeaderExtractionEnabled()) {
           //extract header and use that to setup a set of VarCharVectors
           String[] fieldNames = extractHeader();
-          output = new FieldVarCharOutput(outputMutator, fieldNames, getColumns(), isStarQuery());
+          output = new FieldVarCharOutput(outputMutator, fieldNames, getColumns(), isStarQuery(), sizeLimit);
         } else if (settings.isAutoGenerateColumnNames()) {
           String[] fieldNames = generateColumnNames();
-          output = new FieldVarCharOutput(outputMutator, fieldNames, getColumns(), isStarQuery());
+          output = new FieldVarCharOutput(outputMutator, fieldNames, getColumns(), isStarQuery(), sizeLimit);
         } else {
           //simply use RepeatedVarCharVector
-          output = new RepeatedVarCharOutput(outputMutator, getColumns(), isStarQuery());
+          output = new RepeatedVarCharOutput(outputMutator, getColumns(), isStarQuery(), sizeLimit);
         }
       }
 
@@ -135,8 +125,8 @@ public class CompliantTextRecordReader extends AbstractRecordReader {
       whitespaceBuffer = this.context.getAllocator().buffer(WHITE_SPACE_BUFFER);
 
       // setup Input using InputStream
-      stream = dfs.openPossiblyCompressedStream(split.getPath());
-      input = new TextInput(settings, stream, readBuffer, split.getStart(), split.getStart() + split.getLength());
+      InputStream stream = dfs.openPossiblyCompressedStream(split.getPath());
+      TextInput input = new TextInput(settings, stream, readBuffer, split.getStart(), split.getStart() + split.getLength());
 
       // setup Reader using Input and Output
       reader = new TextReader(settings, input, output, whitespaceBuffer);
@@ -156,49 +146,45 @@ public class CompliantTextRecordReader extends AbstractRecordReader {
   private String[] readFirstLineForColumnNames() throws ExecutionSetupException, SchemaChangeException, IOException {
     // setup Output using OutputMutator
     // we should use a separate output mutator to avoid reshaping query output with header data
-    HeaderOutputMutator hOutputMutator = new HeaderOutputMutator();
-    TextOutput hOutput = new RepeatedVarCharOutput(hOutputMutator, getColumns(), true);
-    this.allocate(hOutputMutator.fieldVectorMap);
+    try (HeaderOutputMutator hOutputMutator = new HeaderOutputMutator();
+         ArrowBuf readBufferInReader = this.context.getAllocator().buffer(READ_BUFFER);
+         ArrowBuf whitespaceBufferInReader = this.context.getAllocator().buffer(WHITE_SPACE_BUFFER)) {
+      final int sizeLimit = Math.toIntExact(this.context.getOptions().getOption(ExecConstants.LIMIT_FIELD_SIZE_BYTES));
+      final RepeatedVarCharOutput hOutput = new RepeatedVarCharOutput(hOutputMutator, getColumns(), true, sizeLimit);
+      this.allocate(hOutputMutator.fieldVectorMap);
 
-    // setup Input using InputStream
-    // we should read file header irrespective of split given given to this reader
-    InputStream hStream = dfs.openPossiblyCompressedStream(split.getPath());
-    // create read buffer for input
-    ArrowBuf readBufferInReader = this.context.getAllocator().buffer(READ_BUFFER);
-    TextInput hInput = new TextInput(settings, hStream, readBufferInReader, 0, Math.min(READ_BUFFER, split.getLength()));
+      // setup Input using InputStream
+      // we should read file header irrespective of split given given to this reader
+      InputStream hStream = dfs.openPossiblyCompressedStream(split.getPath());
+      TextInput hInput = new TextInput(settings, hStream, readBufferInReader, 0, Math.min(READ_BUFFER, split.getLength()));
+      // setup Reader using Input and Output
+      this.reader = new TextReader(settings, hInput, hOutput, whitespaceBufferInReader);
+      reader.start();
 
-    // create work buffer for reader
-    ArrowBuf whitespaceBufferInReader = this.context.getAllocator().buffer(WHITE_SPACE_BUFFER);
-    // setup Reader using Input and Output
-    this.reader = new TextReader(settings, hInput, hOutput, whitespaceBufferInReader);
-    reader.start();
+      String[] fieldNames;
+      try {
+        // extract first non-empty row
+        do {
+          boolean isAnyData = reader.parseNext();
+          if (!isAnyData) {
+            // end of file most likely
+            throw new IOException(StreamFinishedPseudoException.INSTANCE);
+          }
 
-    String[] fieldNames;
-    try {
-      // extract first non-empty row
-      do {
-        boolean isAnyData = reader.parseNext();
-        if (!isAnyData) {
-          // end of file most likely
-          throw new IOException(StreamFinishedPseudoException.INSTANCE);
+          // grab the field names from output
+          fieldNames = hOutput.getTextOutput();
+        } while (fieldNames == null);
+
+        if (settings.isTrimHeader()) {
+          for (int i = 0; i < fieldNames.length; i++) {
+            fieldNames[i] = fieldNames[i].trim();
+          }
         }
-
-        // grab the field names from output
-        fieldNames = ((RepeatedVarCharOutput) hOutput).getTextOutput();
-      } while (fieldNames == null);
-
-      if (settings.isTrimHeader()) {
-        for (int i = 0; i < fieldNames.length; i++) {
-          fieldNames[i] = fieldNames[i].trim();
-        }
+        return fieldNames;
+      } finally {
+        // cleanup and set to skip the first line next time we read input
+        reader.close();
       }
-      return fieldNames;
-    } finally {
-      // cleanup and set to skip the first line next time we read input
-      reader.close();
-      hOutputMutator.close();
-      readBufferInReader.close();
-      whitespaceBufferInReader.close();
     }
   }
 
@@ -219,7 +205,7 @@ public class CompliantTextRecordReader extends AbstractRecordReader {
     return validateColumnNames(fieldNames);
   }
 
-  public static String[] validateColumnNames(String fieldNames[]) {
+  public static String[] validateColumnNames(String[] fieldNames) {
     final Map<String, Integer> uniqueFieldNames = Maps.newHashMap();
     if (fieldNames != null) {
       for (int i = 0; i < fieldNames.length; ++i) {
@@ -331,7 +317,7 @@ public class CompliantTextRecordReader extends AbstractRecordReader {
    * OutputMutator to avoid reshaping query output.
    * This class provides OutputMutator for header extraction.
    */
-  private class HeaderOutputMutator implements OutputMutator {
+  private class HeaderOutputMutator implements OutputMutator, AutoCloseable {
     private final Map<String, ValueVector> fieldVectorMap = Maps.newHashMap();
 
     @Override
@@ -385,6 +371,7 @@ public class CompliantTextRecordReader extends AbstractRecordReader {
      * the mutator might not get cleaned up elsewhere. TextRecordReader will call
      * this method to clear any allocations
      */
+    @Override
     public void close() {
       for (final ValueVector v : fieldVectorMap.values()) {
         v.clear();

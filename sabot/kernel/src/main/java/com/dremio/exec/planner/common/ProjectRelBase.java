@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,10 @@ import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptCost;
 import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.metadata.RelMdCollation;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
@@ -64,7 +66,7 @@ public abstract class ProjectRelBase extends Project {
                                 RelNode child,
                                 List<? extends RexNode> exps,
                                 RelDataType rowType) {
-    super(cluster, traits, child, exps, rowType, Flags.BOXED);
+    super(cluster, traits, child, exps, rowType);
     assert getConvention() == convention;
     this.simpleFieldCount = getSimpleFieldCount();
     this.nonSimpleFieldCount = this.getRowType().getFieldCount() - simpleFieldCount;
@@ -79,6 +81,14 @@ public abstract class ProjectRelBase extends Project {
       i++;
     }
     this.hasContains = foundContains;
+  }
+
+  protected static RelTraitSet adjustTraits(RelOptCluster cluster, RelNode input, List<? extends RexNode> exps, RelTraitSet traits) {
+    final RelMetadataQuery mq = cluster.getMetadataQuery();
+    return traits.replaceIfs(
+        RelCollationTraitDef.INSTANCE,
+        () -> RelMdCollation.project(mq, input, exps)
+    );
   }
 
   public boolean hasComplexFields() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,12 +28,13 @@
  */
 package io.airlift.tpch;
 
-import com.google.common.base.Charsets;
-import io.airlift.tpch.GenerationDefinition.TpchTable;
-
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.VarCharVector;
+
+import com.google.common.base.Charsets;
+
+import io.airlift.tpch.GenerationDefinition.TpchTable;
 
 public class NationGenerator extends TpchGenerator {
   private static final int COMMENT_AVERAGE_LENGTH = 72;

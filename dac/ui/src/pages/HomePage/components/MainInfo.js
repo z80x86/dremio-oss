@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ import FontIcon from 'components/Icon/FontIcon';
 import { ENTITY_TYPES } from 'constants/Constants';
 import localStorageUtils from '@app/utils/storageUtils/localStorageUtils';
 import Art from '@app/components/Art';
-import { WikiButton } from '@app/pages/HomePage/components/WikiButton';
 import { TagsAlert } from '@app/pages/HomePage/components/TagsAlert';
 
 import { tableStyles } from '../tableStyles';
@@ -130,14 +129,15 @@ export class MainInfoView extends Component {
     } else if (isFileSystemFolder) {
       return ([
         this.renderConvertButton(folder, {
-          icon: <FontIcon type='FolderConvert'/>,
+          icon: <FontIcon type='FolderConvert' tooltip={la('Format Folder')}/>,
           to: {
             ...this.context.location, state: {
               modal: 'DatasetSettingsModal',
               tab: 'format',
               entityType: folder.get('entityType'),
               entityId: folder.get('id'),
-              query: {then: 'query'}
+              query: {then: 'query'},
+              isHomePage: true
             }
           }
         })
@@ -154,7 +154,7 @@ export class MainInfoView extends Component {
     // DX-12874 not queryable files should have only promote button
     return ([
       this.renderConvertButton(file, {
-        icon: <FontIcon type='FileConvert'/>,
+        icon: <FontIcon type='FileConvert' tooltip={la('Format File')}/>,
         to: {...this.context.location, state: {
           modal: 'DatasetSettingsModal',
           tab: 'format',
@@ -162,7 +162,8 @@ export class MainInfoView extends Component {
           entityId: file.get('id'),
           queryable: file.get('queryable'),
           fullPath: file.get('filePath'),
-          query: {then: 'query'}
+          query: {then: 'query'},
+          isHomePage: true
         }}
       })
     ]);
@@ -175,7 +176,10 @@ export class MainInfoView extends Component {
       // select buttons to be shown
       .filter(btn => btn.isShown)
       // return rendered link buttons
-      .map((btnType, index) => <Link to={btnType.link}  key={item.get('id') + index} className='main-settings-btn min-btn'>
+      .map((btnType, index) => <Link to={btnType.link}  key={item.get('id') + index} className='main-settings-btn min-btn'
+        style={{
+          marginRight: 5 // all buttons should have 5px margin. Last settings button should not have any margin
+        }}>
         <button className='settings-button' data-qa={btnType.type}>
           {btnType.label}
         </button>
@@ -235,13 +239,20 @@ export class MainInfoView extends Component {
         label: intl.formatMessage({id: 'Common.Name'}),
         infoContent: <TagsAlert />,
         flexGrow: 1 },
-      { key: 'jobs', label: intl.formatMessage({id: 'Job.Jobs'}), style: tableStyles.digitColumn, width: 40 },
+      {
+        key: 'jobs',
+        label: intl.formatMessage({id: 'Job.Jobs'}),
+        style: tableStyles.digitColumn,
+        headerStyle: { justifyContent: 'flex-end' },
+        width: 40
+      },
       {
         key: 'action',
         label: intl.formatMessage({id: 'Common.Action'}),
         style: tableStyles.actionColumn,
         width: 105,
         className: 'row-buttons',
+        headerClassName: 'row-buttons',
         disableSort: true
       }
     ];
@@ -309,12 +320,6 @@ export class MainInfoView extends Component {
       rootEntityType={getRootEntityType(entity.getIn(['links', 'self']))}
       rightTreeVisible={this.props.rightTreeVisible}
       toggleVisibility={this.toggleRightTree}
-      isWikiShown={this.state.isWikiShown}
-      onWiki={this.toggleWikiShow}
-      additionalButton={showWiki && <WikiButton key='wikiButton'
-        isSelected={this.state.isWikiShown}
-        onClick={this.toggleWikiShow}
-      />}
     />;
 
     return (
@@ -325,6 +330,7 @@ export class MainInfoView extends Component {
         columns={this.getTableColumns()}
         rightSidebar={showWiki ? <WikiView item={entity} /> : null}
         rightSidebarExpanded={this.state.isWikiShown}
+        toggleSidebar={this.toggleWikiShow}
         tableData={this.getTableData()}
         viewState={viewState}
       >
@@ -352,7 +358,6 @@ export const styles = {
   },
   button: {
     borderRadius: '2px',
-    marginRight: '6px',
     height: 23,
     width: 68,
     boxShadow: '0 1px 1px #b2bec7',

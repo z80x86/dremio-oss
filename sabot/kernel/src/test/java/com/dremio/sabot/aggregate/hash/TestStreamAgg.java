@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
  */
 package com.dremio.sabot.aggregate.hash;
 
+import static com.dremio.sabot.Fixtures.Table;
+import static com.dremio.sabot.Fixtures.t;
+import static com.dremio.sabot.Fixtures.th;
+import static com.dremio.sabot.Fixtures.tr;
+
 import java.util.Arrays;
 
 import org.junit.Test;
@@ -23,19 +28,21 @@ import com.dremio.exec.physical.config.HashAggregate;
 import com.dremio.sabot.BaseTestOperator;
 import com.dremio.sabot.op.aggregate.hash.HashAggOperator;
 
-import static com.dremio.sabot.Fixtures.*;
 import io.airlift.tpch.GenerationDefinition.TpchTable;
 
 public class TestStreamAgg extends BaseTestOperator {
 
   @Test
   public void oneKeySumCnt() throws Exception {
-    HashAggregate conf = new HashAggregate(null,
+    HashAggregate conf = new HashAggregate(
+        PROPS,
+        null,
         Arrays.asList(n("r_name")),
         Arrays.asList(
             n("sum(r_regionkey)", "sum"),
             n("count(r_regionkey)", "cnt")
             ),
+        false,
         false,
         1f);
 

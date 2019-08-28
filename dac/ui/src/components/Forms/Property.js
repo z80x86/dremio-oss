@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,32 +25,6 @@ import { applyValidators, isRequired } from 'utils/validation';
 import { inputSpacing as inputSpacingCssValue} from '@app/uiTheme/less/variables.less';
 
 const inputSpacing = parseInt(inputSpacingCssValue, 10);
-
-export class PropertyValue extends Component {
-  static propTypes = {
-    field: PropTypes.object,
-    style: PropTypes.object,
-    elementConfig: PropTypes.object,
-    onRemove: PropTypes.func
-  };
-
-  render() {
-    const {elementConfig, onRemove, field} = this.props;
-    const label = elementConfig && elementConfig.label || 'Value';
-    const propertyStyle = {display: 'flex'};
-    const fieldStyle = {flex: 'auto'};
-    const textStyle = {width: '100%'};
-
-    return (
-      <div style={propertyStyle}>
-        <FieldWithError label={label} {...field} style={fieldStyle} errorPlacement='top'>
-          <TextField {...field} style={textStyle}/>
-        </FieldWithError>
-        {onRemove && <RemoveButton onClick={onRemove} style={styles.removeButton}/>}
-      </div>
-    );
-  }
-}
 
 export default class Property extends Component {
   static getFields() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,14 +79,15 @@ describe('DatasetsSearch-spec', () => {
   it('check content', () => {
     const wrapper = shallow(<DatasetsSearch {...commonProps}/>);
     const dataset = wrapper.find('.dataset-wrapper').find('.dataset');
-    const mainSettingsBtn = dataset.at(0).find('.main-settings-btn');
+    const mainSettingsBtn = dataset.at(1).find('.main-settings-btn');
 
     expect(wrapper.find('h3').text()).to.contain('Search Results for "foo"');
     expect(dataset).have.length(2);
+
     expect(dataset.at(0).prop('to'))
-      .equal(commonProps.searchData.get(1).getIn(['links', 'self']));
-    expect(dataset.at(1).prop('to'))
       .equal(commonProps.searchData.get(0).getIn(['links', 'self']));
+    expect(dataset.at(1).prop('to'))
+      .equal(commonProps.searchData.get(1).getIn(['links', 'self']));
     expect(mainSettingsBtn.childAt(0).prop('to'))
       .equal(commonProps.searchData.get(1).getIn(['links', 'edit']));
     expect(mainSettingsBtn.childAt(1).prop('to'))

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import org.apache.curator.x.discovery.details.ServiceCacheListener;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.service.Service;
 import com.dremio.service.coordinator.AbstractServiceSet;
+import com.dremio.service.coordinator.RegistrationHandle;
 import com.google.common.base.Function;
 
 final class ZKServiceSet extends AbstractServiceSet implements Service {
@@ -80,8 +81,7 @@ final class ZKServiceSet extends AbstractServiceSet implements Service {
   }
 
   void unregister(ZKRegistrationHandle handle) {
-    // when SabotNode is unregistered, clean all the listeners registered in CC.
-    clearListeners();
+    //do not remove listeners, as they are global per service
 
     try {
       discovery.unregisterService(handle.getServiceInstance());
@@ -151,10 +151,14 @@ final class ZKServiceSet extends AbstractServiceSet implements Service {
           public NodeEndpoint apply(ServiceInstance<NodeEndpoint> input) {
             return input.getPayload();
           }
-        });    }
+        });
+  }
+
 
   @Override
   public void close() throws Exception {
+    // might be redundant, as serviceCache clears them upon closure
+    clearListeners();
     serviceCache.close();
   }
 }

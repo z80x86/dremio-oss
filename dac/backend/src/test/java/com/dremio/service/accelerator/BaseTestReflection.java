@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package com.dremio.service.accelerator;
 
 import static com.dremio.options.OptionValue.OptionType.SYSTEM;
+import static com.dremio.service.accelerator.proto.SubstitutionState.CHOSEN;
 import static com.dremio.service.reflection.ReflectionOptions.MATERIALIZATION_CACHE_ENABLED;
 import static com.dremio.service.reflection.ReflectionOptions.REFLECTION_DELETION_GRACE_PERIOD;
 import static com.dremio.service.reflection.ReflectionOptions.REFLECTION_MANAGER_REFRESH_DELAY_MILLIS;
@@ -26,11 +27,12 @@ import static java.util.concurrent.TimeUnit.HOURS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
@@ -42,27 +44,30 @@ import org.junit.ClassRule;
 import org.junit.rules.TemporaryFolder;
 
 import com.dremio.dac.explore.model.DatasetPath;
+import com.dremio.dac.explore.model.DatasetUI;
 import com.dremio.dac.model.spaces.SpacePath;
 import com.dremio.dac.server.BaseTestServer;
 import com.dremio.datastore.KVStoreProvider;
+import com.dremio.exec.ExecConstants;
 import com.dremio.exec.catalog.Catalog;
 import com.dremio.exec.planner.PlannerPhase;
-import com.dremio.exec.planner.sql.MaterializationDescriptor;
+import com.dremio.exec.planner.acceleration.MaterializationDescriptor;
 import com.dremio.exec.server.ContextService;
 import com.dremio.exec.server.MaterializationDescriptorProvider;
 import com.dremio.exec.store.CatalogService;
 import com.dremio.exec.store.SchemaConfig;
 import com.dremio.options.OptionValue;
+import com.dremio.service.accelerator.proto.ReflectionRelationship;
 import com.dremio.service.job.proto.QueryType;
-import com.dremio.service.jobs.Job;
 import com.dremio.service.jobs.JobRequest;
+import com.dremio.service.jobs.JobStatusListener;
 import com.dremio.service.jobs.JobsService;
+import com.dremio.service.jobs.JobsServiceUtil;
 import com.dremio.service.jobs.NoOpJobStatusListener;
 import com.dremio.service.jobs.SqlQuery;
 import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.NamespaceService;
-import com.dremio.service.namespace.dataset.DatasetVersion;
 import com.dremio.service.namespace.dataset.proto.AccelerationSettings;
 import com.dremio.service.namespace.dataset.proto.DatasetConfig;
 import com.dremio.service.namespace.dataset.proto.DatasetType;
@@ -70,10 +75,12 @@ import com.dremio.service.namespace.dataset.proto.PhysicalDataset;
 import com.dremio.service.namespace.dataset.proto.RefreshMethod;
 import com.dremio.service.namespace.file.proto.FileConfig;
 import com.dremio.service.namespace.file.proto.FileType;
+import com.dremio.service.namespace.proto.EntityId;
 import com.dremio.service.namespace.space.proto.SpaceConfig;
 import com.dremio.service.reflection.DependencyEntry;
 import com.dremio.service.reflection.DependencyEntry.DatasetDependency;
 import com.dremio.service.reflection.DependencyEntry.ReflectionDependency;
+import com.dremio.service.reflection.ReflectionMonitor;
 import com.dremio.service.reflection.ReflectionOptions;
 import com.dremio.service.reflection.ReflectionService;
 import com.dremio.service.reflection.ReflectionServiceImpl;
@@ -92,6 +99,7 @@ import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import com.google.common.base.Strings;
 import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
 /**
@@ -157,9 +165,11 @@ public class BaseTestReflection extends BaseTestServer {
     return p(MaterializationDescriptorProvider.class).get();
   }
 
-  protected static void requestRefresh(NamespaceKey datasetKey) throws NamespaceException {
+  protected static long requestRefresh(NamespaceKey datasetKey) throws NamespaceException {
+    final long requestTime = System.currentTimeMillis();
     DatasetConfig dataset = getNamespaceService().getDataset(datasetKey);
     getReflectionService().requestRefresh(dataset.getId().getId());
+    return requestTime;
   }
 
   protected static ReflectionMonitor newReflectionMonitor(long delay, long maxWait) {
@@ -174,11 +184,12 @@ public class BaseTestReflection extends BaseTestServer {
 
   protected static DatasetConfig addJson(DatasetPath path) throws Exception {
     final DatasetConfig dataset = new DatasetConfig()
+      .setId(new EntityId(UUID.randomUUID().toString()))
       .setType(DatasetType.PHYSICAL_DATASET_SOURCE_FILE)
       .setFullPathList(path.toPathList())
       .setName(path.getLeaf().getName())
       .setCreatedAt(System.currentTimeMillis())
-      .setVersion(null)
+      .setTag(null)
       .setOwner(DEFAULT_USERNAME)
       .setPhysicalDataset(new PhysicalDataset()
         .setFormatSettings(new FileConfig().setType(FileType.JSON))
@@ -190,23 +201,19 @@ public class BaseTestReflection extends BaseTestServer {
 
   protected void setSystemOption(String optionName, String optionValue) {
     final String query = String.format("ALTER SYSTEM SET \"%s\"=%s", optionName, optionValue);
-    final Job job = getJobsService().submitJob(JobRequest.newBuilder()
-      .setSqlQuery(new SqlQuery(query, DEFAULT_USERNAME))
-      .setQueryType(QueryType.UI_INTERNAL_RUN)
-      .setDatasetPath(DatasetPath.NONE.toNamespaceKey())
-      .setDatasetVersion(DatasetVersion.NONE)
-      .build(), NoOpJobStatusListener.INSTANCE);
-    job.getData().loadIfNecessary();
+    JobsServiceUtil.waitForJobCompletion(
+      getJobsService().submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(new SqlQuery(query, DEFAULT_USERNAME))
+          .setQueryType(QueryType.UI_INTERNAL_RUN)
+          .setDatasetPath(DatasetPath.NONE.toNamespaceKey())
+          .build(), NoOpJobStatusListener.INSTANCE)
+    );
   }
 
   protected String getQueryPlan(final String query) {
     final AtomicReference<String> plan = new AtomicReference<>("");
-    final Job job = getJobsService().submitJob(JobRequest.newBuilder()
-      .setSqlQuery(new SqlQuery(query, DEFAULT_USERNAME))
-      .setQueryType(QueryType.UI_INTERNAL_RUN)
-      .setDatasetPath(DatasetPath.NONE.toNamespaceKey())
-      .setDatasetVersion(DatasetVersion.NONE)
-      .build(), new NoOpJobStatusListener() {
+    final JobStatusListener capturePlanListener = new NoOpJobStatusListener() {
       @Override
       public void planRelTransform(final PlannerPhase phase, final RelNode before, final RelNode after, final long millisTaken) {
         if (!Strings.isNullOrEmpty(plan.get())) {
@@ -217,10 +224,32 @@ public class BaseTestReflection extends BaseTestServer {
           plan.set(RelOptUtil.dumpPlan("", after, SqlExplainFormat.TEXT, SqlExplainLevel.ALL_ATTRIBUTES));
         }
       }
-    });
+    };
 
-    job.getData().loadIfNecessary();
+    JobsServiceUtil.waitForJobCompletion(
+      getJobsService().submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(new SqlQuery(query, DEFAULT_USERNAME))
+          .setQueryType(QueryType.UI_INTERNAL_RUN)
+          .setDatasetPath(DatasetPath.NONE.toNamespaceKey())
+          .build(), capturePlanListener)
+    );
+
     return plan.get();
+  }
+
+  protected static List<ReflectionField> reflectionFields(String ... fields) {
+    ImmutableList.Builder<ReflectionField> builder = new ImmutableList.Builder<>();
+    for (String field : fields) {
+      builder.add(new ReflectionField(field));
+    }
+    return builder.build();
+  }
+
+  protected static List<ReflectionRelationship> getChosen(List<ReflectionRelationship> relationships) {
+    return relationships.stream()
+      .filter((r) -> r.getState() == CHOSEN)
+      .collect(Collectors.toList());
   }
 
   protected Materialization getMaterializationFor(final ReflectionId rId) {
@@ -244,31 +273,23 @@ public class BaseTestReflection extends BaseTestServer {
     assertTrue("materialization not found", m.isPresent());
     return m.get();
   }
-
-  protected DatasetPath createVdsFromQuery(String query, String testSpace) {
-    final String datasetName = "query" + queryNumber.getAndIncrement();
-    final List<String> path = Arrays.asList(testSpace, datasetName);
-    final DatasetPath datasetPath = new DatasetPath(path);
-    createDatasetFromSQLAndSave(datasetPath, query, Collections.<String>emptyList());
-    return datasetPath;
+  protected DatasetUI createVdsFromQuery(String query, String space, String dataset) {
+    final DatasetPath datasetPath = new DatasetPath(ImmutableList.of(space, dataset));
+    return createDatasetFromSQLAndSave(datasetPath, query, Collections.emptyList());
   }
 
-  protected ReflectionId createRawOnVds(DatasetPath datasetPath, String reflectionName, List<String> rawFields) throws Exception {
-    final DatasetConfig dataset = getNamespaceService().getDataset(datasetPath.toNamespaceKey());
+  protected DatasetUI createVdsFromQuery(String query, String testSpace) {
+    final String datasetName = "query" + queryNumber.getAndIncrement();
+    return createVdsFromQuery(query, testSpace, datasetName);
+  }
+
+  protected ReflectionId createRawOnVds(String datasetId, String reflectionName, List<String> rawFields) throws Exception {
     return getReflectionService().create(new ReflectionGoal()
       .setType(ReflectionType.RAW)
-      .setDatasetId(dataset.getId().getId())
+      .setDatasetId(datasetId)
       .setName(reflectionName)
       .setDetails(new ReflectionDetails()
-        .setDisplayFieldList(
-          FluentIterable.from(rawFields)
-            .transform(new Function<String, ReflectionField>() {
-              @Override
-              public ReflectionField apply(String field) {
-                return new ReflectionField(field);
-              }
-            }).toList()
-        )
+        .setDisplayFieldList(rawFields.stream().map(ReflectionField::new).collect(Collectors.toList()))
       )
     );
   }
@@ -279,8 +300,8 @@ public class BaseTestReflection extends BaseTestServer {
   }
 
   protected ReflectionId createRawFromQuery(String query, String testSpace, List<String> rawFields, String reflectionName) throws Exception {
-    final DatasetPath datasetPath = createVdsFromQuery(query, testSpace);
-    return createRawOnVds(datasetPath, reflectionName, rawFields);
+    final DatasetUI datasetUI = createVdsFromQuery(query, testSpace);
+    return createRawOnVds(datasetUI.getId(), reflectionName, rawFields);
   }
 
   protected static void setMaterializationCacheSettings(boolean enabled, long refreshDelayInSeconds) {
@@ -290,9 +311,18 @@ public class BaseTestReflection extends BaseTestServer {
       OptionValue.createLong(SYSTEM, ReflectionOptions.MATERIALIZATION_CACHE_REFRESH_DELAY_MILLIS.getOptionName(), refreshDelayInSeconds*1000));
   }
 
-  protected static void setManagerRefreshDelay(long delayInSeconds) {
+  protected static void setEnableReAttempts(boolean enableReAttempts) {
     l(ContextService.class).get().getOptionManager().setOption(
-      OptionValue.createLong(SYSTEM, REFLECTION_MANAGER_REFRESH_DELAY_MILLIS.getOptionName(), delayInSeconds*1000));
+      OptionValue.createBoolean(SYSTEM, ExecConstants.ENABLE_REATTEMPTS.getOptionName(), enableReAttempts));
+  }
+
+  protected static void setManagerRefreshDelay(long delayInSeconds) {
+    setManagerRefreshDelayMs(delayInSeconds*1000);
+  }
+
+  protected static void setManagerRefreshDelayMs(long delayInMillis) {
+    l(ContextService.class).get().getOptionManager().setOption(
+      OptionValue.createLong(SYSTEM, REFLECTION_MANAGER_REFRESH_DELAY_MILLIS.getOptionName(), delayInMillis));
   }
 
   protected static void setDeletionGracePeriod(long periodInSeconds) {

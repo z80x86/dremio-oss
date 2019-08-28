@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 import { Component } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
-import { getModuleState } from '@app/reducers';
+import { isModuleInitialized } from '@app/reducers';
 import { initModuleState, resetModuleState } from '@app/actions/modulesState';
 
 const mapStateToProps = (state, /* ownProps */ {
   moduleKey
 }) => ({
-  isStateInitialized: !!getModuleState(state, moduleKey)
+  isStateInitialized: isModuleInitialized(state, moduleKey)
 });
 
 const mapDispatchToProps = {
@@ -94,4 +94,14 @@ export class ModuleStateView extends Component {
 
 
 const ModuleStateContainer = connect(mapStateToProps, mapDispatchToProps)(ModuleStateView);
-export const createDynamicStateContainer = (moduleKey, reducer) => props => <ModuleStateContainer moduleKey={moduleKey} reducer={reducer} {...props} />;
+export const moduleStateHOC = (moduleKey, reducer) => ComponentToWrap => {
+  return class ModuleStateHOC extends Component {
+    render() {
+      return (
+        <ModuleStateContainer moduleKey={moduleKey} reducer={reducer}>
+          <ComponentToWrap {...this.props} />
+        </ModuleStateContainer>
+      );
+    }
+  };
+};

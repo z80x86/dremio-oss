@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,6 @@
 package com.dremio.exec.expr.fn;
 
 import com.dremio.common.exceptions.UserException;
-import com.dremio.common.expression.ExpressionStringBuilder;
-import com.dremio.common.expression.LogicalExpression;
-import com.dremio.exec.expr.ValueVectorReadExpression;
-import com.dremio.exec.record.BatchSchema;
-import com.dremio.exec.record.TypedFieldId;
-import com.google.common.collect.ImmutableList;
 
 /**
  * Implementation of the FunctionErrorContext interface

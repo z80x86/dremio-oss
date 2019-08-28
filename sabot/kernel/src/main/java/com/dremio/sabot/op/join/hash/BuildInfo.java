@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package com.dremio.sabot.op.join.hash;
 
 import io.netty.buffer.ArrowBuf;
-import java.util.BitSet;
 
 public class BuildInfo implements AutoCloseable {
   // List of links. Logically it helps maintain a linked list of records with the same key value

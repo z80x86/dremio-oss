@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.dremio.dac.api;
 
+import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -22,14 +23,22 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.Response;
 
+import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.sql.SqlExplainFormat;
+import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.commons.io.FileUtils;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -39,19 +48,37 @@ import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
 
 import com.dremio.common.util.TestTools;
+import com.dremio.common.utils.PathUtils;
+import com.dremio.dac.explore.model.DatasetPath;
 import com.dremio.dac.model.common.Field;
+import com.dremio.dac.model.sources.SourceUI;
 import com.dremio.dac.server.BaseTestServer;
 import com.dremio.dac.service.catalog.CatalogServiceHelper;
 import com.dremio.dac.util.DatasetsUtil;
 import com.dremio.exec.catalog.conf.ConnectionConf;
+import com.dremio.exec.planner.PlannerPhase;
 import com.dremio.exec.store.dfs.NASConf;
+import com.dremio.service.job.proto.QueryType;
+import com.dremio.service.jobs.JobRequest;
+import com.dremio.service.jobs.JobStatusListener;
+import com.dremio.service.jobs.JobsService;
+import com.dremio.service.jobs.JobsServiceUtil;
+import com.dremio.service.jobs.NoOpJobStatusListener;
+import com.dremio.service.jobs.SqlQuery;
 import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.NamespaceKey;
+import com.dremio.service.namespace.NamespaceService;
 import com.dremio.service.namespace.dataset.proto.DatasetConfig;
+import com.dremio.service.namespace.dataset.proto.DatasetType;
+import com.dremio.service.namespace.dataset.proto.PhysicalDataset;
 import com.dremio.service.namespace.file.FileFormat;
+import com.dremio.service.namespace.file.proto.FileConfig;
+import com.dremio.service.namespace.file.proto.FileType;
 import com.dremio.service.namespace.file.proto.JsonFileConfig;
 import com.dremio.service.namespace.file.proto.TextFileConfig;
 import com.dremio.service.namespace.space.proto.SpaceConfig;
+import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableList;
 
 /**
  * Tests for CatalogResource
@@ -75,7 +102,7 @@ public class TestCatalogResource extends BaseTestServer {
     // setup space
     NamespaceKey key = new NamespaceKey("mySpace");
     SpaceConfig space = newNamespaceService().getSpace(key);
-    newNamespaceService().deleteSpace(key, space.getVersion());
+    newNamespaceService().deleteSpace(key, space.getTag());
   }
 
   @Test
@@ -83,7 +110,8 @@ public class TestCatalogResource extends BaseTestServer {
     // home space always exists
     int topLevelCount = newSourceService().getSources().size() + newNamespaceService().getSpaces().size() + 1;
 
-    ResponseList<CatalogItem> items = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildGet(), new GenericType<ResponseList<CatalogItem>>() {});
+    ResponseList<CatalogItem> items = getRootEntities(null);
+
     assertEquals(items.getData().size(), topLevelCount);
 
     int homeCount = 0;
@@ -145,8 +173,8 @@ public class TestCatalogResource extends BaseTestServer {
     assertNull(space.getChildren());
 
     // add a folder
-    Folder newFolder = new Folder(null, Arrays.asList(space.getName(), "myFolder"), null, null);
-    Folder folder = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(newFolder)), new GenericType<Folder>() {});
+    Folder newFolder = getFolderConfig(Arrays.asList(space.getName(), "myFolder"));
+    Folder folder = createFolder(newFolder);
     assertEquals(newFolder.getPath(), folder.getPath());
 
     // make sure folder shows up under space
@@ -164,21 +192,76 @@ public class TestCatalogResource extends BaseTestServer {
     space = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(space.getId())).buildGet(), new GenericType<Space>() {});
     assertEquals(space.getChildren().size(), 0);
 
-    newNamespaceService().deleteSpace(new NamespaceKey(space.getName()), Long.valueOf(space.getTag()));
+    newNamespaceService().deleteSpace(new NamespaceKey(space.getName()), space.getTag());
+  }
+
+  @Test
+  public void testDatasetCount() throws Exception {
+    Space space = createSpace("dataset count test");
+
+    createVDS(Arrays.asList(space.getName(), "vds1"), "select * from sys.version");
+    createVDS(Arrays.asList(space.getName(), "vds2"), "select * from sys.version");
+
+    ResponseList<CatalogItem> items = getRootEntities(null);
+
+    for (CatalogItem item : items.getData()) {
+      assertNull("CatalogItemStats should be empty if datasetCount parameter is not provided", item.getStats());
+    }
+
+    checkSpaceDatasetCount(space.getId(), 2);
+
+    Folder folder = createFolder(Arrays.asList(space.getName(), "test folder"));
+    List<String> vdsPath = new ArrayList<>(folder.getPath());
+    vdsPath.add("vds1");
+
+    createVDS(vdsPath, "select * from sys.version");
+
+    checkSpaceDatasetCount(space.getId(), 3);
+
+    newNamespaceService().deleteSpace(new NamespaceKey(space.getName()), space.getTag());
+  }
+
+  private void checkSpaceDatasetCount(String spaceId, int expectedDatasetCount) {
+    ResponseList<CatalogItem> items = getRootEntities(Arrays.asList(CatalogServiceHelper.DetailType.datasetCount));
+
+    Optional<CatalogItem> space = items.getData().stream()
+      .filter(item -> item.getId().equals(spaceId))
+      .findFirst();
+
+    assertTrue("created space must be returned", space.isPresent());
+    CatalogItemStats stats = space.get().getStats();
+    assertNotNull(stats);
+    assertEquals(expectedDatasetCount, stats.getDatasetCount());
+  }
+
+  private ResponseList<CatalogItem> getRootEntities(final List<CatalogServiceHelper.DetailType> detailsToInclude) {
+    WebTarget api = getPublicAPI(3).path(CATALOG_PATH);
+
+    if (detailsToInclude != null) {
+      for (CatalogServiceHelper.DetailType detail : detailsToInclude) {
+        api = api.queryParam("include", detail.name());
+      }
+    }
+
+    return expectSuccess(getBuilder(api).buildGet(), new GenericType<ResponseList<CatalogItem>>() {});
+  }
+
+  private Space createSpace(final String spaceName) {
+    Space newSpace = new Space(null, spaceName, null, null, null);
+    return expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(newSpace)), new GenericType<Space>() {});
   }
 
   @Test
   public void testVDSInSpace() throws Exception {
     // create a new space
-    Space newSpace = new Space(null, "final frontier", null, null, null);
-    Space space = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(newSpace)), new GenericType<Space>() {});
+    Space space = createSpace("final frontier");
 
     // add a folder
     Folder newFolder = new Folder(null, Arrays.asList(space.getName(), "myFolder"), null, null);
     Folder folder = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(newFolder)), new GenericType<Folder>() {});
 
     // create a VDS in the space
-    Dataset newVDS = createVDS(Arrays.asList(space.getName(), "myFolder", "myVDS"),"select * from sys.version");
+    Dataset newVDS = getVDSConfig(Arrays.asList(space.getName(), "myFolder", "myVDS"),"select * from sys.version");
     Dataset vds = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(newVDS)), new GenericType<Dataset>() {});
 
     // make sure that trying to create the vds again fails
@@ -238,13 +321,82 @@ public class TestCatalogResource extends BaseTestServer {
     folder = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(folder.getId())).buildGet(), new GenericType<Folder>() {});
     assertEquals(0, folder.getChildren().size());
 
-    newNamespaceService().deleteSpace(new NamespaceKey(space.getName()), Long.valueOf(space.getTag()));
+    newNamespaceService().deleteSpace(new NamespaceKey(space.getName()), space.getTag());
+  }
+
+  protected String getQueryPlan(final String query) {
+    final AtomicReference<String> plan = new AtomicReference<>("");
+    final JobStatusListener capturePlanListener = new NoOpJobStatusListener() {
+      @Override
+      public void planRelTransform(final PlannerPhase phase, final RelNode before, final RelNode after, final long millisTaken) {
+        if (!Strings.isNullOrEmpty(plan.get())) {
+          return;
+        }
+
+        if (phase == PlannerPhase.LOGICAL) {
+          plan.set(RelOptUtil.dumpPlan("", after, SqlExplainFormat.TEXT, SqlExplainLevel.ALL_ATTRIBUTES));
+        }
+      }
+    };
+
+    JobsServiceUtil.waitForJobCompletion(
+      p(JobsService.class).get().submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(new SqlQuery(query, ImmutableList.of("@dremio"), DEFAULT_USERNAME))
+          .setQueryType(QueryType.UI_INTERNAL_RUN)
+          .setDatasetPath(DatasetPath.NONE.toNamespaceKey())
+          .build(), capturePlanListener)
+    );
+
+    return plan.get();
+  }
+
+  @Test
+  public void testVDSInSpaceWithSameName() throws Exception {
+    final String sourceName = "src_" + System.currentTimeMillis();
+
+    SourceUI source = new SourceUI();
+    source.setName(sourceName);
+    source.setCtime(1000L);
+
+    TemporaryFolder folder = new TemporaryFolder();
+    folder.create();
+
+    final NASConf config = new NASConf();
+    config.path = folder.getRoot().getAbsolutePath();
+    source.setConfig(config);
+
+    java.io.File srcFolder = folder.getRoot();
+
+    PrintStream file = new PrintStream(new java.io.File(srcFolder.getAbsolutePath(), "myFile.json"));
+    for (int i = 0; i < 10; i++) {
+      file.println("{a:{b:[1,2]}}");
+    }
+    file.close();
+
+    newSourceService().registerSourceWithRuntime(source);
+
+    final DatasetPath path1 = new DatasetPath(ImmutableList.of(sourceName, "myFile.json"));
+    final DatasetConfig dataset1 = new DatasetConfig()
+      .setType(DatasetType.PHYSICAL_DATASET_SOURCE_FOLDER)
+      .setFullPathList(path1.toPathList())
+      .setName(path1.getLeaf().getName())
+      .setCreatedAt(System.currentTimeMillis())
+      .setTag(null)
+      .setOwner(DEFAULT_USERNAME)
+      .setPhysicalDataset(new PhysicalDataset()
+        .setFormatSettings(new FileConfig().setType(FileType.JSON)));
+    p(NamespaceService.class).get().addOrUpdateDataset(path1.toNamespaceKey(), dataset1);
+
+    DatasetPath vdsPath = new DatasetPath(ImmutableList.of("@dremio", "myFile.json"));
+    createDatasetFromSQLAndSave(vdsPath, "SELECT * FROM \"myFile.json\"", asList(sourceName));
+
+    getQueryPlan("select * from \"myFile.json\"");
   }
 
   @Test
   public void testVDSConcurrency() throws Exception {
-    Space newSpace = new Space(null, "concurrency", null, null, null);
-    Space space = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(newSpace)), new GenericType<Space>() {});
+    Space space = createSpace("concurrency");
 
     int max = 5;
 
@@ -265,13 +417,12 @@ public class TestCatalogResource extends BaseTestServer {
       assertEquals(dataset.getVirtualDataset().getSql(), "select " + i);
     }
 
-    newNamespaceService().deleteSpace(new NamespaceKey(space.getName()), Long.valueOf(space.getTag()));
+    newNamespaceService().deleteSpace(new NamespaceKey(space.getName()), space.getTag());
   }
 
   private Thread createVDSInSpace(String name, String spaceName, String sql) {
     return new Thread(() -> {
-      Dataset newVDS = createVDS(Arrays.asList(spaceName, name), sql);
-      expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(newVDS)));
+      createVDS(Arrays.asList(spaceName, name), sql);
     });
   }
 
@@ -321,7 +472,7 @@ public class TestCatalogResource extends BaseTestServer {
     // deleting a folder on a source should fail
     expectStatus(Response.Status.BAD_REQUEST, getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(com.dremio.common.utils.PathUtils.encodeURIComponent(id))).buildDelete());
 
-    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), Long.valueOf(source.getTag()));
+    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), source.getTag());
   }
 
   @Test
@@ -401,7 +552,7 @@ public class TestCatalogResource extends BaseTestServer {
     // dataset should no longer exist
     expectStatus(Response.Status.NOT_FOUND, getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(dataset.getId())).buildGet());
 
-    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), Long.valueOf(source.getTag()));
+    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), source.getTag());
   }
 
   @Test
@@ -619,7 +770,7 @@ public class TestCatalogResource extends BaseTestServer {
     assertEquals(source.getTag(), "1");
     assertFalse(config.isAwesome);
 
-    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), Long.valueOf(source.getTag()));
+    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), source.getTag());
   }
 
   private Source createSource() {
@@ -637,7 +788,7 @@ public class TestCatalogResource extends BaseTestServer {
 
   @Test
   public void testHome() throws Exception {
-    ResponseList<CatalogItem> items = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildGet(), new GenericType<ResponseList<CatalogItem>>() {});
+    ResponseList<CatalogItem> items = getRootEntities(null);
 
     String homeId = null;
 
@@ -669,7 +820,7 @@ public class TestCatalogResource extends BaseTestServer {
     folder = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(folder.getId())).buildGet(), new GenericType<Folder>() {});
 
     // store a VDS in the folder
-    Dataset vds = createVDS(Arrays.asList(home.getName(), "myFolder", "myVDS"), "select * from sys.version");
+    Dataset vds = getVDSConfig(Arrays.asList(home.getName(), "myFolder", "myVDS"), "select * from sys.version");
 
     Dataset newVDS = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(vds)), new GenericType<Dataset>() {});
 
@@ -705,7 +856,55 @@ public class TestCatalogResource extends BaseTestServer {
     // test getting a file with a url character in name (?)
     expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path("by-path").path(createdSource.getName()).path("testfiles").path("file_with_?.json")).buildGet(), new GenericType<File>() {});
 
-    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), Long.valueOf(source.getTag()));
+    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), source.getTag());
+  }
+
+  @Test
+  public void testRepromote() throws Exception {
+    final Source source = createSource();
+
+    // promote a folder that contains several csv files (dac/backend/src/test/resources/datasets/folderdataset)
+    final String folderId = getFolderIdByName(source.getChildren(), "\"datasets\"");
+    assertNotNull(folderId, "Failed to find datasets directory");
+
+    Folder dsFolder = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(com.dremio.common.utils.PathUtils.encodeURIComponent(folderId))).buildGet(), new GenericType<Folder>() {});
+
+    final String folderDatasetId = getFolderIdByName(dsFolder.getChildren(), "\"folderdataset\"");
+    assertNotNull(folderDatasetId, "Failed to find folderdataset directory");
+
+    // we want to use the path that the backend gives us so fetch the full folder
+    Folder folder = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(com.dremio.common.utils.PathUtils.encodeURIComponent(folderDatasetId))).buildGet(), new GenericType<Folder>() {});
+
+    final TextFileConfig textFileConfig = new TextFileConfig();
+    textFileConfig.setLineDelimiter("\n");
+    Dataset dataset = createPDS(folder.getPath(), textFileConfig);
+
+    dataset = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(PathUtils.encodeURIComponent(folderDatasetId))).buildPost(Entity.json(dataset)), new GenericType<Dataset>() {});
+
+    // load the promoted dataset
+    dataset = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(dataset.getId())).buildGet(), new GenericType<Dataset>() {});
+
+    // unpromote the folder
+    expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(dataset.getId())).buildDelete());
+
+    // dataset should no longer exist
+    expectStatus(Response.Status.NOT_FOUND, getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(dataset.getId())).buildGet());
+
+    // re-promote the folder by using by-path
+    WebTarget target = getPublicAPI(3).path(CATALOG_PATH)
+      .path("by-path")
+      .path("catalog-test")
+      .path("datasets")
+      .path("folderdataset");
+
+    folder = expectSuccess(getBuilder(target).buildGet(), new GenericType<Folder>() {});
+    dataset = createPDS(folder.getPath(), textFileConfig);
+    dataset = expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(folder.getId())).buildPost(Entity.json(dataset)), new GenericType<Dataset>() {});
+
+    // unpromote the folder
+    expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH).path(dataset.getId())).buildDelete());
+
+    newNamespaceService().deleteSource(new NamespaceKey(source.getName()), source.getTag());
   }
 
   @Test
@@ -747,7 +946,7 @@ public class TestCatalogResource extends BaseTestServer {
     );
   }
 
-  private Dataset createVDS(List<String> path, String sql) {
+  private Dataset getVDSConfig(List<String> path, String sql) {
     return new Dataset(
       null,
       Dataset.DatasetType.VIRTUAL_DATASET,
@@ -761,5 +960,22 @@ public class TestCatalogResource extends BaseTestServer {
       null,
       null
     );
+  }
+
+  private Dataset createVDS(List<String> path, String sql) {
+    Dataset vds = getVDSConfig(path, sql);
+    return expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(vds)), new GenericType<Dataset>() {});
+  }
+
+  private Folder getFolderConfig(List<String> path) {
+    return new Folder(null, path, null, null);
+  }
+
+  private Folder createFolder(List<String> path) {
+    return createFolder(getFolderConfig(path));
+  }
+
+  private Folder createFolder(Folder folder) {
+    return expectSuccess(getBuilder(getPublicAPI(3).path(CATALOG_PATH)).buildPost(Entity.json(folder)), new GenericType<Folder>() {});
   }
 }

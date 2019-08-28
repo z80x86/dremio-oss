@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,6 @@
  * limitations under the License.
  */
 package com.dremio.exec.physical.impl.join;
-
-import java.util.LinkedList;
-
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.BitVector;
-import org.apache.arrow.vector.types.Types.MinorType;
-
-import com.dremio.common.AutoCloseables;
-import com.dremio.common.types.Types;
-import com.dremio.exec.record.VectorAccessible;
-import com.dremio.sabot.op.sort.external.RecordBatchData;
 
 /**
  * Marks each record that starts a new cluster.

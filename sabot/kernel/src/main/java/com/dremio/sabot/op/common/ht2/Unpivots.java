@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,12 @@
  */
 package com.dremio.sabot.op.common.ht2;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import com.google.common.base.Preconditions;
 import org.apache.arrow.vector.AllocationHelper;
 import org.apache.arrow.vector.FieldVector;
+
 import com.dremio.sabot.op.common.ht2.PivotBuilder.FieldMode;
 import com.dremio.sabot.op.common.ht2.Reallocators.Reallocator;
 import com.google.common.base.Function;
@@ -148,7 +147,7 @@ public class Unpivots {
       final VariableBlockVector variableVector, final int start, final int count){
     final int blockWidth = pivot.getBlockWidth();
     for(FieldVector v : pivot.getOutputVectors()){
-      AllocationHelper.allocate(v, (count - start), 15);
+      AllocationHelper.allocate(v, count, 15);
     }
     final long fixedAddr = fixedVector.getMemoryAddress();
     final long variableAddr = variableVector.getMemoryAddress();

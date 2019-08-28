@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,7 +94,7 @@ public class ElasticFilterRule extends RelOptRule {
 
     Residue newResidue = PredicateAnalyzer.analyzeConjunctions(scan, newFilter.getCondition());
     if (newResidue.none()) {
-      PredicateAnalyzer.analyze(scan, newFilter.getCondition());
+      PredicateAnalyzer.analyze(scan, newFilter.getCondition(), false);
 
       final RexNode residueCondition = residue.getResidue(originalCondition, rexBuilder);
       if (!residueCondition.isAlwaysTrue()) {

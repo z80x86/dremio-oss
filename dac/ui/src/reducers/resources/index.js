@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,12 @@
  */
 import { combineReducers } from 'redux';
 
-import entities from './entities';
-import tree from './tree';
+import entities from 'dyn-load/reducers/resources/entities';
 import view from './view';
 import sourceList from './sourceList';
-import spaceList from './spaceList';
 
 export default combineReducers({
-  tree,
   entities,
   view,
-  sourceList,
-  spaceList
+  sourceList
 });

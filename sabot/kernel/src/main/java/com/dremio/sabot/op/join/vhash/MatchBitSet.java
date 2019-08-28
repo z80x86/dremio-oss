@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,8 @@
 package com.dremio.sabot.op.join.vhash;
 
 import org.apache.arrow.memory.BufferAllocator;
-import org.omg.CORBA.ULongLongSeqHelper;
 
 import com.google.common.base.Preconditions;
-import com.google.common.primitives.UnsignedLong;
-import com.google.common.primitives.UnsignedLongs;
 
 import io.netty.buffer.ArrowBuf;
 import io.netty.util.internal.PlatformDependent;

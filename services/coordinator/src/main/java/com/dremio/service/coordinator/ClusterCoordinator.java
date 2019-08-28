@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.util.Set;
 
 import com.dremio.exec.proto.CoordinationProtos.Roles;
 import com.dremio.service.Service;
-import com.dremio.service.coordinator.ServiceSet.RegistrationHandle;
 
 /**
  * Pluggable interface built to manage cluster coordination. Allows SabotNode or DremioClient to register its capabilities
@@ -119,6 +118,21 @@ public abstract class ClusterCoordinator implements Service {
    */
   public abstract ServiceSet getServiceSet(Role role);
 
+  /**
+   * Get or create a {@link ServiceSet} for the given service name
+   * @param serviceName
+   * @return
+   */
+  public abstract ServiceSet getOrCreateServiceSet(String serviceName);
+
+  /**
+   * Get the set of service names registered in the ClusterCoordinator ServiceSet.
+   * NOTE: There is no guarantee of return object consistency depending on how Dremio is tracking the registered serivces.
+   *
+   * @return An Iterable of service names.
+   */
+  public abstract Iterable<String> getServiceNames() throws Exception;
+
   public abstract DistributedSemaphore getSemaphore(String name, int maximumLeases);
 
   /**
@@ -127,5 +141,5 @@ public abstract class ClusterCoordinator implements Service {
    * @param name the name of the election
    * @return an handle to be closed when leaving the election
    */
-  public abstract RegistrationHandle joinElection(String name, ElectionListener listener);
+  public abstract ElectionRegistrationHandle joinElection(String name, ElectionListener listener);
 }

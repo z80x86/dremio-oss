@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,12 @@ describe('HeaderButtons-spec', () => {
         isAdd: true
       }, 0));
       expect(result.find('Art').first().props().src).to.eql('SimpleAdd.svg');
+    });
+
+    it('should render upload button w/o plus', () => {
+      const buttons = instance.getHomeButtons();
+      const result = shallow(instance.renderButton(buttons[1], 1));
+      expect(result.find('Art').first().props().src).to.not.eql('SimpleAdd.svg');
     });
   });
 });

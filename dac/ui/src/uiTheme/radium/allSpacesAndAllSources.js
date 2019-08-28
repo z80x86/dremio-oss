@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,32 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { PALE_NAVY } from './colors';
-
-export const main = {
-  width: '100%'
-};
 
 export const height = {
   height: '100%'
-};
-
-export const headerRightPadding = 5;
-export const header = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  height: 38,
-  padding: `0 ${headerRightPadding}px 0 10px`,
-  flexShrink: 0,
-  background: PALE_NAVY
 };
 
 export const addButton = {
   marginTop: 0,
   marginRight: 0,
   marginBottom: 0,
-  marginLeft: 'auto'
+  marginLeft: 'auto',
+  display: 'inline-block'
 };
 
 export const listContent = {

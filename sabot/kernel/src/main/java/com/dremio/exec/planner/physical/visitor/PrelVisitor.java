@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.dremio.exec.planner.physical.visitor;
 import com.dremio.exec.planner.physical.ExchangePrel;
 import com.dremio.exec.planner.physical.JoinPrel;
 import com.dremio.exec.planner.physical.LeafPrel;
-import com.dremio.exec.planner.physical.ScanPrelBase;
 import com.dremio.exec.planner.physical.Prel;
 import com.dremio.exec.planner.physical.ProjectPrel;
 import com.dremio.exec.planner.physical.ScreenPrel;

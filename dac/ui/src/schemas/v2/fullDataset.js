@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,3 +29,14 @@ fullDataset.define({
 });
 
 export default fullDataset;
+
+export {
+  // we are in process of refactoring of dataset data loading. We are going to get rid of 'data'
+  // property in fullDataset schema as we are going to load data asynchronously. Also we are going to
+  // bubble 'columns' property from data one level above.
+  // Right now we in intermidiate state. Some endpoints load the
+  // data and some not. So endpoints that does NOT load the data in intital dataset response are
+  // using datasetWithoutData. The old code uses fullDataset schema. So looking on the schema you
+  // could understand was particulsr enpoint refactored to load data asynchronously or not.
+  fullDataset as datasetWithoutData
+};

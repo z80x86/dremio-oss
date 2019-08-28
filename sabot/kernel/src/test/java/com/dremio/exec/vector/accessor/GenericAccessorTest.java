@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,14 @@
  */
 package com.dremio.exec.vector.accessor;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import org.apache.arrow.vector.ValueVector;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -24,15 +32,6 @@ import org.mockito.stubbing.Answer;
 
 import com.dremio.exec.expr.TypeHelper;
 import com.dremio.exec.proto.UserBitShared;
-import com.dremio.exec.vector.accessor.GenericAccessor;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @Ignore("getMetadata method was removed, cannot mock")
 public class GenericAccessorTest {

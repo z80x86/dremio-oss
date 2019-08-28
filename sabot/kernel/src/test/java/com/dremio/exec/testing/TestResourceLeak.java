@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.dremio.exec.testing;
 
+import static com.dremio.exec.store.parquet.ParquetFormatDatasetAccessor.PARQUET_SCHEMA_FALLBACK_DISABLED;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
@@ -23,8 +24,6 @@ import java.util.Properties;
 
 import javax.inject.Inject;
 
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocatorFactory;
 import org.apache.arrow.vector.holders.Float8Holder;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -74,6 +73,7 @@ public class TestResourceLeak extends DremioTest {
   private static final Properties TEST_CONFIGURATIONS = new Properties() {
     {
       put(ExecConstants.HTTP_ENABLE, "false");
+      put(PARQUET_SCHEMA_FALLBACK_DISABLED, "true");
     }
   };
 

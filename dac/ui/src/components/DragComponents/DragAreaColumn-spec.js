@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,8 +54,10 @@ describe('DragAreaColumn', () => {
 
   describe('#selectColumn', () => {
     it('should call field.onChange with column name', () => {
+      const closeDD = sinon.stub();
       const instance = shallow(<DragAreaColumn {...commonProps}/>).instance();
-      instance.selectColumn({columnName: 'col1'});
+      instance.selectColumn({columnName: 'col1'}, closeDD);
+      expect(closeDD).to.be.called;
       expect(commonProps.field.onChange).to.have.been.calledWith('col1');
     });
 

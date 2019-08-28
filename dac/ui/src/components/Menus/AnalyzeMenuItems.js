@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,9 +31,9 @@ export default class AnalyzeMenuItems extends Component {
   render() {
     return (
       <div>
-        <MenuItem onTouchTap={this.props.openTableau}><FormattedMessage id='Dataset.Tableau'/></MenuItem>
-        <MenuItem onTouchTap={this.props.openPowerBI}><FormattedMessage id='Dataset.PowerBI'/></MenuItem>
-        <MenuItem onTouchTap={this.props.openQlikSense}><FormattedMessage id='Dataset.QlikSense'/></MenuItem>
+        <MenuItem onClick={this.props.openTableau}><FormattedMessage id='Dataset.Tableau'/></MenuItem>
+        <MenuItem onClick={this.props.openPowerBI}><FormattedMessage id='Dataset.PowerBI'/></MenuItem>
+        <MenuItem onClick={this.props.openQlikSense}><FormattedMessage id='Dataset.QlikSense'/></MenuItem>
         <DividerHr />
         <MenuItem isInformational> {/* todo: loc safety (string concat) */}
           <span>

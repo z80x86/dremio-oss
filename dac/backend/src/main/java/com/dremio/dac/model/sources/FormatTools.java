@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import javax.inject.Inject;
 import javax.ws.rs.core.SecurityContext;
@@ -33,9 +35,7 @@ import org.apache.arrow.vector.SchemaChangeCallBack;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.RemoteIterator;
 
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.AutoCloseables.RollbackCloseable;
@@ -47,6 +47,8 @@ import com.dremio.dac.model.job.JobDataFragmentWrapper;
 import com.dremio.dac.model.job.ReleaseAfterSerialization;
 import com.dremio.dac.service.errors.PhysicalDatasetNotFoundException;
 import com.dremio.dac.service.source.SourceService;
+import com.dremio.exec.catalog.CatalogOptions;
+import com.dremio.exec.catalog.ColumnCountTooLargeException;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorContainer;
 import com.dremio.exec.server.ContextService;
@@ -54,12 +56,14 @@ import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.store.CatalogService;
 import com.dremio.exec.store.RecordReader;
 import com.dremio.exec.store.StoragePlugin;
+import com.dremio.exec.store.dfs.FileCountTooLargeException;
+import com.dremio.exec.store.dfs.FileDatasetHandle;
 import com.dremio.exec.store.dfs.FileSelection;
 import com.dremio.exec.store.dfs.FileSystemPlugin;
 import com.dremio.exec.store.dfs.FileSystemWrapper;
 import com.dremio.exec.store.dfs.FormatPlugin;
 import com.dremio.exec.store.dfs.PhysicalDatasetUtils;
-import com.dremio.exec.util.RemoteIterators;
+import com.dremio.exec.store.dfs.RemoteIteratorWrapper;
 import com.dremio.options.Options;
 import com.dremio.options.TypeValidators.BooleanValidator;
 import com.dremio.options.TypeValidators.PositiveLongValidator;
@@ -155,7 +159,7 @@ public class FormatTools {
 
       final FileConfig fileConfig = physicalDatasetConfig.getFormatSettings();
       fileFormat = isFolder ? FileFormat.getForFolder(fileConfig) : FileFormat.getForFile(fileConfig);
-      fileFormat.setVersion(physicalDatasetConfig.getVersion());
+      fileFormat.setVersion(physicalDatasetConfig.getTag());
       return fileFormat;
     } catch (PhysicalDatasetNotFoundException nfe) {
       // ignore and fall through to detect the format so we don't have extra nested blocks.
@@ -167,7 +171,7 @@ public class FormatTools {
 
   private FileFormat detectFileFormat(NamespaceKey key) {
     final FileSystemPlugin plugin = getPlugin(key);
-    final FileSystemWrapper fs = plugin.getFS(securityContext.getUserPrincipal().getName());
+    final FileSystemWrapper fs = plugin.createFS(securityContext.getUserPrincipal().getName());
     final Path path = FileSelection.getPathBasedOnFullPath(plugin.resolveTableNameToValidPath(key.getPathComponents()));
 
     // for now, existing rudimentary behavior that uses extension detection.
@@ -176,7 +180,9 @@ public class FormatTools {
       status = fs.getFileStatus(path);
     } catch(IOException ex) {
       // we could return unknown but if there no files, what's the point.
-      throw new IllegalStateException("No files detected or unable to read data.", ex);
+      throw UserException.ioExceptionError(ex)
+        .message("No files detected or unable to read file format with selected option.")
+        .build(logger);
     }
 
     if(status.isFile()) {
@@ -185,9 +191,9 @@ public class FormatTools {
 
     // was something other than file.
     try {
-      RemoteIterator<LocatedFileStatus> iter = excludeHidden(fs.listFiles(path, true));
+      Iterator<FileStatus> iter = getFilesForFormatting(fs, path);
       while(iter.hasNext()) {
-        LocatedFileStatus child = iter.next();
+        FileStatus child = iter.next();
         if(!child.isFile()) {
           continue;
         }
@@ -196,14 +202,28 @@ public class FormatTools {
       }
 
       // if we fall through, we didn't find any files.
-      throw new IllegalStateException("No files detected or unable to read data.");
+      throw UserException.ioExceptionError()
+      .message("No files were found.")
+      .build(logger);
     } catch (IOException ex) {
-      throw new IllegalStateException("Unable to read data.", ex);
+      throw UserException.ioExceptionError(ex)
+        .message("Unable to read file with selected format.")
+        .build(logger);
+
     }
   }
 
-  private static RemoteIterator<LocatedFileStatus> excludeHidden(RemoteIterator<LocatedFileStatus> delegate) {
-    return RemoteIterators.filter(delegate, t -> !t.getPath().getName().startsWith("."));
+  private Iterator<FileStatus> getFilesForFormatting(FileSystemWrapper fs, Path path) throws IOException, FileCountTooLargeException {
+    final int maxFilesLimit = FileDatasetHandle.getMaxFilesLimit(context);
+
+    final Iterator<FileStatus> baseIterator = new RemoteIteratorWrapper<>(fs.getListRecursiveIterator(path, false));
+    if (maxFilesLimit <= 0) {
+      return baseIterator;
+    }
+    final Iterable<FileStatus> iterable = () -> baseIterator;
+    return StreamSupport.stream(iterable.spliterator(), false)
+      .limit(maxFilesLimit)
+      .iterator();
   }
 
   private static FileFormat asFormat(NamespaceKey key, Path path, boolean isFolder) {
@@ -222,14 +242,14 @@ public class FormatTools {
         .setFullPathList(key.getPathComponents())
         .setName(key.getName())
         .setType(FileFormat.getFileFormatType(Collections.singletonList(FilenameUtils.getExtension(name))))
-        .setVersion(null);
+        .setTag(null);
     return isFolder ? FileFormat.getForFolder(config) : FileFormat.getForFile(config);
   }
 
   public JobDataFragment previewData(FileFormat format, NamespacePath namespacePath, boolean useFormatLocation) {
     final NamespaceKey key = namespacePath.toNamespaceKey();
     final FileSystemPlugin plugin = getPlugin(key);
-    final FileSystemWrapper fs = plugin.getFS(securityContext.getUserPrincipal().getName());
+    final FileSystemWrapper fs = plugin.createFS(securityContext.getUserPrincipal().getName());
     final Path path = FileSelection.getPathBasedOnFullPath(plugin.resolveTableNameToValidPath(key.getPathComponents()));
 
     // for now, existing rudimentary behavior that uses extension detection.
@@ -247,7 +267,7 @@ public class FormatTools {
         return getData(format, plugin, fs, new NextableSingleton<>(status));
       }
 
-      RemoteIterator<LocatedFileStatus> iter = excludeHidden(fs.listFiles(path, true));
+      Iterator<FileStatus> iter = getFilesForFormatting(fs, path);
       return getData(
           format,
           plugin,
@@ -264,12 +284,11 @@ public class FormatTools {
 
   private JobDataFragment getData(FileFormat format, FileSystemPlugin plugin, FileSystemWrapper filesystem, Nextable<? extends FileStatus> files) throws Exception {
 
-
-
     final int minRecords = (int) context.getOptionManager().getOption(MIN_RECORDS);
     final long maxReadTime = context.getOptionManager().getOption(MAX_READTIME_MS);
     final int batchSize = (int) context.getOptionManager().getOption(BATCH_SIZE);
     final int targetRecords = (int) context.getOptionManager().getOption(TARGET_RECORDS);
+    final int maxLeafColumns = (int) context.getOptionManager().getOption(CatalogOptions.METADATA_LEAF_COLUMN_MAX);
 
     // we need to keep reading data until we get to target records. This could happen on the first scanner or take many.
 
@@ -310,10 +329,6 @@ public class FormatTools {
           // when added to RecordBatchData.
           RecordReader reader = formatPlugin.getRecordReader(opCtxt, filesystem, status)) {
 
-          if (reader == null) {
-            continue;
-          }
-
           reader.setup(mutator);
 
           int output = 0;
@@ -332,6 +347,11 @@ public class FormatTools {
             if (first) {
               first = false;
               container.buildSchema();
+              if (container.getSchema().getTotalFieldCount() >= maxLeafColumns) {
+                throw UserException.validationError()
+                    .message(ColumnCountTooLargeException.MESSAGE, maxLeafColumns)
+                    .build(logger);
+              }
 
               // call to reset state.
               mutator.isSchemaChanged();
@@ -342,13 +362,13 @@ public class FormatTools {
               }
             }
 
-            if (output == 0) {
-              break;
-            }
-
             container.setRecordCount(output);
             records += output;
             batches.add();
+
+            if(output == 0) {
+              break;
+            }
           }
         }
       }
@@ -426,7 +446,7 @@ public class FormatTools {
     T next() throws IOException;
   }
 
-  private class PredicateNextable<T> implements Nextable<T> {
+  private static class PredicateNextable<T> implements Nextable<T> {
 
     private final Nextable<T> delegate;
     private final Predicate<T> predicate;
@@ -454,7 +474,7 @@ public class FormatTools {
 
   }
 
-  private class NextableSingleton<T> implements Nextable<T> {
+  private static class NextableSingleton<T> implements Nextable<T> {
 
     public NextableSingleton(T singleValue) {
       super();

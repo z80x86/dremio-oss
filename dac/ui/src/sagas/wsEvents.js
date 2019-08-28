@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { put, select, takeEvery } from 'redux-saga/effects';
+import { all, put, select, takeEvery } from 'redux-saga/effects';
 
 import { WS_MESSAGE_JOB_DETAILS, WS_MESSAGE_JOB_PROGRESS } from 'utils/socket';
 
@@ -37,11 +37,11 @@ function *handleJobProgressChanged(action) {
 }
 
 export function* entitie() {
-  yield [
+  yield all([
     takeEvery(WS_MESSAGE_JOB_DETAILS, handleUpdateJobDetails),
     takeEvery(WS_MESSAGE_JOB_PROGRESS, handleJobProgressChanged)
     // takeEvery(RUN_LONG_TRANSFORMATION_SUCCESS, handleStartListenToJobProgress),
-  ];
+  ]);
 }
 
 export default entitie;

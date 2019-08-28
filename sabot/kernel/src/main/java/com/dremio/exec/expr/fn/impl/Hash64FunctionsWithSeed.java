@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,11 @@
  */
 package com.dremio.exec.expr.fn.impl;
 
-import org.apache.arrow.vector.holders.NullableDecimalHolder;
 import org.apache.arrow.vector.holders.BigIntHolder;
 import org.apache.arrow.vector.holders.NullableBigIntHolder;
 import org.apache.arrow.vector.holders.NullableBitHolder;
 import org.apache.arrow.vector.holders.NullableDateMilliHolder;
+import org.apache.arrow.vector.holders.NullableDecimalHolder;
 import org.apache.arrow.vector.holders.NullableFloat4Holder;
 import org.apache.arrow.vector.holders.NullableFloat8Holder;
 import org.apache.arrow.vector.holders.NullableIntHolder;
@@ -30,9 +30,9 @@ import org.apache.arrow.vector.holders.NullableVarCharHolder;
 
 import com.dremio.exec.expr.SimpleFunction;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
+import com.dremio.exec.expr.annotations.FunctionTemplate.FunctionScope;
 import com.dremio.exec.expr.annotations.Output;
 import com.dremio.exec.expr.annotations.Param;
-import com.dremio.exec.expr.annotations.FunctionTemplate.FunctionScope;
 
 /*
  * Class contains hash64 function definitions for different data types.
@@ -239,11 +239,10 @@ public class Hash64FunctionsWithSeed {
     public void eval() {
       out.isSet = 1;
       if (in.isSet == 0) {
-        out.value = 0;
+        out.value = seed.value;
       } else {
-        in.start = (in.start / (org.apache.arrow.vector.util.DecimalUtility.DECIMAL_BYTE_LENGTH));
-        java.math.BigDecimal decimal = org.apache.arrow.vector.util.DecimalUtility.getBigDecimalFromArrowBuf(in.buffer, in.start, in.scale);
-        out.value = decimal.hashCode() ^ ((int) seed.value) ^ (seed.value >> 16);
+        out.value = com.dremio.exec.expr.fn.impl.HashHelper.hash64(in.start, in.start + 16, in
+            .buffer, seed.value);
       }
     }
   }

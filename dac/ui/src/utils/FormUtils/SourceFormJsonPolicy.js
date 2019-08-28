@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ export default class SourceFormJsonPolicy {
    * @param typeConfig
    */
   static getCombinedConfig(typeCode, typeConfig) {
-    const uiConfig = DEFAULT_VLHF_DETAIL.find(type => type.sourceType === typeCode);
+    const uiConfig = DEFAULT_VLHF_DETAIL[typeCode];
     const conbinedConfig = SourceFormJsonPolicy.combineFunctionalAndPresentationalSourceTypeConfig(typeConfig, uiConfig);
     return SourceFormJsonPolicy.applyJsonPolicyToFormConfig(conbinedConfig, typeConfig);
   }
@@ -381,7 +381,7 @@ export default class SourceFormJsonPolicy {
 
 
   static addReflectionRefreshTab(config, functionalElements) {
-    if (!config.metadataRefresh) return;
+    const isFileSystemSource = config.metadataRefresh && config.metadataRefresh.isFileSystemSource;
 
     const metadataRefreshEl = {
       type: 'metadata_refresh'
@@ -396,7 +396,7 @@ export default class SourceFormJsonPolicy {
             label: la('Remove dataset definitions if underlying data is unavailable.'),
             propName: 'metadataPolicy.deleteUnavailableDatasets',
             value: true
-          }, config.metadataRefresh.isFileSystemSource && {
+          }, isFileSystemSource && {
             type: 'checkbox',
             label: la('Automatically format files into physical datasets when users issue queries.'),
             propName: 'metadataPolicy.autoPromoteDatasets',

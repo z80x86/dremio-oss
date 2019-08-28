@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,8 +33,8 @@ import com.dremio.exec.ExecConstants;
 import com.dremio.exec.compile.sig.RuntimeOverridden;
 import com.dremio.exec.exception.SchemaChangeException;
 import com.dremio.exec.expr.TypeHelper;
-import com.dremio.exec.physical.MinorFragmentEndpoint;
 import com.dremio.exec.physical.config.HashPartitionSender;
+import com.dremio.exec.physical.config.MinorFragmentEndpoint;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
 import com.dremio.exec.proto.ExecRPC.FragmentStreamComplete;
 import com.dremio.exec.record.BatchSchema;
@@ -125,17 +125,15 @@ public abstract class PartitionerTemplate implements Partitioner {
     minOutgoingBatchRecordCount = (int) options.getOption(ExecConstants.TARGET_BATCH_RECORDS_MIN);
     // how many records we can keep in memory before we are forced to flush the outgoing batch
     final int outgoingBatchRecordCount = (int) options.getOption(ExecConstants.TARGET_BATCH_RECORDS_MAX);
-    targetOutgoingBatchSize = (int) Math.min(
-      options.getOption(ExecConstants.PARTITION_SENDER_MAX_BATCH_SIZE),
-      options.getOption(ExecConstants.PARTITION_SENDER_MAX_MEM) / numPartitions);
+    targetOutgoingBatchSize = popConfig.getProps().getTargetBatchSize();
 
     int fieldId = 0;
-    for (MinorFragmentEndpoint destination : popConfig.getDestinations()) {
+    for (MinorFragmentEndpoint destination : popConfig.getDestinations(context.getEndpointsIndex())) {
       // create outgoingBatches only for subset of Destination Points
       if ( fieldId >= start && fieldId < end ) {
         logger.debug("start: {}, count: {}, fieldId: {}", start, end, fieldId);
         outgoingBatches.add(newOutgoingRecordBatch(stats, popConfig,
-            tunnelProvider.getExecTunnel(destination.getEndpoint()), context, context.getAllocator(), destination.getId(),
+            tunnelProvider.getExecTunnel(destination.getEndpoint()), context, context.getAllocator(), destination.getMinorFragmentId(),
             outgoingBatchRecordCount)
         );
       }
@@ -287,7 +285,7 @@ public abstract class PartitionerTemplate implements Partitioner {
           .setQueryId(handle.getQueryId())
           .setSendingMajorFragmentId(handle.getMajorFragmentId())
           .setSendingMinorFragmentId(handle.getMinorFragmentId())
-          .setReceivingMajorFragmentId(operator.getOppositeMajorFragmentId())
+          .setReceivingMajorFragmentId(operator.getReceiverMajorFragmentId())
           .addReceivingMinorFragmentId(oppositeMinorFragmentId)
           .build();
       tunnel.sendStreamComplete(completion);
@@ -324,7 +322,7 @@ public abstract class PartitionerTemplate implements Partitioner {
           handle.getQueryId(),
           handle.getMajorFragmentId(),
           handle.getMinorFragmentId(),
-          operator.getOppositeMajorFragmentId(),
+          operator.getReceiverMajorFragmentId(),
           vectorContainer,
           oppositeMinorFragmentId);
 

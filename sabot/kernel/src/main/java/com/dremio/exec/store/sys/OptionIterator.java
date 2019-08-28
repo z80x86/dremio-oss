@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,11 @@ import java.util.Iterator;
 import java.util.List;
 
 import com.dremio.exec.server.SabotContext;
+import com.dremio.exec.server.options.SabotConfigIterable;
 import com.dremio.options.OptionManager;
 import com.dremio.options.OptionValue;
 import com.dremio.options.OptionValue.Kind;
 import com.dremio.options.OptionValue.OptionType;
-import com.dremio.exec.server.options.SabotConfigIterable;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;

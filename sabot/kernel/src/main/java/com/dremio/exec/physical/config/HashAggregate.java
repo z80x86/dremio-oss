@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,68 +15,71 @@
  */
 package com.dremio.exec.physical.config;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import com.dremio.common.logical.data.NamedExpression;
-import com.dremio.exec.expr.ExpressionTreeMaterializer;
-import com.dremio.exec.expr.fn.FunctionLookupContext;
 import com.dremio.exec.physical.base.AbstractSingle;
-import com.dremio.exec.physical.base.MemoryCalcConsidered;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.PhysicalVisitor;
 import com.dremio.exec.proto.UserBitShared.CoreOperatorType;
-import com.dremio.exec.record.BatchSchema;
-import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
-import com.dremio.options.OptionManager;
-import com.dremio.options.Options;
-import com.dremio.options.TypeValidators.BooleanValidator;
-import com.dremio.options.TypeValidators.DoubleValidator;
-import com.dremio.options.TypeValidators.PositiveLongValidator;
-import com.dremio.options.TypeValidators.RangeDoubleValidator;
-import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator;
 import com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggSpillStats;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.common.annotations.VisibleForTesting;
 
-@Options
 @JsonTypeName("hash-aggregate")
-public class HashAggregate extends AbstractSingle implements MemoryCalcConsidered {
-
-  public static final DoubleValidator AGG_FACTOR = new RangeDoubleValidator("planner.op.hashagg.factor", 0.0, 1000.0, 1.0d);
-  public static final BooleanValidator AGG_BOUNDED = new BooleanValidator("planner.op.hashagg.bounded", true);
-
-  public static final PositiveLongValidator LOWER_LIMIT = new PositiveLongValidator("planner.op.hashagg.low_limit", Long.MAX_VALUE, 300_000_000);
-  public static final PositiveLongValidator UPPER_LIMIT = new PositiveLongValidator("planner.op.hashagg.limit", Long.MAX_VALUE, Long.MAX_VALUE);
-
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(HashAggregate.class);
+public class HashAggregate extends AbstractSingle {
 
   private final List<NamedExpression> groupByExprs;
   private final List<NamedExpression> aggrExprs;
   private final boolean vectorize;
+  private final boolean useSpill;
   private final float cardinality;
+  private final int hashTableBatchSize;
 
   /* testing related parameters */
   private VectorizedHashAggSpillStats spillStats;
 
   @JsonCreator
-  public HashAggregate(@JsonProperty("child") PhysicalOperator child,
-                       @JsonProperty("keys") List<NamedExpression> groupByExprs,
-                       @JsonProperty("exprs") List<NamedExpression> aggrExprs,
-                       @JsonProperty("vectorize") boolean vectorize,
-                       @JsonProperty("cardinality") float cardinality) {
-    super(child);
+  public HashAggregate(
+      @JsonProperty("props") OpProps props,
+      @JsonProperty("child") PhysicalOperator child,
+      @JsonProperty("groupByExprs") List<NamedExpression> groupByExprs,
+      @JsonProperty("aggrExprs") List<NamedExpression> aggrExprs,
+      @JsonProperty("vectorize") boolean vectorize,
+      @JsonProperty("useSpill") boolean useSpill,
+      @JsonProperty("cardinality") float cardinality,
+      @JsonProperty("hashTableBatchSize") int hashTableBatchSize
+      ) {
+    super(props, child);
     this.groupByExprs = groupByExprs;
     this.aggrExprs = aggrExprs;
-    this.cardinality = cardinality;
     this.vectorize = vectorize;
-    this.spillStats = null;
+    this.useSpill = useSpill;
+    this.cardinality = cardinality;
+    this.hashTableBatchSize = hashTableBatchSize;
+  }
+
+  // for testing only
+  public HashAggregate(
+    OpProps props,
+    PhysicalOperator child,
+    List<NamedExpression> groupByExprs,
+    List<NamedExpression> aggrExprs,
+    boolean vectorize,
+    boolean useSpill,
+    float cardinality) {
+    this(props, child, groupByExprs, aggrExprs, vectorize, useSpill, cardinality, 3968);
   }
 
   public boolean isVectorize(){
     return vectorize;
+  }
+
+  public boolean isUseSpill(){
+    return useSpill;
   }
 
   public List<NamedExpression> getGroupByExprs() {
@@ -98,9 +101,7 @@ public class HashAggregate extends AbstractSingle implements MemoryCalcConsidere
 
   @Override
   protected PhysicalOperator getNewWithChild(PhysicalOperator child) {
-    HashAggregate ha = new HashAggregate(child, groupByExprs, aggrExprs, vectorize, cardinality);
-    ha.setMaxAllocation(this.getMaxAllocation());
-    return ha;
+    return new HashAggregate(props, child, groupByExprs, aggrExprs, vectorize, useSpill, cardinality);
   }
 
   @Override
@@ -108,25 +109,8 @@ public class HashAggregate extends AbstractSingle implements MemoryCalcConsidere
     return CoreOperatorType.HASH_AGGREGATE_VALUE;
   }
 
-  @Override
-  protected BatchSchema constructSchema(FunctionLookupContext context) {
-    final BatchSchema childSchema = child.getSchema(context);
-    List<NamedExpression> exprs = new ArrayList<>();
-    exprs.addAll(groupByExprs);
-    exprs.addAll(aggrExprs);
-    return ExpressionTreeMaterializer.materializeFields(exprs, childSchema, context)
-        .setSelectionVectorMode(SelectionVectorMode.NONE)
-        .build();
-  }
-
-  @Override
-  public double getMemoryFactor(OptionManager options) {
-    return options.getOption(AGG_FACTOR);
-  }
-
-  @Override
-  public boolean shouldBeMemoryBounded(OptionManager options) {
-    return options.getOption(AGG_BOUNDED) && options.getOption(VectorizedHashAggOperator.VECTORIZED_HASHAGG_USE_SPILLING_OPERATOR);
+  public int getHashTableBatchSize() {
+    return hashTableBatchSize;
   }
 
   @VisibleForTesting

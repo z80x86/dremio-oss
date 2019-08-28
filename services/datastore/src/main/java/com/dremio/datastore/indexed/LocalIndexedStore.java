@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -104,11 +104,6 @@ public class LocalIndexedStore<K, V> implements IndexedStore<K, V> {
   }
 
   @Override
-  public boolean checkAndPut(K key, V oldValue, V newValue) {
-    return coreIndexedStore.checkAndPut(buildKey(key), buildValue(oldValue), buildValue(newValue));
-  }
-
-  @Override
   public boolean contains(K key) {
     return coreIndexedStore.contains(buildKey(key));
   }
@@ -116,11 +111,6 @@ public class LocalIndexedStore<K, V> implements IndexedStore<K, V> {
   @Override
   public void delete(K key) {
     coreIndexedStore.delete(buildKey(key));
-  }
-
-  @Override
-  public boolean checkAndDelete(K key, V value) {
-    return coreIndexedStore.checkAndDelete(buildKey(key), buildValue(value));
   }
 
   @Override
@@ -149,7 +139,7 @@ public class LocalIndexedStore<K, V> implements IndexedStore<K, V> {
   }
 
   @Override
-  public void delete(K key, long previousVersion) {
+  public void delete(K key, String previousVersion) {
     coreIndexedStore.delete(buildKey(key), previousVersion);
   }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,8 +34,8 @@ import com.dremio.exec.physical.config.Project;
 import com.dremio.options.OptionValue;
 import com.dremio.sabot.exec.context.OperatorStats;
 import com.dremio.sabot.op.filter.FilterOperator;
-import com.dremio.sabot.op.project.ProjectorStats.Metric;
 import com.dremio.sabot.op.project.ProjectOperator;
+import com.dremio.sabot.op.project.ProjectorStats.Metric;
 import com.dremio.sabot.op.spi.SingleInputOperator;
 
 import io.airlift.tpch.GenerationDefinition.TpchTable;
@@ -124,12 +124,12 @@ public class TestGandivaPerf extends BaseTestOperator {
   }
 
   private int compareProject(TpchTable table, double scale, String expr) throws Exception {
-    Project project = new Project(Arrays.asList(n(expr, "res")), null);
+    Project project = new Project(PROPS, null, Arrays.asList(n(expr, "res")));
     return runBoth(expr, table, scale, project, ProjectOperator.class);
   }
 
   private int compareFilter(TpchTable table, double scale, String expr) throws Exception {
-    Filter filter = new Filter(null, parseExpr(expr), 1f);
+    Filter filter = new Filter(PROPS, null, parseExpr(expr), 1f);
     return runBoth(expr, table, scale, filter, FilterOperator.class);
   }
 
@@ -157,10 +157,15 @@ public class TestGandivaPerf extends BaseTestOperator {
     Assert.assertTrue(delta > 0);
   }
 
-
   @Test
   public void testProjectCastDate() throws Exception {
     int delta = compareProject(TpchTable.CUSTOMER, 6, "castDATE(c_date)");
+    Assert.assertTrue(delta > 0);
+  }
+
+  @Test
+  public void testProjectCastTimestamp() throws Exception {
+    int delta = compareProject(TpchTable.CUSTOMER, 6, "castTIMESTAMP(c_time)");
     Assert.assertTrue(delta > 0);
   }
 

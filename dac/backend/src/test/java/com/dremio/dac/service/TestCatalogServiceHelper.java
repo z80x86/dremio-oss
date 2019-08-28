@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -144,7 +144,7 @@ public class TestCatalogServiceHelper {
     sourceConfig.setId(new EntityId("source-id"));
     when(sourceService.getSources()).thenReturn(Arrays.asList(sourceConfig));
 
-    List<CatalogItem> topLevelCatalogItems = catalogServiceHelper.getTopLevelCatalogItems();
+    List<CatalogItem> topLevelCatalogItems = catalogServiceHelper.getTopLevelCatalogItems(Collections.EMPTY_LIST);
     assertEquals(topLevelCatalogItems.size(), 3);
 
     int homeCount = 0;
@@ -463,7 +463,7 @@ public class TestCatalogServiceHelper {
     config.setId(new EntityId(dataset.getId()));
     config.setFullPathList(dataset.getPath());
     config.setName(dataset.getPath().get(dataset.getPath().size() - 1));
-    config.setVersion(Long.valueOf(dataset.getTag()));
+    config.setTag(dataset.getTag());
     config.setCreatedAt(dataset.getCreatedAt());
     VirtualDataset virtualDataset = new VirtualDataset();
     virtualDataset.setSql(dataset.getSql());
@@ -521,7 +521,7 @@ public class TestCatalogServiceHelper {
     config.setId(new EntityId(dataset.getId()));
     config.setFullPathList(dataset.getPath());
     config.setName(dataset.getPath().get(dataset.getPath().size() - 1));
-    config.setVersion(Long.valueOf(dataset.getTag()));
+    config.setTag(dataset.getTag());
     config.setCreatedAt(dataset.getCreatedAt());
     VirtualDataset virtualDataset = new VirtualDataset();
     virtualDataset.setSql(dataset.getSql());
@@ -566,7 +566,7 @@ public class TestCatalogServiceHelper {
     config.setId(new EntityId(dataset.getId()));
     config.setFullPathList(dataset.getPath());
     config.setName(dataset.getPath().get(dataset.getPath().size() - 1));
-    config.setVersion(Long.valueOf(dataset.getTag()));
+    config.setTag(dataset.getTag());
     config.setCreatedAt(dataset.getCreatedAt());
     VirtualDataset virtualDataset = new VirtualDataset();
     virtualDataset.setSql(dataset.getSql());
@@ -600,7 +600,7 @@ public class TestCatalogServiceHelper {
     config.setId(new EntityId(dataset.getId()));
     config.setFullPathList(dataset.getPath());
     config.setName(dataset.getPath().get(dataset.getPath().size() - 1));
-    config.setVersion(Long.valueOf(dataset.getTag()));
+    config.setTag(dataset.getTag());
     config.setCreatedAt(dataset.getCreatedAt());
     PhysicalDataset physicalDataset = new PhysicalDataset();
     physicalDataset.setFormatSettings(new JsonFileConfig().asFileConfig());
@@ -622,6 +622,12 @@ public class TestCatalogServiceHelper {
     when(catalog.getTable(any(String.class))).thenReturn(dremioTable);
 
     catalogServiceHelper.updateCatalogItem(dataset, dataset.getId());
+    verify(catalog, times(1)).createOrUpdateDataset(
+      eq(namespaceService),
+      eq(new NamespaceKey("source")),
+      eq(new NamespaceKey(dataset.getPath())),
+      any(DatasetConfig.class)
+    );
   }
 
   @Test
@@ -663,7 +669,7 @@ public class TestCatalogServiceHelper {
     datasetConfig.setId(new EntityId(dataset.getId()));
     datasetConfig.setType(VIRTUAL_DATASET);
     datasetConfig.setFullPathList(dataset.getPath());
-    datasetConfig.setVersion(Long.valueOf(dataset.getTag()));
+    datasetConfig.setTag(dataset.getTag());
     namespaceContainer.setDataset(datasetConfig);
     when(namespaceService.getEntityById(dataset.getId())).thenReturn(namespaceContainer);
 
@@ -672,7 +678,7 @@ public class TestCatalogServiceHelper {
     when(catalog.getTable(any(String.class))).thenReturn(dremioTable);
 
     catalogServiceHelper.deleteCatalogItem(dataset.getId(), "1");
-    verify(namespaceService, times(1)).deleteDataset(new NamespaceKey(dataset.getPath()), 1);
+    verify(namespaceService, times(1)).deleteDataset(new NamespaceKey(dataset.getPath()), datasetConfig.getTag());
   }
 
   @Test
@@ -680,7 +686,7 @@ public class TestCatalogServiceHelper {
     SourceConfig sourceConfig = new SourceConfig();
     sourceConfig.setName("mySource");
     sourceConfig.setId(new EntityId("source-id"));
-    sourceConfig.setVersion(1L);
+    sourceConfig.setTag("1");
     sourceConfig.setType("NAS");
 
     AccelerationSettings settings = new AccelerationSettings();
@@ -707,8 +713,8 @@ public class TestCatalogServiceHelper {
     namespaceContainer.setType(NameSpaceContainer.Type.SPACE);
     when(namespaceService.getEntityById(space.getId())).thenReturn(namespaceContainer);
 
-    catalogServiceHelper.deleteCatalogItem(space.getId(), "1");
-    verify(namespaceService, times(1)).deleteSpace(new NamespaceKey(space.getName()), 1);
+    catalogServiceHelper.deleteCatalogItem(space.getId(), space.getTag());
+    verify(namespaceService, times(1)).deleteSpace(new NamespaceKey(space.getName()), space.getTag());
   }
 
   @Test
@@ -721,7 +727,7 @@ public class TestCatalogServiceHelper {
     when(namespaceService.getEntityById(folder.getId())).thenReturn(namespaceContainer);
 
     catalogServiceHelper.deleteCatalogItem(folder.getId(), folder.getTag());
-    verify(namespaceService, times(1)).deleteFolder(new NamespaceKey(folder.getPath()), 1);
+    verify(namespaceService, times(1)).deleteFolder(new NamespaceKey(folder.getPath()), folder.getTag());
   }
 
   @Test

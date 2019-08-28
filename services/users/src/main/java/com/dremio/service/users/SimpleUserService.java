@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ public class SimpleUserService implements UserService {
 
   private static final SecretKeyFactory secretKey = buildSecretKey();
 
-  private static  SecretKeyFactory buildSecretKey() {
+  public static  SecretKeyFactory buildSecretKey() {
     try {
       return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
     } catch (NoSuchAlgorithmException nsae) {
@@ -157,7 +157,7 @@ public class SimpleUserService implements UserService {
     final String userName = userConfig.getUserName();
     if (findUserByUserName(userName) != null) {
       throw UserException.validationError()
-        .message("User [%s] already exists", userName)
+        .message("User '%s' already exists.", userName)
         .build(logger);
     }
     validatePassword(authKey);
@@ -165,7 +165,7 @@ public class SimpleUserService implements UserService {
         .setUid(new UID(UUID.randomUUID().toString()))
         .setCreatedAt(System.currentTimeMillis())
         .setModifiedAt(userConfig.getCreatedAt())
-        .setVersion(null);
+        .setTag(null);
     UserInfo userInfo = new UserInfo();
     userInfo.setConfig(newUser);
     userInfo.setAuth(buildUserAuth(newUser.getUid(), authKey));
@@ -196,8 +196,8 @@ public class SimpleUserService implements UserService {
     if (newConfig.getGroupMembershipsList() == null) {
       newConfig.setGroupMembershipsList(oldConfig.getGroupMembershipsList());
     }
-    if (newConfig.getVersion() == null) {
-      newConfig.setVersion(oldConfig.getVersion());
+    if (newConfig.getTag() == null) {
+      newConfig.setTag(oldConfig.getTag());
     }
   }
 
@@ -237,7 +237,7 @@ public class SimpleUserService implements UserService {
     }
     if (findUserByUserName(newUserName) != null) {
       throw UserException.validationError()
-        .message("User [%s] already exists", newUserName)
+        .message("User '%s' already exists.", newUserName)
         .build(logger);
     }
     UserConfig userConfig = toUserConfig(userGroup);
@@ -311,10 +311,10 @@ public class SimpleUserService implements UserService {
     }
 
     final SearchQuery query = SearchQueryUtils.or(
-        SearchQueryUtils.newTermQuery(UserIndexKeys.NAME, searchTerm),
-        SearchQueryUtils.newTermQuery(UserIndexKeys.FIRST_NAME, searchTerm),
-        SearchQueryUtils.newTermQuery(UserIndexKeys.LAST_NAME, searchTerm),
-        SearchQueryUtils.newTermQuery(UserIndexKeys.EMAIL, searchTerm));
+        SearchQueryUtils.newContainsTerm(UserIndexKeys.NAME, searchTerm),
+        SearchQueryUtils.newContainsTerm(UserIndexKeys.FIRST_NAME, searchTerm),
+        SearchQueryUtils.newContainsTerm(UserIndexKeys.LAST_NAME, searchTerm),
+        SearchQueryUtils.newContainsTerm(UserIndexKeys.EMAIL, searchTerm));
 
     final FindByCondition conditon = new FindByCondition()
         .setCondition(query)
@@ -356,7 +356,7 @@ public class SimpleUserService implements UserService {
   }
 
   @Override
-  public void deleteUser(final String userName, long version) throws UserNotFoundException, IOException {
+  public void deleteUser(final String userName, String version) throws UserNotFoundException, IOException {
     final UserInfo info = findUserByUserName(userName);
     if (info != null) {
       userStore.delete(info.getConfig().getUid(), version);
@@ -433,7 +433,7 @@ public class SimpleUserService implements UserService {
         .setEmail(user.getEmail())
         .setCreatedAt(user.getCreatedAt())
         .setModifiedAt(user.getModifiedAt())
-        .setVersion(user.getVersion());
+        .setTag(user.getVersion());
   }
 
   protected User fromUserConfig(UserConfig userConfig) {
@@ -445,11 +445,21 @@ public class SimpleUserService implements UserService {
         .setEmail(userConfig.getEmail())
         .setCreatedAt(userConfig.getCreatedAt())
         .setModifiedAt(userConfig.getModifiedAt())
-        .setVersion(userConfig.getVersion())
+        .setVersion(userConfig.getTag())
         .build();
   }
 
   private static final class UserVersionExtractor implements VersionExtractor<UserInfo> {
+    @Override
+    public String getTag(UserInfo value) {
+      return value.getConfig().getTag();
+    }
+
+    @Override
+    public void setTag(UserInfo value, String tag) {
+      value.getConfig().setTag(tag);
+    }
+
     @Override
     public Long getVersion(UserInfo value) {
       return value.getConfig().getVersion();
@@ -460,12 +470,6 @@ public class SimpleUserService implements UserService {
       value.getConfig().setVersion(version);
     }
 
-    @Override
-    public Long incrementVersion(UserInfo value) {
-      Long version = getVersion(value);
-      setVersion(value, version == null ? 0 : version + 1);
-      return version;
-    }
   }
 
   /**

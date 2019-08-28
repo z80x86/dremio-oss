@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,12 @@ import ReactDOM from 'react-dom';
 import pureRender from 'pure-render-decorator';
 
 import PropTypes from 'prop-types';
+import { connect } from 'react-redux';
 
 import MainHeader from 'components/MainHeader';
 import { hashHeightTopSplitter } from 'constants/explorePage/heightTopSplitter.js';
 import { PageTypes, pageTypesProp } from '@app/pages/ExplorePage/pageTypes';
+import { clearEntities } from '@app/actions/resources/entities';
 
 import './ExplorePage.less';
 import HistoryLineController from './components/Timeline/HistoryLineController';
@@ -32,7 +34,7 @@ const GRID_TABLE_MARGIN = 15;
 const EXPLORE_PAGE_MIN_HEIGHT = 700;
 
 @pureRender
-class ExplorePage extends Component {
+export class ExplorePageView extends Component {
   static propTypes = {
     pageType: pageTypesProp,
     dataset: PropTypes.instanceOf(Immutable.Map),
@@ -48,8 +50,8 @@ class ExplorePage extends Component {
     showEditColumnsModal: PropTypes.func,
     updateGridSizes: PropTypes.func.isRequired,
     isResizeInProgress: PropTypes.bool,
-    exploreViewState: PropTypes.instanceOf(Immutable.Map),
-    style: PropTypes.object
+    style: PropTypes.object,
+    onUnmount: PropTypes.func.isRequired
   };
 
   state = {
@@ -67,13 +69,21 @@ class ExplorePage extends Component {
   }
 
   componentWillReceiveProps(nextProps) {
-    if (nextProps.pageType !== this.props.pageType) {
+    // init editor if changing page type or clicked on new query from non-newQuery view
+    if (nextProps.pageType !== this.props.pageType || this.clickedNewQuery(nextProps)) {
       this.initSqlEditor(nextProps);
     }
   }
 
+  clickedNewQuery = (nextProps) => {
+    return this.locationIncludesNewQuery(nextProps.location) && !this.locationIncludesNewQuery(this.props.location);
+  };
+
+  locationIncludesNewQuery = (location) => location && location.pathname && location.pathname.includes('new_query');
+
   componentWillUnmount() {
     $(window).off('resize', this.resize);
+    this.props.onUnmount();
   }
 
   initSqlEditor(props) {
@@ -83,9 +93,13 @@ class ExplorePage extends Component {
     case PageTypes.details:
       return;
     case PageTypes.wiki:
+    case PageTypes.reflections:
     case PageTypes.default:
     case PageTypes.graph: {
-      const newSize = hashHeightTopSplitter[location.query.type] || hashHeightTopSplitter.default;
+      const newSize = hashHeightTopSplitter[location.query.type] ||
+        (this.locationIncludesNewQuery(location)) ?
+        hashHeightTopSplitter.getNewQueryDefaultSqlHeight() :
+        hashHeightTopSplitter.getDefaultSqlHeight();
       props.updateSqlPartSize(newSize);
       break;
     }
@@ -145,7 +159,6 @@ class ExplorePage extends Component {
             toggleRightTree={this.props.toggleRightTree}
             toggleAccessModal={this.props.toggleAccessModal}
             showEditColumnsModal={this.props.showEditColumnsModal}
-            exploreViewState={this.props.exploreViewState}
           />
           <HistoryLineController
             dataset={dataset}
@@ -158,4 +171,7 @@ class ExplorePage extends Component {
   }
 }
 
-export default ExplorePage;
+const clearExploreEntities = () => clearEntities(['history', 'historyItem', 'dataset', 'fullDataset', 'datasetUI', 'tableData']);
+export default connect(null, {
+  onUnmount: clearExploreEntities
+})(ExplorePageView);

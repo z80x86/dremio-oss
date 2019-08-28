@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ public class SwapHashJoinVisitor extends BasePrelVisitor<Prel, Double, RuntimeEx
       if ( (mq.getRowCount(newJoin.getLeft())
           < (1 + value.doubleValue() ) * mq.getRowCount(newJoin.getRight()) )
           && newJoin.getJoinType() == JoinRelType.INNER) {
-        ( (HashJoinPrel) newJoin).setSwapped(true);
+        return ((HashJoinPrel) newJoin).swap();
       }
     }
 

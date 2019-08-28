@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ public class FinalColumnReorderer extends BasePrelVisitor<Prel, Void, RuntimeExc
     for (int i = 0; i < projectCount; i++) {
       projections.add(b.makeInputRef(prel, i));
     }
-    return new ProjectPrel(prel.getCluster(), prel.getTraitSet(), prel, projections, prel.getRowType());
+    return ProjectPrel.create(prel.getCluster(), prel.getTraitSet(), prel, projections, prel.getRowType());
   }
 
   private Prel addTrivialOrderedProjectPrel(Prel prel, boolean checkNecessity) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,9 @@ import org.apache.calcite.sql2rel.SqlToRelConverter;
 
 import com.dremio.exec.catalog.DremioCatalogReader;
 import com.dremio.exec.ops.ViewExpansionContext.ViewExpansionToken;
+import com.dremio.exec.planner.acceleration.ExpansionNode;
+import com.dremio.exec.planner.sql.SqlConverter.RelRootPlus;
+import com.dremio.service.namespace.NamespaceKey;
 
 /**
  * An overridden implementation of SqlToRelConverter that redefines view expansion behavior.
@@ -66,7 +69,8 @@ public class DremioSqlToRelConverter extends SqlToRelConverter {
     return typeFlattener.rewrite(rootRel);
   }
 
-  public static RelRoot expandView(final String viewOwner, final String queryString, final List<String> context, final SqlConverter sqlConverter) {
+
+  public static RelRoot expandView(NamespaceKey path, final String viewOwner, final String queryString, final List<String> context, final SqlConverter sqlConverter) {
     ViewExpansionToken token = null;
 
     try {
@@ -81,8 +85,17 @@ public class DremioSqlToRelConverter extends SqlToRelConverter {
       final SqlConverter newConverter = new SqlConverter(sqlConverter, catalog);
       final SqlNode parsedNode = newConverter.parse(queryString);
       final SqlNode validatedNode = newConverter.validate(parsedNode);
-      final RelRoot root = newConverter.toConvertibleRelRoot(validatedNode, true);
-      return root;
+      final RelRootPlus root = newConverter.toConvertibleRelRoot(validatedNode, true);
+      if(path == null) {
+        return root;
+      }
+
+      // we need to make sure that if a inner expansion is context sensitive, we consider the current
+      // expansion context sensitive even if it isn't locally.
+      final boolean contextSensitive = root.isContextSensitive() || ExpansionNode.isContextSensitive(root.rel);
+
+      return new RelRoot(ExpansionNode.wrap(path, root.rel, root.validatedRowType, contextSensitive), root.validatedRowType, root.kind, root.fields, root.collation);
+
     } finally {
       if (token != null) {
         token.release();

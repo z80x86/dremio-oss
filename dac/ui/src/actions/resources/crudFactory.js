@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { CALL_API } from 'redux-api-middleware';
+import { RSAA } from 'redux-api-middleware';
 import { CALL_MOCK_API } from 'mockApi';
 import { API_URL_V2 } from 'constants/Api';
 import { Schema, arrayOf } from 'normalizr';
@@ -27,6 +27,7 @@ const METHODS_WITH_REQUEST_BODY = new Set(['PUT', 'POST']);
 export default (schemaOrName, {useLegacyPluralization = false} = {}) => {
   const schema = typeof schemaOrName === 'string' ? new Schema(schemaOrName) : schemaOrName;
   const entityName = schema.getKey();
+  const listSchema = { [entityName + 's']: arrayOf(schema) };
   const upper = entityName.toUpperCase();
   const path = entityName.toLowerCase() + (useLegacyPluralization ? '' : 's');
   // const title = entityName.charAt(0).toUpperCase() + entityName.slice(1);
@@ -56,7 +57,7 @@ export default (schemaOrName, {useLegacyPluralization = false} = {}) => {
       }
 
       const req = {
-        [call.mock ? CALL_MOCK_API : CALL_API]: {
+        [call.mock ? CALL_MOCK_API : RSAA]: {
           ...COMMON,
           types: [
             {type: `${upper}_${method}_START`, meta},
@@ -74,7 +75,11 @@ export default (schemaOrName, {useLegacyPluralization = false} = {}) => {
     };
   };
 
-  const calls = {};
+  const calls = {
+    // add schemas to output to make them re-usable.
+    schema,
+    listSchema
+  };
   for (const call of ['GET', 'POST', 'PUT', 'DELETE']) {
     calls[call.toLowerCase()] = apiCallFactory(call);
   }
@@ -83,13 +88,13 @@ export default (schemaOrName, {useLegacyPluralization = false} = {}) => {
     const method = 'GET_ALL';
     const successMeta = {...meta, entityClears: [entityName]}; // trigger a clear, since records may now be gone;
     const req = {
-      [call.mock ? CALL_MOCK_API : CALL_API]: {
+      [call.mock ? CALL_MOCK_API : RSAA]: {
         ...COMMON,
         types: [
           {type: `${upper}_${method}_START`, meta},
           schemaUtils.getSuccessActionTypeWithSchema(
             `${upper}_${method}_SUCCESS`,
-            {[entityName + 's']: arrayOf(schema)}, // todo: simplify and normalize responses
+            listSchema, // todo: simplify and normalize responses
             successMeta
           ),
           {type: `${upper}_${method}_FAILURE`, meta}

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,11 @@ import java.util.Map;
 
 import org.apache.calcite.schema.Function;
 
+import com.dremio.common.expression.CompleteType;
 import com.dremio.exec.dotfile.View;
 import com.dremio.exec.physical.base.WriterOptions;
 import com.dremio.exec.planner.logical.CreateTableEntry;
+import com.dremio.exec.record.BatchSchema;
 import com.dremio.exec.store.DatasetRetrievalOptions;
 import com.dremio.exec.store.PartitionNotFoundException;
 import com.dremio.exec.store.StoragePlugin;
@@ -135,12 +137,12 @@ public class DelegatingCatalog implements Catalog {
   }
 
   @Override
-  public boolean createView(NamespaceKey key, View view, NamespaceAttribute... attributes) throws IOException {
-    return delegate.createView(key, view, attributes);
+  public void createView(NamespaceKey key, View view, NamespaceAttribute... attributes) throws IOException {
+    delegate.createView(key, view, attributes);
   }
 
   @Override
-  public void updateView(NamespaceKey key, View view, NamespaceAttribute... attributes) {
+  public void updateView(NamespaceKey key, View view, NamespaceAttribute... attributes) throws IOException {
     delegate.updateView(key, view, attributes);
   }
 
@@ -160,7 +162,7 @@ public class DelegatingCatalog implements Catalog {
   }
 
   @Override
-  public StoragePlugin.UpdateStatus refreshDataset(NamespaceKey key, DatasetRetrievalOptions retrievalOptions) {
+  public UpdateStatus refreshDataset(NamespaceKey key, DatasetRetrievalOptions retrievalOptions) {
     return delegate.refreshDataset(key, retrievalOptions);
   }
 
@@ -177,6 +179,16 @@ public class DelegatingCatalog implements Catalog {
   @Override
   public boolean createOrUpdateDataset(NamespaceService userNamespaceService, NamespaceKey source, NamespaceKey datasetPath, DatasetConfig datasetConfig, NamespaceAttribute... attributes) throws NamespaceException {
     return delegate.createOrUpdateDataset(userNamespaceService, source, datasetPath, datasetConfig, attributes);
+  }
+
+  @Override
+  public void updateDatasetSchema(NamespaceKey datasetKey, BatchSchema newSchema) {
+    delegate.updateDatasetSchema(datasetKey, newSchema);
+  }
+
+  @Override
+  public void updateDatasetField(NamespaceKey datasetKey, String originField, CompleteType fieldSchema) {
+    delegate.updateDatasetField(datasetKey, originField, fieldSchema);
   }
 
   @Override

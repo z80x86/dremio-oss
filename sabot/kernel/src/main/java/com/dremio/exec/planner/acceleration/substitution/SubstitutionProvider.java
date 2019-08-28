@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,14 @@
  */
 package com.dremio.exec.planner.acceleration.substitution;
 
-import java.util.List;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
+import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.tools.RuleSet;
 
 import com.dremio.exec.planner.sql.handlers.RelTransformer;
+import com.google.common.base.Preconditions;
 
 /**
  * An interface that suggests substitutions to {@link RelOptPlanner planner}.
@@ -38,7 +40,37 @@ public interface SubstitutionProvider {
    * @param query  query to rewrite in terms of materialized view definitions.
    * @return  set of substitutions.
    */
-  List<Substitution> findSubstitutions(final RelNode query);
+  default SubstitutionStream findSubstitutions(final RelNode query) {
+    return SubstitutionStream.empty();
+  }
+
+  class SubstitutionStream {
+    private final Stream<Substitution> substitutionStream;
+    private final Runnable onSuccess;
+    private final Consumer<Throwable> onFailure;
+
+    public SubstitutionStream(Stream<Substitution> substitutionStream, Runnable onSuccess, Consumer<Throwable> onFailure) {
+      this.substitutionStream = substitutionStream;
+      this.onSuccess = onSuccess;
+      this.onFailure = onFailure;
+    }
+
+    public Stream<Substitution> stream() {
+      return substitutionStream;
+    }
+
+    public void success() {
+      onSuccess.run();
+    }
+
+    public void failure(Throwable t) {
+      onFailure.accept(t);
+    }
+
+    public static SubstitutionStream empty() {
+      return new SubstitutionStream(Stream.empty(), () -> { }, t -> { });
+    }
+  }
 
   void setPostSubstitutionTransformer(RelTransformer transformer);
 
@@ -50,19 +82,31 @@ public interface SubstitutionProvider {
     private final RelNode replacement;
     private final RelNode equivalent;
 
-    public Substitution(final RelNode replacement, final RelNode equivalent) {
+    private Substitution(final RelNode replacement) {
       this.replacement = replacement;
-      this.equivalent = equivalent;
+      this.equivalent = null;
+    }
+
+    public Substitution(final RelNode replacement, final RelNode equivalent) {
+      this.replacement = Preconditions.checkNotNull(replacement);
+      this.equivalent = Preconditions.checkNotNull(equivalent);
     }
 
     public RelNode getReplacement() {
       return replacement;
     }
 
-    public RelNode getEquivalent() {
-      return equivalent;
+    public boolean considerThisRootEquivalent() {
+      return equivalent == null;
     }
 
+    public RelNode getEquivalent() {
+      return Preconditions.checkNotNull(equivalent);
+    }
+
+    public static Substitution createRootEquivalent(final RelNode replacement) {
+      return new Substitution(replacement);
+    }
   }
 }
 

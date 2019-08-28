@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -127,7 +127,7 @@ public class Utilities {
   public static String getHumanReadableWorkloadType(WorkloadType workloadType) {
     switch(workloadType) {
       case DDL:
-        return "DDL";
+        return "DDL"; // not yet configurable via UI
       case INTERNAL_RUN:
         return "Internal Run";
       case INTERNAL_PREVIEW:
@@ -144,6 +144,8 @@ public class Utilities {
         return "UI Preview";
       case UI_RUN:
         return "UI Run";
+      case UI_DOWNLOAD:
+        return "UI Download";
       case UNKNOWN:
       default:
         return "Other";

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,22 @@
  */
 package com.dremio.sabot.exec.context;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
-import com.dremio.sabot.threads.sharedres.SharedResourceType;
-import com.google.common.base.Stopwatch;
 import org.apache.arrow.memory.BufferAllocator;
 
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
+import com.dremio.exec.proto.ExecProtos.FragmentHandle;
 import com.dremio.exec.proto.UserBitShared.BlockedResourceDuration;
 import com.dremio.exec.proto.UserBitShared.MinorFragmentProfile;
+import com.dremio.sabot.threads.sharedres.SharedResourceType;
+import com.google.common.base.Stopwatch;
 import com.google.common.collect.Lists;
-
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
  * Holds statistics of a particular (minor) fragment.
@@ -42,6 +43,7 @@ public class FragmentStats {
   private long firstRun;
   private final NodeEndpoint endpoint;
   private final BufferAllocator allocator;
+  private final FragmentHandle handle;
 
   private long sleepingDuration;
   private long blockedOnUpstreamDuration;
@@ -57,8 +59,9 @@ public class FragmentStats {
 
   private boolean notStartedYet = true;
 
-  public FragmentStats(BufferAllocator allocator, NodeEndpoint endpoint) {
+  public FragmentStats(BufferAllocator allocator, FragmentHandle handle, NodeEndpoint endpoint) {
     this.startTime = System.currentTimeMillis();
+    this.handle = handle;
     this.endpoint = endpoint;
     this.allocator = allocator;
     this.perResourceBlockedDurations = Collections.synchronizedMap(new EnumMap<SharedResourceType, Long>(SharedResourceType.class));
@@ -70,8 +73,9 @@ public class FragmentStats {
     prfB.setMaxMemoryUsed(allocator.getPeakMemoryAllocation());
     prfB.setEndTime(System.currentTimeMillis());
     prfB.setEndpoint(endpoint);
-    for(OperatorStats o : operators){
-      prfB.addOperatorProfile(o.getProfile());
+    for (OperatorStats o : operators) {
+      // send details in the operator profile only for the 0th minor fragment of every phase.
+      prfB.addOperatorProfile(o.getProfile(handle.getMinorFragmentId() == 0));
     }
     prfB.setSleepingDuration(sleepingDuration);
     prfB.setBlockedDuration(blockedOnUpstreamDuration + blockedOnDownstreamDuration + blockedOnSharedResourceDuration);

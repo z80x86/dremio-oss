@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  */
 package com.dremio.sabot.exec.context;
 
-import io.netty.buffer.ByteBuf;
-
 import com.dremio.common.DeferredException;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
 import com.dremio.exec.rpc.RpcException;
 import com.dremio.exec.rpc.RpcOutcomeListener;
+
+import io.netty.buffer.ByteBuf;
 
 /**
  * Listener that keeps track of the status of batches sent, and updates the SendingAccountor when status is received

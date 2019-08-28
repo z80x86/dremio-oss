@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.dremio;
+
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -47,5 +49,14 @@ public class TestAggregationQueries extends PlanTestBase {
 
     String query03 = "select stddev_pop(salary) from cp.\"employee.json\"";
     testBuilder().sqlQuery(query03).approximateEquality().unOrdered().baselineColumns("EXPR$0").baselineValues(5369.521895151171).go();
+  }
+
+  @Test
+  public void testInlineFilter() throws Exception {
+    try {
+      test("select count(*) filter (where l_orderkey < 0) from cp.\"tpch/lineitem.parquet\"");
+    } catch (Exception e) {
+      assertTrue(e.getMessage().contains("Dremio does not currently support aggregate functions with a filter clause"));
+    }
   }
 }

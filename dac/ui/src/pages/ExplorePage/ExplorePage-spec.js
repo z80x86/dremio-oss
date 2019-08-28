@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 import { shallow } from 'enzyme';
 import Immutable from 'immutable';
 import { hashHeightTopSplitter } from 'constants/explorePage/heightTopSplitter.js';
-import ExplorePage from './ExplorePage';
+import { ExplorePageView as ExplorePage } from './ExplorePage';
 
 describe('ExplorePage', () => {
   let minimalProps;
@@ -35,7 +35,8 @@ describe('ExplorePage', () => {
       toggleRightTree: sinon.spy(),
       rightTreeVisible: true,
       sqlState: true,
-      updateGridSizes: sinon.spy()
+      updateGridSizes: sinon.spy(),
+      onUnmount: () => {}
     };
     commonProps = {
       ...minimalProps,
@@ -60,7 +61,7 @@ describe('ExplorePage', () => {
     it('should call updateSqlPartSize with sqlState true if dataset displayFullPath starts with tmp', () => {
       instance.initSqlEditor(minimalProps);
       expect(minimalProps.updateSqlPartSize.called).to.be.true;
-      expect(minimalProps.updateSqlPartSize.calledWith(hashHeightTopSplitter.default)).to.be.true;
+      expect(minimalProps.updateSqlPartSize.calledWith(hashHeightTopSplitter.getDefaultSqlHeight())).to.be.true;
     });
     it('should call updateSqlPartSize with sqlState true if dataset is new', () => {
       const props = {
@@ -68,11 +69,15 @@ describe('ExplorePage', () => {
         dataset: Immutable.fromJS({
           isNewQuery: true,
           displayFullPath: ['tmp', 'UNTITLED']
-        })
+        }),
+        location: {
+          query: '',
+          pathname: '/new_query?context=dremio'
+        }
       };
       instance.initSqlEditor(props);
       expect(minimalProps.updateSqlPartSize.called).to.be.true;
-      expect(minimalProps.updateSqlPartSize.calledWith(hashHeightTopSplitter.default)).to.be.true;
+      expect(minimalProps.updateSqlPartSize.calledWith(hashHeightTopSplitter.getNewQueryDefaultSqlHeight())).to.be.true;
     });
     it('should call updateSqlPartSize with sqlState false if dataset is not new', () => {
       const props = {
@@ -84,7 +89,7 @@ describe('ExplorePage', () => {
 
       instance.initSqlEditor(props);
       expect(minimalProps.updateSqlPartSize.called).to.be.true;
-      expect(minimalProps.updateSqlPartSize.calledWith(hashHeightTopSplitter.default)).to.be.true;
+      expect(minimalProps.updateSqlPartSize.calledWith(hashHeightTopSplitter.getDefaultSqlHeight())).to.be.true;
     });
     it('should not call updateSqlPartSize if pageType is not default', () => {
       instance.initSqlEditor(commonProps);

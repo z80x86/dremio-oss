@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,57 +15,437 @@
  */
 package com.dremio.exec.expr;
 
+import java.util.Iterator;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.apache.arrow.gandiva.exceptions.GandivaException;
+import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.types.pojo.Field;
+
+import com.dremio.common.AutoCloseables;
 import com.dremio.common.expression.BooleanOperator;
-import com.dremio.common.expression.EvaluationType;
+import com.dremio.common.expression.CompleteType;
 import com.dremio.common.expression.FieldReference;
 import com.dremio.common.expression.FunctionHolderExpression;
 import com.dremio.common.expression.IfExpression;
 import com.dremio.common.expression.LogicalExpression;
 import com.dremio.common.expression.SchemaPath;
-import com.dremio.common.expression.visitors.AbstractExprVisitor;
+import com.dremio.common.expression.SupportedEngines;
+import com.dremio.common.expression.SupportedEngines.Engine;
+import com.dremio.common.expression.TypedNullConstant;
 import com.dremio.common.logical.data.NamedExpression;
-import com.dremio.exec.expr.fn.BaseFunctionHolder;
+import com.dremio.exec.ExecConstants;
+import com.dremio.exec.proto.UserBitShared.ExpressionSplitInfo;
+import com.dremio.exec.record.BatchSchema;
 import com.dremio.exec.record.TypedFieldId;
+import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorContainer;
+import com.dremio.exec.record.VectorWrapper;
+import com.dremio.sabot.exec.context.OperatorContext;
+import com.dremio.sabot.op.llvm.expr.GandivaPushdownSieve;
+import com.google.common.base.Stopwatch;
 import com.google.common.collect.Lists;
-import org.apache.arrow.vector.types.pojo.Field;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
- * Splits an expression into sub-expressions such that each sub-expression can be evaluated
- * by either Gandiva or Java. Each sub-expression has a unique name that is used to track
- * dependencies
+ * Splits expressions, sets up the pipeline to evaluate the splits.
  */
-public class ExpressionSplitter extends AbstractExprVisitor<LogicalExpression, EvaluationType, RuntimeException> {
+public class ExpressionSplitter implements AutoCloseable {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ExpressionSplitter.class);
   private static final String DEFAULT_TMP_OUTPUT_NAME = "_split_expr";
 
-  // flag to preserve short circuits in case of if-then-else and boolean operators
-  public static boolean preserveShortCircuits = false;
+  // The various splits in the expression
+  final List<ExpressionSplit> splitExpressions;
 
-  final List<NamedExpression> splitExpressions;
+  // Splits of current expression
+  final List<ExpressionSplit> currentExprSplits;
+
+  // The original VectorAccessible structure for the expression that's being split
+  final VectorAccessible incoming;
+
+  // The modified VectorContainer containing the original VectorAccessible structure
+  // and the elements for the intermediate tree-roots
   final VectorContainer vectorContainer;
+
+  // Helper to decide if an intermediate node can be split and made tree-root
   final ExpressionSplitHelper gandivaSplitHelper;
-  String outputFieldPrefix;
+
+  // Operator context. Need this for the allocator to allocate space for the intermediate tree-roots
+  final OperatorContext context;
+
+  // Prefix for the names of the intermediate nodes that are now tree-roots
+  final String outputFieldPrefix;
+  private final long maxSplitsPerExpression;
   int outputFieldCounter = 0;
 
-  public ExpressionSplitter(VectorContainer container, ExpressionSplitHelper gandivaSplitHelper) {
-    this(container, gandivaSplitHelper, ExpressionSplitter.DEFAULT_TMP_OUTPUT_NAME);
+  int numExprsInGandiva = 0;
+  int numExprsInJava = 0;
+  int numExprsInBoth = 0;
+
+  // execution pipeline
+  final List<SplitStageExecutor> execPipeline;
+
+  // materializer options
+  final ExpressionEvaluationOptions options;
+
+  // is split enabled
+  final boolean isSplitEnabled;
+
+  // code generation option
+  final SupportedEngines.CodeGenOption codeGenOption;
+
+  // splitter to understand the splits when the code generation engines are flipped
+  ExpressionSplitter flipCodeGenSplitter;
+
+  // preferred execution type
+  final SupportedEngines.Engine preferredEngine;
+  // the other execution type
+  final SupportedEngines.Engine nonPreferredEngine;
+
+  // Check if there are excessive splits
+  final boolean checkExcessiveSplits;
+
+  // When there are many splits, the preferred engine must do at least this much work per split
+  final double avgWorkThresholdForSplit;
+
+  public ExpressionSplitter(OperatorContext context, VectorAccessible incoming,
+                            ExpressionEvaluationOptions options, boolean isDecimalV2Enabled) {
+    this(context, incoming, options, new GandivaPushdownSieve(isDecimalV2Enabled),
+      ExpressionSplitter.DEFAULT_TMP_OUTPUT_NAME, true);
   }
 
-  public ExpressionSplitter(VectorContainer container, ExpressionSplitHelper gandivaSplitHelper, String outputPrefix) {
-    this.vectorContainer = container;
+  public ExpressionSplitter(OperatorContext context, VectorAccessible incoming, ExpressionEvaluationOptions options,
+                            ExpressionSplitHelper gandivaSplitHelper, String outputPrefix,
+                            boolean checkExcessiveSplits) {
+    this(context, incoming, options, gandivaSplitHelper, outputPrefix, checkExcessiveSplits, null);
+  }
+
+  private ExpressionSplitter(OperatorContext context, VectorAccessible incoming, ExpressionEvaluationOptions options,
+                             ExpressionSplitHelper gandivaSplitHelper, String outputPrefix,
+                             boolean checkExcessiveSplits, VectorContainer vectorContainer) {
+    this.context = context;
+    this.options = options;
     this.gandivaSplitHelper = gandivaSplitHelper;
-    this.splitExpressions = Lists.newArrayList();
     this.outputFieldPrefix = outputPrefix;
+    this.splitExpressions = Lists.newArrayList();
+    this.currentExprSplits = Lists.newArrayList();
+    this.incoming = incoming;
+
+    if (vectorContainer == null) {
+      // Add all ValueVectors from incoming to vector
+      this.vectorContainer = new VectorContainer(context.getAllocator());
+      for (VectorWrapper wrapper : incoming) {
+        this.vectorContainer.add(wrapper.getValueVector());
+      }
+    } else {
+      this.vectorContainer = vectorContainer;
+    }
+
+    this.execPipeline = Lists.newArrayList();
+    this.isSplitEnabled = options.isSplitEnabled();
+
+    this.codeGenOption = options.getCodeGenOption();
+    this.avgWorkThresholdForSplit = options.getWorkThresholdForSplit();
+
+    switch (this.codeGenOption) {
+      case Gandiva:
+      case GandivaOnly:
+        this.preferredEngine = SupportedEngines.Engine.GANDIVA;
+        this.nonPreferredEngine = SupportedEngines.Engine.JAVA;
+        break;
+      case Java:
+      default:
+        this.preferredEngine = SupportedEngines.Engine.JAVA;
+        this.nonPreferredEngine = SupportedEngines.Engine.GANDIVA;
+        break;
+    }
+    if (checkExcessiveSplits) {
+      flipCodeGenSplitter = new ExpressionSplitter(context, incoming, options.flipPreferredCodeGen(), gandivaSplitHelper,
+        "_flipped_" + outputPrefix, false, this.vectorContainer);
+    }
+    this.maxSplitsPerExpression = context.getOptions().getOption(ExecConstants
+      .MAX_SPLITS_PER_EXPRESSION);
+    this.checkExcessiveSplits = checkExcessiveSplits;
   }
 
-  public List<NamedExpression> splitExpression(LogicalExpression expr) {
-    LogicalExpression e = expr.accept(this, expr.getEvaluationType());
-    splitAndGenerateVectorReadExpression(e);
-    return splitExpressions;
+  public int getNumExprsInGandiva() {
+    return numExprsInGandiva;
+  }
+
+  public int getNumExprsInJava() {
+    return numExprsInJava;
+  }
+
+  public int getNumExprsInBoth() {
+    return numExprsInBoth;
+  }
+
+  public int getNumSplitsInBoth() {
+    return splitExpressions.size() - (numExprsInGandiva + numExprsInJava);
+  }
+
+  // Splits the given expression
+  private ExpressionSplit splitExpression(NamedExpression namedExpression) throws Exception {
+    SupportedEngines executionEngine = new SupportedEngines();
+    CodeGenContext expr = (CodeGenContext) namedExpression.getExpr();
+    SplitDependencyTracker myTracker = new SplitDependencyTracker(expr.getExecutionEngineForExpression(), IfExprBranch.EMPTY_LIST);
+    NamedExpression newExpr = namedExpression;
+
+    boolean shouldSplit = isSplitEnabled;
+
+    if (!isSplitEnabled) {
+      if (expr.isSubExpressionExecutableInEngine(preferredEngine)) {
+        executionEngine.add(preferredEngine);
+      } else if (expr.isSubExpressionExecutableInEngine(nonPreferredEngine)) {
+        executionEngine.add(nonPreferredEngine);
+      } else {
+        // this expression cannot be executed in one engine
+        // Split this expression even though split is disabled
+        shouldSplit = true;
+      }
+    }
+
+    if (shouldSplit) {
+      PreferenceBasedSplitter preferenceBasedSplitter = new PreferenceBasedSplitter(this, preferredEngine, nonPreferredEngine);
+      CodeGenContext e = expr.accept(preferenceBasedSplitter, myTracker);
+      newExpr = new NamedExpression(e, namedExpression.getRef());
+      executionEngine = e.getExecutionEngineForExpression();
+    }
+
+    SupportedEngines.Engine engineForSplit = executionEngine.contains(this
+      .preferredEngine) ? this.preferredEngine : this.nonPreferredEngine;
+    ExpressionSplit split = new ExpressionSplit(newExpr, myTracker, null, null, null, true,
+      engineForSplit, 0);
+
+    this.currentExprSplits.add(split);
+
+    // Build the schema for the combined schema
+    vectorContainer.buildSchema(BatchSchema.SelectionVectorMode.NONE);
+    return split;
+  }
+
+  public void printDebugInfoForSplits(LogicalExpression expr, ExpressionSplit split,
+                                       List<ExpressionSplit> splits) {
+    if (splits.size() == 1) {
+      LogicalExpression finalExpr = split.getNamedExpression().getExpr();
+      if (split.getExecutionEngine() == SupportedEngines.Engine.GANDIVA) {
+        logger.debug("Expression executed entirely in Gandiva {}", finalExpr);
+        numExprsInGandiva++;
+      } else {
+        logger.debug("Expression executed entirely in Java {}", finalExpr);
+        numExprsInJava++;
+      }
+    } else {
+      numExprsInBoth++;
+      // more than one split
+      // For debugging, print all splits
+      logger.debug("Mixed mode execution for expression {}", expr);
+      int i = 0;
+      for(ExpressionSplit curSplit : splits) {
+        if (curSplit.getExecutionEngine()== SupportedEngines.Engine.GANDIVA) {
+          logger.debug("Split {} evaluated in Gandiva = {}", i, curSplit.toString());
+        } else {
+          logger.debug("Split {} evaluated in Java = {}", i, curSplit.toString());
+        }
+        i++;
+      }
+    }
+  }
+
+  // iterate over the splits and find out when they can execute
+  private void createPipeline() {
+    List<ExpressionSplit> pendingSplits = Lists.newArrayList();
+    pendingSplits.addAll(splitExpressions);
+    List<String> doneSplits = Lists.newArrayList();
+    int execIteration = 1;
+    while (!pendingSplits.isEmpty()) {
+      Iterator<ExpressionSplit> iterator = pendingSplits.iterator();
+      List<String> doneInThisIteration = Lists.newArrayList();
+      SplitStageExecutor splitStageExecutor = new SplitStageExecutor(context, vectorContainer, preferredEngine);
+
+      logger.trace("Planning splits in phase {}", execIteration);
+      while (iterator.hasNext()) {
+        ExpressionSplit split = iterator.next();
+
+        if (doneSplits.containsAll(split.getDependencies())) {
+          logger.trace("Split {} planned for execution in this phase", split.getNamedExpression().getExpr());
+          split.setExecIteration(execIteration);
+          iterator.remove();
+
+          if (!split.isOriginalExpression()) {
+            // The name for outputs of the actual expressions is
+            // not generated by the splitter, and should not be
+            // considered a dependency that has been evaluated
+            doneInThisIteration.add(split.getOutputName());
+          }
+
+          splitStageExecutor.addSplit(split);
+        }
+      }
+
+      execIteration++;
+      doneSplits.addAll(doneInThisIteration);
+      execPipeline.add(splitStageExecutor);
+    }
+  }
+
+  // setup the pipeline for project operations
+  private void projectorSetup(VectorContainer outgoing, Stopwatch javaCodeGenWatch, Stopwatch gandivaCodeGenWatch) throws GandivaException {
+    for(SplitStageExecutor splitStageExecutor : execPipeline) {
+      splitStageExecutor.setupProjector(outgoing, javaCodeGenWatch, gandivaCodeGenWatch);
+    }
+  }
+
+  // setup the pipeline for filter operations
+  private void filterSetup(VectorContainer outgoing, Stopwatch javaCodeGenWatch, Stopwatch gandivaCodeGenWatch) throws GandivaException, Exception {
+    for(SplitStageExecutor splitStageExecutor : execPipeline) {
+      splitStageExecutor.setupFilter(outgoing, javaCodeGenWatch, gandivaCodeGenWatch);
+    }
+  }
+
+  public List<ExpressionSplit> getSplits() {
+    return this.splitExpressions;
+  }
+
+  // Add one expression to be split
+  public ValueVector addExpr(VectorContainer outgoing, NamedExpression namedExpression) throws Exception {
+    ExpressionSplit split = addToSplitter(incoming, namedExpression);
+    LogicalExpression expr = split.getNamedExpression().getExpr();
+    Field outputField = expr.getCompleteType().toField(namedExpression.getRef());
+    return outgoing.addOrGet(outputField);
+  }
+
+  private boolean isPreferredCodeGenDoingEnoughWork(List<ExpressionSplit> expressionSplits) {
+    long numSplitsInPreferred = 0;
+    long overhead = 0;
+    double workInPreferredSplits = 0.0;
+
+    for(ExpressionSplit split : expressionSplits) {
+      if (split.getExecutionEngine() == preferredEngine) {
+        // this split executes in the preferred engine
+        numSplitsInPreferred++;
+        workInPreferredSplits += split.getWork();
+      } else {
+        overhead += split.getOverheadDueToExtraIfs();
+      }
+    }
+
+    if (numSplitsInPreferred == 0) {
+      return false;
+    }
+
+    workInPreferredSplits -= overhead;
+
+    double avgWorkInPreferred = workInPreferredSplits / numSplitsInPreferred;
+    return (avgWorkInPreferred >= avgWorkThresholdForSplit);
+  }
+
+  private boolean isFlippedCodeGenBetter(List<ExpressionSplit> flippedSplits, List<ExpressionSplit> preferredSplits) {
+    return flippedSplits.size() < preferredSplits.size();
+  }
+
+  private ExpressionSplit addToSplitter(VectorAccessible incoming, NamedExpression namedExpression) throws Exception {
+    logger.debug("Splitting expression {}", namedExpression.getExpr());
+    ExpressionSplit split = splitExpression(new NamedExpression(namedExpression.getExpr(), namedExpression
+      .getRef()));
+    List<ExpressionSplit> splitsForExpression = currentExprSplits;
+    if (currentExprSplits.size() > maxSplitsPerExpression && checkExcessiveSplits) {
+      if (!isPreferredCodeGenDoingEnoughWork(currentExprSplits)) {
+        logger.debug("Flipping preferred execution engine for {}", namedExpression.getExpr());
+        // preferred code gen is not doing enough work
+        LogicalExpression originalExpr = CodeGenerationContextRemover.removeCodeGenContext
+          (namedExpression.getExpr());
+        final LogicalExpression exprWithChangedCodeGen = context.getClassProducer()
+          .materializeAndAllowComplex(options.flipPreferredCodeGen(), originalExpr, incoming);
+        ExpressionSplit flippedSplit = flipCodeGenSplitter.splitExpression(new NamedExpression
+          (exprWithChangedCodeGen, namedExpression.getRef()));
+        if (isFlippedCodeGenBetter(flipCodeGenSplitter.currentExprSplits, currentExprSplits)) {
+          splitsForExpression = flipCodeGenSplitter.currentExprSplits;
+          split = flippedSplit;
+        }
+      }
+    }
+    printDebugInfoForSplits(namedExpression.getExpr(), split, splitsForExpression);
+    splitExpressions.addAll(splitsForExpression);
+    flipCodeGenSplitter.currentExprSplits.clear();
+    this.currentExprSplits.clear();
+    return split;
+  }
+
+  private void verifySplitsInGandiva() throws Exception {
+    if (codeGenOption != SupportedEngines.CodeGenOption.GandivaOnly) {
+      return;
+    }
+
+    // ensure that all splits can execute in Gandiva
+    for(ExpressionSplit split : splitExpressions) {
+
+      if (split.getExecutionEngine() != SupportedEngines.Engine.GANDIVA) {
+        logger.error("CodeGenMode is GandivaOnly, Split {} cannot be executed in Gandiva", split
+          .getNamedExpression().getExpr());
+        throw new Exception("Expression cannot be executed entirely in Gandiva in GandivaOnly codeGen mode");
+      }
+    }
+  }
+
+  // create and setup the pipeline for project operations
+  public VectorContainer setupProjector(VectorContainer outgoing, Stopwatch javaCodeGenWatch, Stopwatch gandivaCodeGenWatch)
+    throws Exception {
+    verifySplitsInGandiva();
+    createPipeline();
+    projectorSetup(outgoing, javaCodeGenWatch, gandivaCodeGenWatch);
+    return vectorContainer;
+  }
+
+  // create and setup the pipeline for filter operation
+  public void setupFilter(VectorContainer outgoing, NamedExpression namedExpression,
+                          Stopwatch javaCodeGenWatch,
+                          Stopwatch gandivaCodeGenWatch) throws Exception {
+    addToSplitter(incoming, namedExpression);
+    verifySplitsInGandiva();
+    createPipeline();
+    filterSetup(outgoing, javaCodeGenWatch, gandivaCodeGenWatch);
+  }
+
+  // This is invoked in case of an exception to release all buffers that have been allocated
+  void releaseAllBuffers() {
+    for(ExpressionSplit split : this.splitExpressions) {
+      split.releaseOutputBuffer();
+    }
+  }
+
+  // project operator
+  public void projectRecords(int recordsToConsume, Stopwatch javaCodeGenWatch, Stopwatch gandivaCodeGenWatch) throws Exception {
+    try {
+      for (int i = 0; i < execPipeline.size(); i++) {
+        SplitStageExecutor executor = execPipeline.get(i);
+        executor.evaluateProjector(recordsToConsume, javaCodeGenWatch, gandivaCodeGenWatch);
+      }
+    } catch (Exception e) {
+      releaseAllBuffers();
+      throw e;
+    }
+  }
+
+  // filter data
+  public int filterData(int records, Stopwatch javaCodeGenWatch, Stopwatch gandivaCodeGenWatch) throws Exception {
+    try {
+      for (int i = 0; i < execPipeline.size() - 1; i++) {
+        SplitStageExecutor executor = execPipeline.get(i);
+        executor.evaluateProjector(records, javaCodeGenWatch, gandivaCodeGenWatch);
+      }
+
+      // The last stage is the filter operation
+      return execPipeline.get(execPipeline.size() - 1).evaluateFilter(records, javaCodeGenWatch, gandivaCodeGenWatch);
+    } catch (Exception e) {
+      releaseAllBuffers();
+      throw e;
+    }
+  }
+
+  @Override
+  public void close() throws Exception {
+    AutoCloseables.close(execPipeline, splitExpressions);
   }
 
   // Generate unique name for the split
@@ -84,23 +464,111 @@ public class ExpressionSplitter extends AbstractExprVisitor<LogicalExpression, E
     return gandivaSplitHelper.canSplitAt(expression);
   }
 
+  boolean canSplitAt(LogicalExpression expr, SupportedEngines.Engine engine) {
+    switch (engine) {
+      case GANDIVA:
+        return gandivaSupportsReturnType(expr);
+      case JAVA:
+      default:
+        // TODO: Add a generic way of indicating if Java supports split at a particular node
+        return true;
+    }
+  }
+
+  /*
+   * Returns the expression to evaluate by taking into account the preceding if expressions
+   * For e.g. when there are nested if-conditions like:
+   * if (C1) then (T1) else if (C2) then (T2) else (E2)
+   * T2 and E2 should be executed only if C1 is false, irrespective of the value of C2
+   *
+   * The SplitDependencyTracks tracks the stack of if-exprs. This stack is processed in reverse
+   * order to generate the if condition for T2 as:
+   * if (C1) then null else if (C2) then (T2) else null
+   */
+  CodeGenContext getExpressionInBranch(CodeGenContext expr, SplitDependencyTracker myTracker) {
+    List<IfExprBranch> ifExprBranches = myTracker.getIfExprBranches();
+    if (ifExprBranches.isEmpty()) {
+      return expr;
+    }
+
+    boolean canExecuteInPreferred = expr.getExecutionEngineForExpression().contains(this.preferredEngine) && canSplitAt(expr, this.preferredEngine);
+    // process in reverse order
+    CompleteType subExprType = expr.getCompleteType();
+    // Using TypedNull and not a boolean because the nested-if can be part of an expression as in:
+    // if (c) then () else (5 + (if (c1) then (c2) else (c3) end)) end
+    CodeGenContext nullExprContext = new CodeGenContext(new TypedNullConstant(subExprType));
+    for(int i = ifExprBranches.size() - 1; i >= 0; i--) {
+      IfExprBranch ifExprBranch = ifExprBranches.get(i);
+
+      ExpressionSplit condSplit = ifExprBranch.getIfCondition();
+      CodeGenContext condValueVecContext = condSplit.getReadExpressionContext();
+      myTracker.addDependency(condSplit);
+
+      IfExpression.Builder ifBuilder = new IfExpression.Builder().setOutputType(subExprType);
+
+      if (ifExprBranch.isPartOfThenExpr()) {
+        // part of then-expr
+        IfExpression.IfCondition conditions = new IfExpression.IfCondition(condValueVecContext, expr);
+        ifBuilder.setIfCondition(conditions).setElse(nullExprContext);
+      } else {
+        // part of else-expr
+        ifBuilder.setIfCondition(new IfExpression.IfCondition(condValueVecContext, nullExprContext))
+          .setElse(expr);
+      }
+
+      IfExpression ifExpr = ifBuilder.build();
+      expr = CodeGenContext.buildWithNoDefaultSupport(ifExpr);
+    }
+
+    if (canExecuteInPreferred) {
+      expr.addSupportedExecutionEngineForSubExpression(this.preferredEngine);
+      expr.addSupportedExecutionEngineForExpression(this.preferredEngine);
+    } else {
+      expr.addSupportedExecutionEngineForSubExpression(this.nonPreferredEngine);
+      expr.addSupportedExecutionEngineForExpression(this.nonPreferredEngine);
+    }
+
+    return expr;
+  }
+
   // Create a split at this expression
   // Adds the output field to the schema
-  private ValueVectorReadExpression splitAndGenerateVectorReadExpression(LogicalExpression expr) {
+  ExpressionSplit splitAndGenerateVectorReadExpression(CodeGenContext expr, SplitDependencyTracker
+    parentTracker, SplitDependencyTracker myTracker) {
     String exprName = getOutputNameForSplit();
     SchemaPath path = SchemaPath.getSimplePath(exprName);
     FieldReference ref = new FieldReference(path);
-    this.splitExpressions.add(new NamedExpression(expr, ref));
-    Field outputField = expr.getCompleteType().toField(ref);
 
+    logger.trace("Creating a split for {}", expr);
+    expr = getExpressionInBranch(expr, myTracker);
+
+    NamedExpression newExpr = new NamedExpression(expr, ref);
+    Field outputField = expr.getCompleteType().toField(ref);
     vectorContainer.addOrGet(outputField);
     TypedFieldId fieldId = vectorContainer.getValueVectorId(ref);
-    return new ValueVectorReadExpression(fieldId);
+    ValueVectorReadExpression read = new ValueVectorReadExpression(fieldId);
+    CodeGenContext readContext = new CodeGenContext(read);
+    readContext.addSupportedExecutionEngineForSubExpression(SupportedEngines.Engine.GANDIVA);
+    readContext.addSupportedExecutionEngineForExpression(SupportedEngines.Engine.GANDIVA);
+    // transfer the output of the new expression to the valuevectorreadexpression
+    final TypedFieldId id = read.getFieldId();
+    final ValueVector vvIn = vectorContainer.getValueAccessorById(id.getIntermediateClass(), id.getFieldIds()).getValueVector();
+
+    SupportedEngines.Engine engineForSplit = expr.getExecutionEngineForExpression().contains(this
+      .preferredEngine) ? this.preferredEngine : this.nonPreferredEngine;
+    ExpressionSplit split = new ExpressionSplit(newExpr, myTracker, fieldId, readContext, vvIn, false,
+      engineForSplit, myTracker.getIfExprBranches().size());
+    this.currentExprSplits.add(split);
+
+    logger.trace("Split created {}", split.toString());
+    parentTracker.addDependency(split);
+    return split;
   }
 
   // Checks if the expression is a candidate for split
   // Split only functions, if expressions and boolean operators
-  private boolean candidateForSplit(LogicalExpression e) {
+  boolean candidateForSplit(LogicalExpression e) {
+
     if (e instanceof FunctionHolderExpression) {
       return true;
     }
@@ -116,262 +584,74 @@ public class ExpressionSplitter extends AbstractExprVisitor<LogicalExpression, E
     return false;
   }
 
-  // Consider the following expression tree with 3 nodes P, N and C where N is P's child and C is N's child
-  // N can be evaluated in Gandiva (but, Gandiva cannot return N's N return type), and
-  // C cannot be evaluated in Gandiva
+  // Consider the following expression tree with 2 nodes P, and N where N is P's child
   //
-  // Should we split at C or not? Consider the following 2 cases:
-  // case 1. P can be evaluated in Gandiva and
-  // case 2. P cannot be evaluated in Gandiva
+  // Notation: P - PC means Node P can be evaluated in preferred codegenerator
+  // P - NPC means that Node P cannot be evaluated in preferred codegenerator
   //
-  // In both cases, there is no split at N. Case 2 doesn't split at N because Gandiva cannot return N's return type
+  // case 1) P - PC, N - PC (can split N, cannot split N): N - PC. Evaluate N in preferred code generator since N's parent
+  // is going to be evaluated in preferred code generator
+  // case 2) P - PC, N - NPC (can split N): N - NPC. N has to be split and can be split
+  // case 3) P - PC, N - NPC (cannot split N): N - NPC. N needs to be split, but cannot. Throw an exception
   //
-  // In case 1, we want to split at C because N is going to be evaluated in Gandiva
-  // In case 2, we dont want to split at C because N is going to be evaluated in Java
-  //
-  // This function determines the effective evaluation type of N:
-  // Gandiva in case 1, and
-  // Java in case 2
-  private EvaluationType getEffectiveNodeEvaluationType(EvaluationType parentEvalType, LogicalExpression expr) {
-    EvaluationType evalType = expr.getEvaluationType();
+  // case 4) P - NPC, N - NPC (can split N, cannot split N): N - NPC
+  // case 5) P - NPC, N - PC (can split N): N - PC
+  // case 6) P - NPC, N - PC (cannot split N): N - NPC, if N can be executed in NPC; else throw exception
+  SupportedEngines getEffectiveNodeEvaluationType(SupportedEngines parentEvalType, CodeGenContext expr)
+  throws Exception {
+    SupportedEngines executionEngine = expr.getExecutionEngineForExpression();
 
-    if (parentEvalType.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-      // parent supports Gandiva
-      // if expr supports Gandiva - no split
-      // if expr supports Java - split at expr
-      // TODO: Need to handle the case where Java is able to evaluate an expression, but cannot return data
-      // associated with the function
-      return evalType;
+    if (parentEvalType.contains(this.preferredEngine)) {
+      if (executionEngine.contains(this.preferredEngine)) {
+        // both support preferred execution type
+        // case 1
+        return executionEngine;
+      }
+
+      if (canSplitAt(expr, this.nonPreferredEngine)) {
+        // case 2
+        return executionEngine;
+      }
+
+      // case 3
+      throw new Exception("Node needs to be split, but cannot be split");
     }
 
-    // parent supports Java
-    if (!expr.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-      // expression does not support Gandiva. No split at expr
-      return evalType;
-    }
-
-    // parent supports Java
-    // expression supports Gandiva. We might want to split and evaluate using Gandiva
-    if (gandivaSupportsReturnType(expr)) {
-      // expr can be split
-      return evalType;
-    }
-
-    // expr cannot be tree-root in Gandiva
-    evalType.removeEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-    return evalType;
-  }
-
-  @Override
-  public LogicalExpression visitFunctionHolderExpression(FunctionHolderExpression holder, EvaluationType parentEvalType) throws RuntimeException {
-    EvaluationType evaluationType = getEffectiveNodeEvaluationType(parentEvalType, holder);
-    List<LogicalExpression> newArgs = Lists.newArrayList();
-
-    if (evaluationType.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-      // function call is supported by Gandiva
-      for(LogicalExpression arg : holder.args) {
-        // Traverse down the tree to see if the expression changes. When there is a split
-        // the expression changes as the operator is replaced by the newly created split
-        LogicalExpression newArg = arg.accept(this, evaluationType);
-
-        if (!candidateForSplit(arg) ||
-            arg.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-          // Gandiva supports the function and this argument
-          newArgs.add(newArg);
-          continue;
+    if (parentEvalType.contains(this.nonPreferredEngine)) {
+      if (executionEngine.contains(this.preferredEngine)) {
+        // needs to split, if possible
+        if (canSplitAt(expr, this.preferredEngine)) {
+          // case 5
+          return executionEngine;
         }
 
-        // this arg is not supported by Gandiva
-        // this is a split point
-        ValueVectorReadExpression readExpression = splitAndGenerateVectorReadExpression(newArg);
-        readExpression.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-        newArgs.add(readExpression);
+        // cannot execute in preferred type
+        executionEngine.remove(this.preferredEngine);
       }
 
-      // Create new function holder and annotate it for Gandiva execution
-      FunctionHolderExpr result = new FunctionHolderExpr(holder.getName(), (BaseFunctionHolder)holder.getHolder(), newArgs);
-      result.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      return result;
+      if (executionEngine.contains(this.nonPreferredEngine)) {
+        // both support non preferred execution type
+        // case 4
+        return executionEngine;
+      }
+
+      throw new Exception("Do not know how to evaluate node");
     }
 
-    // the function cannot be executed in Gandiva
-    // go over the arguments to see if any argument can be executed in Gandiva
-    for(LogicalExpression arg: holder.args) {
-      LogicalExpression newArg = arg.accept(this, evaluationType);
-
-      if (!candidateForSplit(arg) ||
-          !arg.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-        // Gandiva cannot execute this argument
-        // Lets evaluate this in Java
-        newArgs.add(newArg);
-        continue;
-      }
-
-      if (!gandivaSupportsReturnType(newArg)) {
-        // Gandiva does not support the return type of the split
-        newArgs.add(newArg);
-        continue;
-      }
-
-      // Gandiva can execute this argument
-      // this is a split point
-      ValueVectorReadExpression readExpression = splitAndGenerateVectorReadExpression(newArg);
-      readExpression.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      newArgs.add(readExpression);
-    }
-
-    // Create the new function holder
-    FunctionHolderExpr result = new FunctionHolderExpr(holder.getName(), (BaseFunctionHolder)holder.getHolder(), newArgs);
-    return result;
+    throw new Exception("Do not know how to evaluate parent node");
   }
 
-  @Override
-  public LogicalExpression visitIfExpression(IfExpression ifExpr, EvaluationType parentEvalType) throws RuntimeException {
-    EvaluationType evaluationType = getEffectiveNodeEvaluationType(parentEvalType, ifExpr);
-    LogicalExpression newCond = ifExpr.ifCondition.condition.accept(this, evaluationType);
-    LogicalExpression thenExpr = ifExpr.ifCondition.expression.accept(this, evaluationType);
-    LogicalExpression elseExpr = ifExpr.elseExpression.accept(this, evaluationType);
-
-    // TODO: Try harder to avoid extra work
-    // if (cond) then then-expr else else-expr
-    // It is possible that the then-expr executes in Java and the else-expr executes in Gandiva
-    // This will end up evaluating both the expressions even when the cond is false most of the time
-    //
-    // cond in Java; then-expr and else-expr in Gandiva (this is already how it is done)
-    // 1. Evaluate cond in Java - output in xxx
-    // 2. Evaluate if (xxx) then then-expr else else-expr in Gandiva
-    //
-    // cond and else-expr in Gandiva, then-expr in Java (this case can be improved)
-    // 1. Evaluate cond in Gandiva - output in xxx
-    // 2. Evaluate if (xxx) then then-expr else const in Java - output in yyy
-    // 3. Evaluate if (xxx) then yyy else else-expr in Gandiva - final output
-    if (evaluationType.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-      if (!ExpressionSplitter.preserveShortCircuits &&
-          candidateForSplit(ifExpr.ifCondition.condition) &&
-          !ifExpr.ifCondition.condition.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-        // the condition cannot be evaluated using Gandiva
-        newCond = splitAndGenerateVectorReadExpression(newCond);
-        newCond.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      }
-
-      if (!ExpressionSplitter.preserveShortCircuits &&
-          candidateForSplit(ifExpr.ifCondition.expression) &&
-          !ifExpr.ifCondition.expression.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-        thenExpr = splitAndGenerateVectorReadExpression(thenExpr);
-        thenExpr.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      }
-
-      if (!ExpressionSplitter.preserveShortCircuits &&
-          candidateForSplit(ifExpr.elseExpression) &&
-          !ifExpr.elseExpression.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-        elseExpr = splitAndGenerateVectorReadExpression(elseExpr);
-        elseExpr.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      }
-    } else {
-      // Gandiva cannot evaluate the if-expression
-      if (!ExpressionSplitter.preserveShortCircuits &&
-          candidateForSplit(ifExpr.ifCondition.condition) &&
-          gandivaSupportsReturnType(ifExpr.ifCondition.condition) &&
-          ifExpr.ifCondition.condition.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-        // the condition can be evaluated using Gandiva
-        newCond = splitAndGenerateVectorReadExpression(newCond);
-        newCond.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      }
-
-      if (!ExpressionSplitter.preserveShortCircuits &&
-          candidateForSplit(ifExpr.ifCondition.expression) &&
-          gandivaSupportsReturnType(ifExpr.ifCondition.expression) &&
-          ifExpr.ifCondition.expression.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-        thenExpr = splitAndGenerateVectorReadExpression(thenExpr);
-        thenExpr.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      }
-
-      if (!ExpressionSplitter.preserveShortCircuits &&
-          candidateForSplit(ifExpr.elseExpression) &&
-          gandivaSupportsReturnType(ifExpr.elseExpression) &&
-          ifExpr.elseExpression.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-        elseExpr = splitAndGenerateVectorReadExpression(elseExpr);
-        elseExpr.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      }
-    }
-
-    IfExpression.IfCondition condition = new IfExpression.IfCondition(newCond, thenExpr);
-    IfExpression result = IfExpression.newBuilder()
-      .setIfCondition(condition)
-      .setElse(elseExpr)
-      .setOutputType(ifExpr.outputType)
-      .build();
-    if (evaluationType.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-      result.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-    }
-    return result;
-  }
-
-  @Override
-  public LogicalExpression visitBooleanOperator(BooleanOperator op, EvaluationType parentEvalType) throws RuntimeException {
-    EvaluationType evaluationType = getEffectiveNodeEvaluationType(parentEvalType, op);
-    List<LogicalExpression> newArgs = Lists.newArrayList();
-
-    if (evaluationType.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-      // Boolean expression is supported by Gandiva
-      for(LogicalExpression arg : op.args) {
-        // traverse down the tree to see if the expression changes
-        LogicalExpression newArg = arg.accept(this, evaluationType);
-
-        // TODO: Try harder to preserve short circuits while evaluating boolean operators
-        if (ExpressionSplitter.preserveShortCircuits ||
-            !candidateForSplit(arg) ||
-            arg.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-          newArgs.add(newArg);
-          continue;
-        }
-
-        // this arg is not supported by Gandiva
-        // this is a split point
-        ValueVectorReadExpression readExpression = splitAndGenerateVectorReadExpression(newArg);
-        readExpression.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-        newArgs.add(readExpression);
-      }
-
-      BooleanOperator result = new BooleanOperator(op.getName(), newArgs);
-      result.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      return result;
-    }
-
-    // the boolean expression cannot be executed in Gandiva
-    // go over the arguments to see if any argument can be executed in Gandiva
-    for(LogicalExpression arg: op.args) {
-      LogicalExpression newArg = arg.accept(this, evaluationType);
-
-      if (ExpressionSplitter.preserveShortCircuits ||
-          !candidateForSplit(arg) ||
-          !arg.isEvaluationTypeSupported(EvaluationType.ExecutionType.GANDIVA)) {
-        // Gandiva cannot execute this argument
-        newArgs.add(newArg);
-        continue;
-      }
-
-      if (!gandivaSupportsReturnType(newArg)) {
-        newArgs.add(newArg);
-        continue;
-      }
-
-      // Gandiva can execute this argument
-      // this is a split point
-      ValueVectorReadExpression readExpression = splitAndGenerateVectorReadExpression(newArg);
-      readExpression.addEvaluationType(EvaluationType.ExecutionType.GANDIVA);
-      newArgs.add(readExpression);
-    }
-
-    BooleanOperator result = new BooleanOperator(op.getName(), newArgs);
-    return result;
-  }
-
-  @Override
-  public LogicalExpression visitUnknown(LogicalExpression e, EvaluationType parentEvalType) throws RuntimeException {
-    // All other cases, return the expression as-is
-    // TODO: Need to check how the splitter handles complex data types
-    // Ideally like(a.b, "Barbie") should execute in Gandiva with a.b evaluated in Java to produce a ValueVector
-    return e;
+  // Convert useful details to protobuf, so they can be displayed in the profile.
+  public List<ExpressionSplitInfo> getSplitInfos() {
+    return this.getSplits()
+      .stream()
+      .map(x -> ExpressionSplitInfo
+        .newBuilder()
+        .setNamedExpression(x.getNamedExpression().toString())
+        .setInGandiva(x.getExecutionEngine().equals(Engine.GANDIVA))
+        .setOutputName(x.getOutputName())
+        .addAllDependsOn(x.getDependencies())
+        .build())
+      .collect(Collectors.toList());
   }
 }

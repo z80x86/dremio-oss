@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.dremio.exec.work.foreman;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -29,14 +30,16 @@ import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.catalog.Catalog;
 import com.dremio.exec.ops.OperatorMetricRegistry;
 import com.dremio.exec.ops.QueryContext;
+import com.dremio.exec.physical.base.EndpointHelper;
 import com.dremio.exec.planner.PlanCaptureAttemptObserver;
+import com.dremio.exec.planner.fragment.PlanFragmentFull;
 import com.dremio.exec.planner.observer.AbstractAttemptObserver;
 import com.dremio.exec.planner.observer.AttemptObservers;
 import com.dremio.exec.planner.sql.handlers.commands.ResourceAllocationResultObserver;
+import com.dremio.exec.proto.CoordExecRPC.CancelFragments;
 import com.dremio.exec.proto.CoordExecRPC.FragmentStatus;
 import com.dremio.exec.proto.CoordExecRPC.NodePhaseStatus;
 import com.dremio.exec.proto.CoordExecRPC.NodeQueryStatus;
-import com.dremio.exec.proto.CoordExecRPC.PlanFragment;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
@@ -95,6 +98,7 @@ class QueryManager {
   private ImmutableMap<NodeEndpoint, NodeReporter> nodeReporters = ImmutableMap.of();
 
   // the following mutable variables are used to capture ongoing query status
+  private long commandPoolWait;
   private long startPlanningTime;
   private long endPlanningTime;  // NB: tracks the end of both planning and resource scheduling. Name kept to match the profile object, which was kept intact for legacy reasons
   private long startTime;
@@ -147,6 +151,11 @@ class QueryManager {
     }
 
     @Override
+    public void commandPoolWait(long waitInMillis) {
+      addCommandPoolWaitTime(waitInMillis);
+    }
+
+    @Override
     public void planStart(String rawPlan) {
       markStartPlanningTime();
     }
@@ -191,14 +200,14 @@ class QueryManager {
     }
   }
 
-  private void populate(List<PlanFragment> fragments){
+  private void populate(List<PlanFragmentFull> fragments){
     Map<NodeEndpoint, NodeTracker> trackers = new HashMap<>();
     Map<FragmentHandle, FragmentData> dataCollectors = new HashMap<>();
     ArrayListMultimap<Integer, FragmentData> majors = ArrayListMultimap.create();
     Map<NodeEndpoint, NodeReporter> nodeReporters = new HashMap<>();
 
-    for(PlanFragment fragment : fragments) {
-      final NodeEndpoint assignment = fragment.getAssignment();
+    for(PlanFragmentFull fragment : fragments) {
+      final NodeEndpoint assignment = fragment.getMinor().getAssignment();
 
       NodeTracker tracker = trackers.get(assignment);
       if (tracker == null) {
@@ -231,35 +240,17 @@ class QueryManager {
   }
 
   /**
-   * Stop all fragments with currently *known* active status (active as in SENDING, AWAITING_ALLOCATION, RUNNING).
-   *
-   * For the actual cancel calls for intermediate and leaf fragments, see
-   * {@link com.dremio.sabot.rpc.CoordToExecHandler#cancelFragment}
-   * (1) Root fragment: pending or running, send the cancel signal through a tunnel.
-   * (2) Intermediate fragment: pending or running, send the cancel signal through a tunnel (for local and remote
-   *    fragments). The actual cancel is done by delegating the cancel to the work bus.
-   * (3) Leaf fragment: running, send the cancel signal through a tunnel. The cancel is done directly.
+   * Cancel all fragments. Only one rpc is sent per executor.
    */
   void cancelExecutingFragments() {
-    for(final FragmentData data : fragmentDataMap.values()) {
-      switch(data.getState()) {
-      case SENDING:
-      case AWAITING_ALLOCATION:
-      case RUNNING:
-        final FragmentHandle handle = data.getHandle();
-        final NodeEndpoint endpoint = data.getEndpoint();
-        // TODO is the CancelListener redundant? Does the FragmentStatusListener get notified of the same?
-        tunnelCreator.getTunnel(endpoint).cancelFragment(new SignalListener(endpoint, handle,
-            SignalListener.Signal.CANCEL), handle);
-        break;
+    CancelFragments fragments = CancelFragments
+      .newBuilder()
+      .setQueryId(queryId)
+      .build();
 
-      case FINISHED:
-      case CANCELLATION_REQUESTED:
-      case CANCELLED:
-      case FAILED:
-        // nothing to do
-        break;
-      }
+    for (NodeEndpoint endpoint : nodeMap.keySet()) {
+      tunnelCreator.getTunnel(endpoint).cancelFragments(new SignalListener(endpoint, fragments,
+        SignalListener.Signal.CANCEL), fragments);
     }
   }
 
@@ -268,7 +259,7 @@ class QueryManager {
      * that the target fragment has acknowledged the signal. As a result, this listener doesn't do anything
      * but log messages.
      */
-  private static class SignalListener extends EndpointListener<Ack, FragmentHandle> {
+  private static class SignalListener extends EndpointListener<Ack, CancelFragments> {
     /**
      * An enum of possible signals that {@link SignalListener} listens to.
      */
@@ -276,8 +267,8 @@ class QueryManager {
 
     private final Signal signal;
 
-    public SignalListener(final NodeEndpoint endpoint, final FragmentHandle handle, final Signal signal) {
-      super(endpoint, handle);
+    SignalListener(final NodeEndpoint endpoint, CancelFragments fragments, final Signal signal) {
+      super(endpoint, fragments);
       this.signal = signal;
     }
 
@@ -285,15 +276,15 @@ class QueryManager {
     public void failed(final RpcException ex) {
       final String endpointIdentity = endpoint != null ?
         endpoint.getAddress() + ":" + endpoint.getUserPort() : "<null>";
-      logger.error("Failure while attempting to {} fragment {} on endpoint {} with {}.",
-        signal, QueryIdHelper.getQueryIdentifier(value), endpointIdentity, ex);
+      logger.error("Failure while attempting to {} fragments of query {} on endpoint {} with {}.",
+        signal, QueryIdHelper.getQueryId(value.getQueryId()), endpointIdentity, ex);
     }
 
     @Override
     public void success(final Ack ack, final ByteBuf buf) {
       if (!ack.getOk()) {
-        logger.warn("Remote node {} responded negative on {} request for fragment {} with {}.", endpoint, signal, value,
-          ack);
+        logger.warn("Remote node {} responded negative on {} request {} with {}.",
+          endpoint, signal, QueryIdHelper.getQueryId(value.getQueryId()), ack);
       }
     }
 
@@ -315,6 +306,7 @@ class QueryManager {
         .setForeman(context.getCurrentEndpoint())
         .setStart(startTime)
         .setEnd(endTime)
+        .setCommandPoolWaitMillis(commandPoolWait)
         .setPlanningStart(startPlanningTime)
         .setPlanningEnd(endPlanningTime)
         .setTotalFragments(fragmentDataMap.size())
@@ -449,6 +441,10 @@ class QueryManager {
     startTime = System.currentTimeMillis();
   }
 
+  private void addCommandPoolWaitTime(long waitInMillis) {
+    commandPoolWait += waitInMillis;
+  }
+
   void markEndTime() {
     endTime = System.currentTimeMillis();
   }
@@ -555,7 +551,7 @@ class QueryManager {
         break;
 
       case FAILED:
-        logger.info("Fragment {} failed, cancelling remaining fragments.", QueryIdHelper.getQueryIdentifier(status.getHandle()));
+        logger.debug("Fragment {} failed, cancelling remaining fragments.", QueryIdHelper.getQueryIdentifier(status.getHandle()));
         completionListener.failed(UserRemoteException.create(status.getProfile().getError()));
         fragmentDone(status);
         break;
@@ -598,11 +594,17 @@ class QueryManager {
       final StringBuilder failedNodeList = new StringBuilder();
       boolean atLeastOneFailure = false;
 
+      List<NodeTracker> nodesToMarkDead = new ArrayList<>();
       for (final NodeEndpoint ep : unregisteredNodes) {
-        final NodeTracker tracker = nodeMap.get(ep);
+        /*
+         * The nodeMap has minimal endpoints, while this list has nodes with additional attributes.
+         * Convert to a minimal endpoint prior to lookup.
+         */
+        final NodeTracker tracker = nodeMap.get(EndpointHelper.getMinimalEndpoint(ep));
         if (tracker == null) {
           continue; // fragments were not assigned to this SabotNode
         }
+        nodesToMarkDead.add(tracker);
 
         // mark node as dead.
         if (tracker.isDone()) {
@@ -630,11 +632,8 @@ class QueryManager {
       }
 
       // now we can call nodeDead() on all unregistered nodes
-      for (final NodeEndpoint ep : unregisteredNodes) {
-        final NodeTracker tracker = nodeMap.get(ep);
-        if (tracker != null) {
-          tracker.nodeDead();
-        }
+      for (final NodeTracker tracker : nodesToMarkDead) {
+        tracker.nodeDead();
       }
     }
   };

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import com.dremio.BaseTestQuery;
+import com.dremio.TestBuilder;
 import com.dremio.exec.ExecConstants;
 import com.dremio.exec.proto.UserBitShared;
 
@@ -127,5 +128,23 @@ public class TestSystemTable extends BaseTestQuery {
       .baselineValues(expectedClusterLoad, MAX_WIDTH_PER_NODE, MAX_WIDTH_PER_NODE)
       .baselineValues(expectedClusterLoad, MAX_WIDTH_PER_NODE, MAX_WIDTH_PER_NODE)
       .go();
+  }
+
+  @Test
+  public void servicesTable() throws Exception {
+    String query = "SELECT * FROM sys.services";
+    TestBuilder test = testBuilder()
+      .sqlQuery(query)
+      .unOrdered()
+      .baselineRecords(null)
+      .baselineColumns("service", "hostname", "user_port", "fabric_port");
+
+    ServicesIterator services = new ServicesIterator(getSabotContext());
+    while (services.hasNext()) {
+      ServicesIterator.ServiceSetInfo info = (ServicesIterator.ServiceSetInfo) services.next();
+      test.baselineValues(info.service, info.hostname, info.user_port, info.fabric_port);
+    }
+
+    test.go();
   }
 }

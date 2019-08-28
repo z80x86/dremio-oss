@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import static org.junit.Assert.fail;
 
 import java.util.concurrent.CountDownLatch;
 
-import com.dremio.service.Pointer;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -30,9 +29,8 @@ import com.dremio.exec.ops.QueryContext;
 import com.dremio.exec.proto.UserBitShared.QueryId;
 import com.dremio.exec.proto.UserBitShared.UserCredentials;
 import com.dremio.exec.proto.UserProtos.UserProperties;
-import com.dremio.exec.testing.ControlsInjector;
-import com.dremio.exec.testing.ControlsInjectorFactory;
 import com.dremio.sabot.rpc.user.UserSession;
+import com.dremio.service.Pointer;
 
 public class TestCountDownLatchInjection extends BaseTestQuery {
 

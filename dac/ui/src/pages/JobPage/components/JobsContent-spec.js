@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,13 +71,15 @@ describe('JobsContent', () => {
       sinon.stub(socket, 'startListenToJobProgress');
       sinon.spy(instance, 'setActiveJob');
 
-      wrapper.setProps({jobId: undefined}, {context});
+      wrapper.setProps({jobId: undefined}).setContext(context);
       expect(instance.setActiveJob).to.not.be.called;
 
-      wrapper.setProps({jobId: '456', jobs: Immutable.fromJS([{id: '456', state: 'RUNNING'}])}, {context});
+      wrapper.setProps({jobId: '456', jobs: Immutable.fromJS([{id: '456', state: 'RUNNING'}])})
+      .setContext(context);
       expect(instance.setActiveJob).to.not.be.called;
 
-      wrapper.setProps({jobId: undefined, jobs: Immutable.fromJS([{id: '789', state: 'RUNNING'}])}, {context});
+      wrapper.setProps({jobId: undefined, jobs: Immutable.fromJS([{id: '789', state: 'RUNNING'}])})
+      .setContext(context);
       expect(instance.setActiveJob).to.be.calledWith(Immutable.fromJS({id: '789', state: 'RUNNING'}), true);
       socket.startListenToJobProgress.restore();
     });
@@ -86,7 +88,8 @@ describe('JobsContent', () => {
       sinon.spy(instance, 'setActiveJob');
       sinon.stub(instance, 'runActionForJobs');
 
-      wrapper.setProps({jobId: undefined, jobs: Immutable.fromJS([{id: '456', state: 'RUNNING'}])}, {context});
+      wrapper.setProps({jobId: undefined, jobs: Immutable.fromJS([{id: '456', state: 'RUNNING'}])})
+        .setContext(context);
       expect(instance.setActiveJob).to.be.calledWith(Immutable.fromJS({id: '456', state: 'RUNNING'}), true);
     });
 
@@ -94,10 +97,10 @@ describe('JobsContent', () => {
       sinon.stub(socket, 'startListenToJobProgress');
       sinon.spy(instance, 'runActionForJobs');
 
-      wrapper.setProps(commonProps, {context});
+      wrapper.setProps(commonProps).setContext(context);
       const jobs = Immutable.fromJS([{id: '456', state: 'RUNNING'}]);
       expect(instance.runActionForJobs).to.not.be.called;
-      wrapper.setProps({jobId: '456', jobs}, {context});
+      wrapper.setProps({jobId: '456', jobs}).setContext(context);
       expect(instance.runActionForJobs).to.be.calledOnce;
       expect(instance.runActionForJobs).to.be.calledWith(jobs, false);
       expect(socket.startListenToJobProgress).to.be.calledWith(jobs.getIn([0, 'id']));

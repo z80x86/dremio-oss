@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.dremio.exec.dotfile.View;
+import com.dremio.exec.physical.base.OpProps;
 import com.dremio.exec.physical.base.PhysicalOperator;
 import com.dremio.exec.physical.base.Writer;
 import com.dremio.exec.physical.base.WriterOptions;
@@ -37,11 +38,11 @@ public interface MutablePlugin extends StoragePlugin {
 
   StoragePluginId getId();
 
-  Writer getWriter(PhysicalOperator child, String userName, String location, WriterOptions options) throws IOException;
+  Writer getWriter(PhysicalOperator child, String location, WriterOptions options, OpProps props) throws IOException;
 
   void dropTable(List<String> tableSchemaPath, SchemaConfig schemaConfig);
 
-  boolean createView(NamespaceKey key, View view, SchemaConfig schemaConfig) throws IOException;
+  boolean createOrUpdateView(NamespaceKey key, View view, SchemaConfig schemaConfig) throws IOException;
 
   void dropView(SchemaConfig schemaConfig, List<String> tableSchemaPath) throws IOException;
 }

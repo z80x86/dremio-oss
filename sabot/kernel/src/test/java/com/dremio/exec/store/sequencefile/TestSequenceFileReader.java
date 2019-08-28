@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,15 @@
  */
 package com.dremio.exec.store.sequencefile;
 
-import java.io.DataOutputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 
+import org.apache.hadoop.io.BytesWritable;
 import org.junit.Ignore;
 import org.junit.Test;
 
 import com.dremio.BaseTestQuery;
 import com.dremio.common.util.FileUtils;
-
-import org.apache.hadoop.io.BytesWritable;
 
 public class TestSequenceFileReader extends BaseTestQuery {
 

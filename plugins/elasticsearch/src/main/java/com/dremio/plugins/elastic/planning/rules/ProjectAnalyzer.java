@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,8 @@ public class ProjectAnalyzer extends RexVisitorImpl<FunctionRender> {
       boolean supportsV5Features,
       boolean scriptsEnabled,
       boolean isAggregationContext,
-      boolean allowPushdownAnalyzedNormalizedFields){
+      boolean allowPushdownAnalyzedNormalizedFields,
+      boolean variationDetected){
     ProjectAnalyzer analyzer = new ProjectAnalyzer(isAggregationContext, allowPushdownAnalyzedNormalizedFields);
     RenderMode mode = painlessAllowed && supportsV5Features ? RenderMode.PAINLESS : RenderMode.GROOVY;
     FunctionRenderer r = new FunctionRenderer(supportsV5Features, scriptsEnabled, mode, analyzer);
@@ -74,9 +75,9 @@ public class ProjectAnalyzer extends RexVisitorImpl<FunctionRender> {
 
     String nullGuardedScript;
     if (isAggregationContext) {
-      nullGuardedScript = render.getNullGuardedScript();
+      nullGuardedScript = render.getNullGuardedScript(variationDetected);
     } else {
-      nullGuardedScript = render.getNullGuardedScript("false");
+      nullGuardedScript = render.getNullGuardedScript("false", variationDetected);
     }
 
     if (mode == RenderMode.PAINLESS) {

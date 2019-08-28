@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -168,7 +168,7 @@ public class Sequence extends LogicalOperatorBase {
       // set input reference.
       if (id != null) {
 
-        ReadableObjectId rid = ctxt.findObjectId(id, idGenerator);
+        ReadableObjectId rid = ctxt.findObjectId(id, idGenerator, null);
         rid.bindItem(prev);
         // logger.debug("Binding id {} to item {}.", rid.id, rid.item);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,9 +32,9 @@ import com.dremio.exec.compile.sig.MappingSet;
 import com.dremio.exec.exception.ClassTransformationException;
 import com.dremio.exec.expr.ClassGenerator;
 import com.dremio.exec.expr.CodeGenerator;
+import com.dremio.exec.server.options.SessionOptionManager;
 import com.dremio.options.OptionValue;
 import com.dremio.options.OptionValue.OptionType;
-import com.dremio.exec.server.options.SessionOptionManager;
 import com.dremio.sabot.exec.context.CompilationOptions;
 import com.dremio.sabot.exec.context.FunctionContext;
 import com.dremio.sabot.rpc.user.UserSession;

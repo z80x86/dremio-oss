@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ package com.dremio.service.reflection;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 import javax.inject.Provider;
 
@@ -97,7 +99,7 @@ public interface ReflectionService extends Service {
   /**
    * wakes up the reflection manager if it isn't already running.
    */
-  void wakeupManager(String reason);
+  Future<?> wakeupManager(String reason);
 
   @VisibleForTesting
   void clearAll();
@@ -261,7 +263,7 @@ public interface ReflectionService extends Service {
     public void requestRefresh(String datasetId) { }
 
     @Override
-    public void wakeupManager(String reason) { }
+    public Future<?> wakeupManager(String reason) { return new FutureTask<Void>(null, null); }
 
     @Override
     public Provider<CacheViewer> getCacheViewerProvider() {

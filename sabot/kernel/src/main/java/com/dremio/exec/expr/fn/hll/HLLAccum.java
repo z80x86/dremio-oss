@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@
 package com.dremio.exec.expr.fn.hll;
 
 import java.nio.ByteBuffer;
+
 import org.apache.arrow.memory.BufferManager;
 import org.apache.arrow.vector.holders.ObjectHolder;
 
+import com.dremio.sabot.exec.context.SlicedBufferManager;
 import com.yahoo.memory.Memory;
 import com.yahoo.memory.WritableMemory;
 import com.yahoo.sketches.hll.HllSketch;
@@ -32,12 +34,11 @@ import io.netty.buffer.ArrowBuf;
 @SuppressWarnings("deprecation")
 public final class HLLAccum {
 
-  private final ArrowBuf buf;
   private final HllSketch sketch;
 
   private HLLAccum(BufferManager manager, int lgConfigK) {
     final int size = HllSketch.getMaxUpdatableSerializationBytes(lgConfigK, TgtHllType.HLL_8);
-    this.buf = manager.getManagedBuffer(size);
+    final ArrowBuf buf = ((SlicedBufferManager) manager).getManagedBufferSliced(size);
     buf.setZero(0, size);
     this.sketch = new HllSketch(lgConfigK, TgtHllType.HLL_8, WritableMemory.wrap(buf.nioBuffer(0, size)));
   }

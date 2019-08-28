@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import { connect }   from 'react-redux';
 import pureRender from 'pure-render-decorator';
 import PropTypes from 'prop-types';
 import Radium from 'radium';
+import { getExploreState } from '@app/selectors/explore';
 
 import SqlAutoComplete from 'pages/ExplorePage/components/SqlEditor/SqlAutoComplete';
 import FunctionsHelpPanel from 'pages/ExplorePage/components/SqlEditor/FunctionsHelpPanel';
@@ -129,7 +130,7 @@ export class AddFieldEditor extends Component {
 
 function mapStateToProps(state) {
   return {
-    height: state.explore.ui.get('sqlSize')
+    height: getExploreState(state).ui.get('sqlSize')
   };
 }
 

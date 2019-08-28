@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,16 @@
  */
 package com.dremio.exec.work.user;
 
+import java.nio.ByteBuffer;
+
 import org.apache.arrow.memory.BufferAllocator;
 
 import com.dremio.common.AutoCloseables;
+import com.dremio.common.utils.protos.QueryWritableBatch;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
 import com.dremio.exec.rpc.Acks;
 import com.dremio.exec.rpc.RpcException;
 import com.dremio.exec.rpc.RpcOutcomeListener;
-import com.dremio.common.utils.protos.QueryWritableBatch;
 import com.dremio.sabot.rpc.user.QueryDataBatch;
 import com.google.common.base.Function;
 import com.google.common.base.Throwables;
@@ -54,7 +56,10 @@ public class LocalUserUtil {
         }
         out = allocator.buffer(length);
         for(int i =0; i < buffers.length; i++){
-          out.writeBytes(buffers[i]);
+          ByteBuffer src = buffers[i].nioBuffer();
+          int srcLength = src.remaining();
+          out.setBytes(out.writerIndex(), src);
+          out.writerIndex(srcLength + out.writerIndex());
         }
       }else{
         out = allocator.buffer(0);

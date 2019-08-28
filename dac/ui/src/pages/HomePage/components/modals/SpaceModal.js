@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
  */
 import { Component } from 'react';
 import PropTypes from 'prop-types';
-import Immutable from 'immutable';
 import { connect } from 'react-redux';
 import { injectIntl } from 'react-intl';
 
+
+import { getViewState } from 'selectors/resources';
+import { getSpaceVersion, getSpaceName } from '@app/selectors/home';
 import Modal from 'components/Modals/Modal';
 import FormUnsavedWarningHOC from 'components/Modals/FormUnsavedWarningHOC';
-import SpaceModalMixin, { mapStateToProps } from 'dyn-load/pages/HomePage/components/modals/SpaceModalMixin';
 
 import ApiUtils from 'utils/apiUtils/apiUtils';
 import { createNewSpace, updateSpace } from 'actions/resources/spaces';
@@ -31,8 +32,15 @@ import './Modal.less';
 
 export const VIEW_ID = 'SpaceModal';
 
+const mapStateToProps = (state, { entityId }) => {
+  return {
+    spaceName: getSpaceName(state, entityId),
+    spaceVersion: getSpaceVersion(state, entityId),
+    viewState: getViewState(state, VIEW_ID)
+  };
+};
+
 @injectIntl
-@SpaceModalMixin
 export class SpaceModal extends Component {
 
   static propTypes = {
@@ -41,7 +49,8 @@ export class SpaceModal extends Component {
     entityId: PropTypes.string,
 
     //connected
-    entity: PropTypes.instanceOf(Immutable.Map),
+    spaceName: PropTypes.string,
+    spaceVersion: PropTypes.string,
     createNewSpace: PropTypes.func,
     updateSpace: PropTypes.func,
     initialFormValues: PropTypes.object,
@@ -58,42 +67,34 @@ export class SpaceModal extends Component {
   }
 
   submit = (values) => {
-    this.mutateFormValues(values);
-
     return ApiUtils.attachFormSubmitHandlers(
-      this.props.entity ? this.props.updateSpace(values) : this.props.createNewSpace(values)
+      this.props.entityId ? this.props.updateSpace(values) : this.props.createNewSpace(values)
     ).then(() => this.props.hide(null, true));
   }
 
   renderForm() {
-    const { entity, initialFormValues, updateFormDirtyState } = this.props;
-    if (entity) {
-      return <SpaceForm
-        initialValues={{
-          name: entity.get('name'),
-          version: entity.get('version'),
-          id: entity.get('id'),
-          ...initialFormValues
-        }}
-        updateFormDirtyState={updateFormDirtyState}
-        editing={entity !== undefined}
-        onFormSubmit={this.submit}
-        onCancel={this.hide}
-      />;
-    }
+    const { entityId, spaceName, spaceVersion, initialFormValues, updateFormDirtyState } = this.props;
+
     return <SpaceForm
-      onFormSubmit={this.submit}
+      initialValues={entityId ? {
+        name: spaceName,
+        version: spaceVersion,
+        id: entityId,
+        ...initialFormValues
+      } : null}
       updateFormDirtyState={updateFormDirtyState}
+      editing={entityId !== undefined}
+      onFormSubmit={this.submit}
       onCancel={this.hide}
     />;
   }
 
   render() {
-    const { isOpen, entity, intl } = this.props;
+    const { isOpen, entityId, intl } = this.props;
     return (
       <Modal
         size='small'
-        title={entity ? intl.formatMessage({ id: 'Space.EditSpace' }) : intl.formatMessage({ id: 'Space.AddSpace' })}
+        title={entityId ? intl.formatMessage({ id: 'Space.EditSpace' }) : intl.formatMessage({ id: 'Space.AddSpace' })}
         isOpen={isOpen}
         hide={this.hide}>
         {this.renderForm()}

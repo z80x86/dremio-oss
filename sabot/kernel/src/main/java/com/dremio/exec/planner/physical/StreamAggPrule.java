@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.InvalidRelException;
 import org.apache.calcite.rel.RelCollation;
-import org.apache.calcite.rel.RelCollationImpl;
+import org.apache.calcite.rel.RelCollations;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.util.trace.CalciteTrace;
@@ -51,8 +51,12 @@ public class StreamAggPrule extends AggPruleBase {
   public void onMatch(RelOptRuleCall call) {
     final AggregateRel aggregate = (AggregateRel) call.rel(0);
     RelNode input = aggregate.getInput();
-    final RelCollation collation = getCollation(aggregate);
-    RelTraitSet traits = null;
+
+    // StreamAgg changes row type, therefore input and output collations are different
+    final RelCollation inputCollation = getInputCollation(aggregate);
+    final RelCollation outputCollation = getOutputCollation(aggregate);
+    RelTraitSet inputTraits = null;
+    RelTraitSet outputTraits = null;
 
     if (aggregate.containsDistinctCall()) {
       // currently, don't use StreamingAggregate if any of the logical aggrs contains DISTINCT
@@ -65,9 +69,9 @@ public class StreamAggPrule extends AggPruleBase {
         final RelTraitSet singleDistTrait = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL).plus(singleDist);
 
         if (create2PhasePlan(call, aggregate)) {
-          traits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL) ;
+          outputTraits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL) ;
 
-          RelNode convertedInput = convert(input, traits);
+          RelNode convertedInput = convert(input, outputTraits);
           new SubsetTransformer<AggregateRel, InvalidRelException>(call){
 
             @Override
@@ -76,7 +80,7 @@ public class StreamAggPrule extends AggPruleBase {
               RelTraitSet traits = newTraitSet(Prel.PHYSICAL, toDist);
               RelNode newInput = convert(rel, traits);
 
-              StreamAggPrel phase1Agg = new StreamAggPrel(
+              StreamAggPrel phase1Agg = StreamAggPrel.create(
                   aggregate.getCluster(),
                   traits,
                   newInput,
@@ -89,7 +93,7 @@ public class StreamAggPrule extends AggPruleBase {
               UnionExchangePrel exch =
                   new UnionExchangePrel(phase1Agg.getCluster(), singleDistTrait, phase1Agg);
 
-              return  new StreamAggPrel(
+              return StreamAggPrel.create(
                   aggregate.getCluster(),
                   singleDistTrait,
                   exch,
@@ -102,16 +106,20 @@ public class StreamAggPrule extends AggPruleBase {
           }.go(aggregate, convertedInput);
 
         } else {
-          createTransformRequest(call, aggregate, input, singleDistTrait);
+          createTransformRequest(call, aggregate, input, singleDistTrait, singleDistTrait);
         }
       } else {
         // hash distribute on all grouping keys
+        final DistributionTrait inputDistOnAllKeys =
+            new DistributionTrait(DistributionTrait.DistributionType.HASH_DISTRIBUTED,
+                                       ImmutableList.copyOf(getInputDistributionField(aggregate, true)));
         final DistributionTrait distOnAllKeys =
             new DistributionTrait(DistributionTrait.DistributionType.HASH_DISTRIBUTED,
                                        ImmutableList.copyOf(getDistributionField(aggregate, true)));
 
-        traits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL).plus(collation).plus(distOnAllKeys);
-        createTransformRequest(call, aggregate, input, traits);
+        inputTraits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL).plus(inputCollation).plus(inputDistOnAllKeys);
+        outputTraits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL).plus(outputCollation).plus(distOnAllKeys);
+        createTransformRequest(call, aggregate, input, inputTraits, outputTraits);
 
         // Temporarily commenting out the single distkey plan since a few tpch queries (e.g 01.sql) get stuck
         // in VolcanoPlanner.canonize() method. Note that the corresponding single distkey plan for HashAggr works
@@ -121,20 +129,20 @@ public class StreamAggPrule extends AggPruleBase {
         // createTransformRequest(call, aggregate, input, traits);
 
         if (create2PhasePlan(call, aggregate)) {
-          traits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL) ;
-          RelNode convertedInput = convert(input, traits);
+          inputTraits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL) ;
+          RelNode convertedInput = convert(input, inputTraits);
 
           new SubsetTransformer<AggregateRel, InvalidRelException>(call){
 
             @Override
             public RelNode convertChild(final AggregateRel aggregate, final RelNode rel) throws InvalidRelException {
               DistributionTrait toDist = rel.getTraitSet().getTrait(DistributionTraitDef.INSTANCE);
-              RelTraitSet traits = newTraitSet(Prel.PHYSICAL, collation, toDist);
+              RelTraitSet traits = newTraitSet(Prel.PHYSICAL, getInputCollation(aggregate), toDist);
               RelNode newInput = convert(rel, traits);
 
-              StreamAggPrel phase1Agg = new StreamAggPrel(
+              StreamAggPrel phase1Agg = StreamAggPrel.create(
                   aggregate.getCluster(),
-                  traits,
+                  newTraitSet(Prel.PHYSICAL, getOutputCollation(aggregate), distOnAllKeys),
                   newInput,
                   aggregate.indicator,
                   aggregate.getGroupSet(),
@@ -147,10 +155,10 @@ public class StreamAggPrule extends AggPruleBase {
               HashToMergeExchangePrel exch =
                   new HashToMergeExchangePrel(phase1Agg.getCluster(), phase1Agg.getTraitSet().plus(Prel.PHYSICAL).plus(distOnAllKeys),
                       phase1Agg, ImmutableList.copyOf(getDistributionField(aggregate, true)),
-                      collation,
+                      getOutputCollation(aggregate),
                       numEndPoints);
 
-              return new StreamAggPrel(
+              return StreamAggPrel.create(
                   aggregate.getCluster(),
                   exch.getTraitSet(),
                   exch,
@@ -163,9 +171,11 @@ public class StreamAggPrule extends AggPruleBase {
           }.go(aggregate, convertedInput);
         } else if (isSingleton(call)){
           DistributionTrait singleDist = DistributionTrait.SINGLETON;
+          final RelTraitSet inputSingleDistTrait = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL)
+              .plus(singleDist).plus(inputCollation);
           final RelTraitSet singleDistTrait = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL)
-            .plus(singleDist).plus(collation);
-          createTransformRequest(call, aggregate, input, singleDistTrait);
+                  .plus(singleDist).plus(outputCollation);
+          createTransformRequest(call, aggregate, input, inputSingleDistTrait, singleDistTrait);
         }
       }
     } catch (InvalidRelException e) {
@@ -174,13 +184,13 @@ public class StreamAggPrule extends AggPruleBase {
   }
 
   private void createTransformRequest(RelOptRuleCall call, AggregateRel aggregate,
-                                      RelNode input, RelTraitSet traits) throws InvalidRelException {
+                                      RelNode input, RelTraitSet inputTraits, RelTraitSet outputTraits) throws InvalidRelException {
 
-    final RelNode convertedInput = convert(input, traits);
+    final RelNode convertedInput = convert(input, inputTraits);
 
-    StreamAggPrel newAgg = new StreamAggPrel(
+    StreamAggPrel newAgg = StreamAggPrel.create(
         aggregate.getCluster(),
-        traits,
+        outputTraits,
         convertedInput,
         aggregate.indicator,
         aggregate.getGroupSet(),
@@ -192,12 +202,21 @@ public class StreamAggPrule extends AggPruleBase {
   }
 
 
-  private RelCollation getCollation(AggregateRel rel){
+  private RelCollation getOutputCollation(AggregateRel rel){
 
     List<RelFieldCollation> fields = Lists.newArrayList();
     for (int group = 0; group < rel.getGroupSet().cardinality(); group++) {
       fields.add(new RelFieldCollation(group));
     }
-    return RelCollationImpl.of(fields);
+    return RelCollations.of(fields);
+  }
+
+  private RelCollation getInputCollation(AggregateRel rel){
+
+    List<RelFieldCollation> fields = Lists.newArrayList();
+    for (int group : rel.getGroupSet()) {
+      fields.add(new RelFieldCollation(group));
+    }
+    return RelCollations.of(fields);
   }
 }

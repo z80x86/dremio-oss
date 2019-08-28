@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,25 @@
 package com.dremio.sabot.exec.context;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.BufferManager;
 import org.apache.arrow.vector.types.pojo.Schema;
 
 import com.dremio.common.config.SabotConfig;
 import com.dremio.exec.expr.ClassProducer;
 import com.dremio.exec.physical.base.PhysicalOperator;
+import com.dremio.exec.planner.fragment.EndpointsIndex;
+import com.dremio.exec.proto.CoordExecRPC.FragmentAssignment;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
 import com.dremio.exec.record.VectorContainer;
 import com.dremio.exec.record.selection.SelectionVector2;
 import com.dremio.exec.server.NodeDebugContextProvider;
-import com.dremio.options.OptionManager;
 import com.dremio.exec.testing.ExecutionControls;
+import com.dremio.options.OptionManager;
+import com.dremio.sabot.exec.rpc.TunnelProvider;
 import com.dremio.sabot.op.filter.VectorContainerWithSV;
 import com.dremio.service.namespace.NamespaceService;
 import com.dremio.service.spill.SpillService;
@@ -49,6 +54,8 @@ public abstract class OperatorContext {
   public abstract BufferAllocator getAllocator();
 
   public abstract BufferAllocator getFragmentOutputAllocator();
+
+  public abstract BufferManager getBufferManager();
 
   /**
    * Create a vector container to be used for the output of this operator
@@ -97,6 +104,12 @@ public abstract class OperatorContext {
 
   public abstract SpillService getSpillService();
 
+  public abstract TunnelProvider getTunnelProvider();
+
+  public abstract List<FragmentAssignment> getAssignments();
+
+  public abstract EndpointsIndex getEndpointsIndex();
+
   public static int getChildCount(PhysicalOperator popConfig) {
     Iterator<PhysicalOperator> iter = popConfig.iterator();
     int i = 0;
@@ -114,4 +127,5 @@ public abstract class OperatorContext {
   public interface Creator {
     public OperatorContext newOperatorContext(PhysicalOperator popConfig) throws Exception;
   }
+
 }

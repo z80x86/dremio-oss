@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
  */
 package com.dremio.sabot.op.aggregate.vectorized;
 
-import com.dremio.common.exceptions.UserException;
-import com.dremio.exec.record.BatchSchema;
-import com.google.common.base.Joiner;
-
-import java.util.Queue;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Queue;
+
+import com.dremio.common.exceptions.UserException;
+import com.dremio.exec.planner.physical.HashAggMemoryEstimator;
+import com.dremio.exec.record.BatchSchema;
+import com.google.common.base.Joiner;
 
 class VectorizedHashAggDebug {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(VectorizedHashAggDebug.class);
@@ -40,6 +41,7 @@ class VectorizedHashAggDebug {
   private int numPartitions;
   private int minHashTableSizePerPartition;
   private long allocatedMemoryBeforeInit;
+  private HashAggMemoryEstimator preAllocEstimator;
 
   /* information collected after doing setup() in operator */
   private long preallocatedMemoryForPartitions;
@@ -125,7 +127,6 @@ class VectorizedHashAggDebug {
 
   void setInfoBeforeInit(final long aggAllocatorInitReservation,
                          final long aggAllocatorLimit,
-                         final int batchSize,
                          final int maxVarBlockLength,
                          final int averageVarWidthFieldSize,
                          final int numVarColumns,
@@ -135,7 +136,6 @@ class VectorizedHashAggDebug {
                          final int minHashTableSizePerPartition) {
     this.aggAllocatorInitReservation = aggAllocatorInitReservation;
     this.aggAllocatorLimit = aggAllocatorLimit;
-    this.hashTableBatchSize = batchSize;
     this.maxVarBlockLength = maxVarBlockLength;
     this.averageVarColumnFieldLength = averageVarWidthFieldSize;
     this.numVarColumns = numVarColumns;
@@ -149,24 +149,47 @@ class VectorizedHashAggDebug {
     this.allocatedMemoryBeforeInit = amount;
   }
 
+  void setPreAllocEstimator(final HashAggMemoryEstimator estimator) {
+    this.preAllocEstimator = estimator;
+  }
+
   void setPreallocatedMemoryForPartitions(final long amount) {
+    int estimated = preAllocEstimator.getMemHashTable() +
+      preAllocEstimator.getMemAccumulators() +
+      preAllocEstimator.getMemOrdinals();
+    assert amount <= estimated :
+      "mismatch in mem for hashTable: estimated " + estimated + ", actual " + amount;
     this.preallocatedMemoryForPartitions = amount;
   }
 
   void setPreallocatedMemoryForReadingSpilledData(final long amount) {
+    int estimated = preAllocEstimator.getMemLoadingPartition();
+    assert amount <= estimated :
+      "mismatch in mem for reading spill data: estimated " + estimated + ", actual " + amount;
     this.preallocatedMemoryForReadingSpilledData = amount;
   }
 
   void setPreallocatedMemoryForAuxStructures(final long amount) {
+    int estimated = preAllocEstimator.getMemAuxStructures();
+    assert amount <= estimated :
+      "mismatch in mem for aux structures: estimated " + estimated + ", actual " + amount;
     this.preallocatedMemoryForAuxStructures = amount;
   }
 
-  void setInfoAfterInit(final long totalPreallocatedMemory,
+  void setInfoAfterInit(final int hashTableBatchSize,
+                        final long totalPreallocatedMemory,
                         final BatchSchema outgoing) {
+    this.hashTableBatchSize = hashTableBatchSize;
     this.totalPreallocatedMemory = totalPreallocatedMemory;
+    assert totalPreallocatedMemory <= preAllocEstimator.getMemTotal() :
+      "mismatch in total mem : estimated " + preAllocEstimator.getMemTotal() +
+      ", actual " + totalPreallocatedMemory;
+
     /* BatchSchema.toString() is an expensive operation so don't do it by default */
     this.aggSchema = (detailedEventTracing ? outgoing.toString() : "enable tracing to record schema");
   }
+
+  void setMaxVarBlockLength(final int maxVarLen) { this.maxVarBlockLength = maxVarLen; }
 
   void recordOOMEvent(final int iterations,
                       final int ooms,
@@ -218,12 +241,12 @@ class VectorizedHashAggDebug {
 
   private static class SpilledPartitionState {
     private final String partitionIdentifier;
-    private final int batchesSpilled;
+    private final long batchesSpilled;
     private final String spillFilePath;
     private final boolean activeSpilled;
 
     SpilledPartitionState(final String id,
-                          final int batches,
+                          final long batches,
                           final String spillFile,
                           final boolean activeSpilled) {
       this.partitionIdentifier = id;
@@ -245,13 +268,13 @@ class VectorizedHashAggDebug {
 
   private static class OOMEvent {
     private final int iterations;
-    private final int spills;
+    private final long spills;
     private final int ooms;
     private final long allocatedMemory;
-    private final int maxBatchesSpilled;
-    private final int totalBatchesSpilled;
-    private final int maxRecordsSpilled;
-    private final int totalRecordsSpilled;
+    private final long maxBatchesSpilled;
+    private final long totalBatchesSpilled;
+    private final long maxRecordsSpilled;
+    private final long totalRecordsSpilled;
     private final SpilledPartitionState[] activeSpilled;
     private final SpilledPartitionState[] onDiskOnly;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 
 import com.dremio.common.exceptions.ExecutionSetupException;
-import com.dremio.exec.physical.MinorFragmentEndpoint;
+import com.dremio.exec.physical.config.MinorFragmentEndpoint;
 import com.dremio.exec.physical.config.RoundRobinSender;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.proto.ExecProtos;
@@ -83,10 +83,10 @@ public class RoundRobinOperator extends BaseSender {
     this.handle = context.getFragmentHandle();
     this.stats = context.getStats();
 
-    List<MinorFragmentEndpoint> destinations = config.getDestinations();
+    List<MinorFragmentEndpoint> destinations = config.getDestinations(context.getEndpointsIndex());
     final ArrayListMultimap<NodeEndpoint, Integer> dests = ArrayListMultimap.create();
     for(MinorFragmentEndpoint destination : destinations) {
-      dests.put(destination.getEndpoint(), destination.getId());
+      dests.put(destination.getEndpoint(), destination.getMinorFragmentId());
     }
 
     this.tunnels = new ArrayList<>();
@@ -131,7 +131,7 @@ public class RoundRobinOperator extends BaseSender {
         .setQueryId(handle.getQueryId())
         .setSendingMajorFragmentId(handle.getMajorFragmentId())
         .setSendingMinorFragmentId(handle.getMinorFragmentId())
-        .setReceivingMajorFragmentId(config.getOppositeMajorFragmentId())
+        .setReceivingMajorFragmentId(config.getReceiverMajorFragmentId())
         .addAllReceivingMinorFragmentId(minorFragments.get(i))
         .build();
       tunnels.get(i).sendStreamComplete(completion);
@@ -161,7 +161,7 @@ public class RoundRobinOperator extends BaseSender {
         @Override
         public ArrowBuf apply(@Nullable ArrowBuf buf) {
           int writerIndex = buf.writerIndex();
-          ArrowBuf newBuf = buf.transferOwnership(allocator).buffer;
+          ArrowBuf newBuf = buf.getReferenceManager().transferOwnership(buf, allocator).getTransferredBuffer();
           newBuf.writerIndex(writerIndex);
           buf.release();
           return newBuf;
@@ -172,7 +172,7 @@ public class RoundRobinOperator extends BaseSender {
       handle.getQueryId(),
       handle.getMajorFragmentId(),
       handle.getMinorFragmentId(),
-      config.getOppositeMajorFragmentId(),
+      config.getReceiverMajorFragmentId(),
       new ArrowRecordBatch(arrowRecordBatch.getLength(), arrowRecordBatch.getNodes(), buffers, false),
       minorFragments.get(currentTunnelsIndex).get(currentMinorFragmentsIndex)
     );

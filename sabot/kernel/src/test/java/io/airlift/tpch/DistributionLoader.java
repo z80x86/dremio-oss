@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,12 +28,8 @@
  */
 package io.airlift.tpch;
 
-import com.google.common.base.CharMatcher;
-import com.google.common.base.Predicate;
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.io.CharSource;
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Iterators.filter;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -41,8 +37,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.Iterators.filter;
+import com.google.common.base.CharMatcher;
+import com.google.common.base.Predicate;
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.io.CharSource;
 
 public class DistributionLoader
 {

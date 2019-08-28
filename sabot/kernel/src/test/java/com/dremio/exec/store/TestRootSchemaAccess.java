@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,6 @@
  * limitations under the License.
  */
 package com.dremio.exec.store;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
-import java.util.ArrayList;
-
-import org.junit.Test;
-
-import com.dremio.exec.server.SabotContext;
-import com.dremio.service.namespace.NamespaceService;
-import com.dremio.service.namespace.source.proto.SourceConfig;
-import com.dremio.service.namespace.space.proto.HomeConfig;
-import com.dremio.service.namespace.space.proto.SpaceConfig;
-import com.dremio.service.users.SystemUser;
-import com.google.common.collect.Lists;
 
 public class TestRootSchemaAccess {
 //

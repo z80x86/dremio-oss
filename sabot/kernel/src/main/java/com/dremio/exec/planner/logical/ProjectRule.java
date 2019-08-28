@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +53,6 @@ public class ProjectRule extends RelOptRule {
     final RelNode input = toTransform.getInput();
     final RelTraitSet traits = toTransform.getTraitSet().plus(Rel.LOGICAL);
     final RelNode convertedInput = convert(input, input.getTraitSet().plus(Rel.LOGICAL).simplify());
-    call.transformTo(new ProjectRel(toTransform.getCluster(), traits, convertedInput, toTransform.getProjects(), toTransform.getRowType()));
+    call.transformTo(ProjectRel.create(toTransform.getCluster(), traits, convertedInput, toTransform.getProjects(), toTransform.getRowType()));
   }
 }

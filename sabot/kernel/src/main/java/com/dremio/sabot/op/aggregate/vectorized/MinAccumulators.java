@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,13 @@ import static com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator
 import static com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator.KEYINDEX_OFFSET;
 import static com.dremio.sabot.op.aggregate.vectorized.VectorizedHashAggOperator.PARTITIONINDEX_HTORDINAL_WIDTH;
 
-import com.dremio.sabot.op.common.ht2.LBlockHashTableNoSpill;
-import org.apache.arrow.vector.DecimalVector;
+import java.math.BigDecimal;
+
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.FieldVector;
+
+import com.dremio.exec.util.DecimalUtils;
 
 import io.netty.util.internal.PlatformDependent;
 
@@ -47,7 +50,8 @@ public class MinAccumulators {
       setNullAndValue(vector, INIT);
     }
 
-    public void accumulate(final long memoryAddr, final int count) {
+    public void accumulate(final long memoryAddr, final int count,
+                           final int bitsInChunk, final int chunkOffsetMask) {
       final long maxAddr = memoryAddr + count * PARTITIONINDEX_HTORDINAL_WIDTH;
       FieldVector inputVector = getInput();
       final long incomingBit = inputVector.getValidityBufferAddress();
@@ -65,35 +69,13 @@ public class MinAccumulators {
         final int newVal = PlatformDependent.getInt(incomingValue + (incomingIndex * WIDTH_INPUT));
         final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
         /* get the hash table batch index */
-        final int chunkIndex = getChunkIndexForOrdinal(tableIndex, maxValuesPerBatch);
-        final int chunkOffset = getOffsetInChunkForOrdinal(tableIndex, maxValuesPerBatch);
+        final int chunkIndex = tableIndex >>> bitsInChunk;
+        final int chunkOffset = tableIndex & chunkOffsetMask;
         /* get the target addresses of accumulation vector */
         final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
         final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
         final int bitUpdateVal = bitVal << (chunkOffset & 31);
         /* store the accumulated values(new min or existing) at the target location of accumulation vector */
-        PlatformDependent.putInt(minAddr, min(PlatformDependent.getInt(minAddr), newVal, bitVal));
-        PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
-      }
-    }
-
-    public void accumulateNoSpill(final long memoryAddr, final int count) {
-      final long maxAddr = memoryAddr + count * 4;
-      final long incomingBit = getInput().getValidityBufferAddress();
-      final long incomingValue =  getInput().getDataBufferAddress();
-      final long[] bitAddresses = this.bitAddresses;
-      final long[] valueAddresses = this.valueAddresses;
-
-      int incomingIndex = 0;
-      for(long ordinalAddr = memoryAddr; ordinalAddr < maxAddr; ordinalAddr += 4, incomingIndex++){
-        final int newVal = PlatformDependent.getInt(incomingValue + (incomingIndex * WIDTH_INPUT));
-        final int tableIndex = PlatformDependent.getInt(ordinalAddr);
-        final int chunkIndex = tableIndex >>> LBlockHashTableNoSpill.BITS_IN_CHUNK;
-        final int chunkOffset = tableIndex & LBlockHashTableNoSpill.CHUNK_OFFSET_MASK;
-        final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
-        final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
-        final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
-        final int bitUpdateVal = bitVal << (chunkOffset & 31);
         PlatformDependent.putInt(minAddr, min(PlatformDependent.getInt(minAddr), newVal, bitVal));
         PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
       }
@@ -117,7 +99,8 @@ public class MinAccumulators {
       setNullAndValue(vector, INIT);
     }
 
-    public void accumulate(final long memoryAddr, final int count) {
+    public void accumulate(final long memoryAddr, final int count,
+                           final int bitsInChunk, final int chunkOffsetMask) {
       final long maxAddr = memoryAddr + count * PARTITIONINDEX_HTORDINAL_WIDTH;
       FieldVector inputVector = getInput();
       final long incomingBit = inputVector.getValidityBufferAddress();
@@ -135,35 +118,13 @@ public class MinAccumulators {
         final float newVal = Float.intBitsToFloat(PlatformDependent.getInt(incomingValue + (incomingIndex * WIDTH_INPUT)));
         final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
         /* get the hash table batch index */
-        final int chunkIndex = getChunkIndexForOrdinal(tableIndex, maxValuesPerBatch);
-        final int chunkOffset = getOffsetInChunkForOrdinal(tableIndex, maxValuesPerBatch);
+        final int chunkIndex = tableIndex >>> bitsInChunk;
+        final int chunkOffset = tableIndex & chunkOffsetMask;
         /* get the target addresses of accumulation vector */
         final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
         final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
         final int bitUpdateVal = bitVal << (chunkOffset & 31);
         /* store the accumulated values(new min or existing) at the target location of accumulation vector */
-        PlatformDependent.putInt(minAddr, Float.floatToIntBits(min(Float.intBitsToFloat(PlatformDependent.getInt(minAddr)), newVal, bitVal)));
-        PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
-      }
-    }
-
-    public void accumulateNoSpill(final long memoryAddr, final int count) {
-      final long maxAddr = memoryAddr + count * 4;
-      final long incomingBit = getInput().getValidityBufferAddress();
-      final long incomingValue =  getInput().getDataBufferAddress();
-      final long[] bitAddresses = this.bitAddresses;
-      final long[] valueAddresses = this.valueAddresses;
-
-      int incomingIndex = 0;
-      for(long ordinalAddr = memoryAddr; ordinalAddr < maxAddr; ordinalAddr += 4, incomingIndex++){
-        final float newVal = Float.intBitsToFloat(PlatformDependent.getInt(incomingValue + (incomingIndex * WIDTH_INPUT)));
-        final int tableIndex = PlatformDependent.getInt(ordinalAddr);
-        final int chunkIndex = tableIndex >>> LBlockHashTableNoSpill.BITS_IN_CHUNK;
-        final int chunkOffset = tableIndex & LBlockHashTableNoSpill.CHUNK_OFFSET_MASK;
-        final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
-        final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
-        final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
-        final int bitUpdateVal = bitVal << (chunkOffset & 31);
         PlatformDependent.putInt(minAddr, Float.floatToIntBits(min(Float.intBitsToFloat(PlatformDependent.getInt(minAddr)), newVal, bitVal)));
         PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
       }
@@ -186,7 +147,8 @@ public class MinAccumulators {
       setNullAndValue(vector, Long.MAX_VALUE);
     }
 
-    public void accumulate(final long memoryAddr, final int count) {
+    public void accumulate(final long memoryAddr, final int count,
+                           final int bitsInChunk, final int chunkOffsetMask) {
       final long maxAddr = memoryAddr + count * PARTITIONINDEX_HTORDINAL_WIDTH;
       FieldVector inputVector = getInput();
       final long incomingBit = inputVector.getValidityBufferAddress();
@@ -204,36 +166,13 @@ public class MinAccumulators {
         final long newVal = PlatformDependent.getLong(incomingValue + (incomingIndex * WIDTH_INPUT));
         final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
         /* get the hash table batch index */
-        final int chunkIndex = getChunkIndexForOrdinal(tableIndex, maxValuesPerBatch);
-        final int chunkOffset = getOffsetInChunkForOrdinal(tableIndex, maxValuesPerBatch);
+        final int chunkIndex = tableIndex >>> bitsInChunk;
+        final int chunkOffset = tableIndex & chunkOffsetMask;
         /* get the target addresses of accumulation vector */
         final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
         final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
         final int bitUpdateVal = bitVal << (chunkOffset & 31);
         /* store the accumulated values(new min or existing) at the target location of accumulation vector */
-        PlatformDependent.putLong(minAddr, min(PlatformDependent.getLong(minAddr), newVal, bitVal));
-        PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
-      }
-    }
-
-    public void accumulateNoSpill(final long memoryAddr, final int count) {
-      final long maxAddr = memoryAddr + count * 4;
-      final long incomingBit = getInput().getValidityBufferAddress();
-      final long incomingValue =  getInput().getDataBufferAddress();
-      final long[] bitAddresses = this.bitAddresses;
-      final long[] valueAddresses = this.valueAddresses;
-
-      int incomingIndex = 0;
-      for(long ordinalAddr = memoryAddr; ordinalAddr < maxAddr; ordinalAddr += 4, incomingIndex++){
-
-        final long newVal = PlatformDependent.getLong(incomingValue + (incomingIndex * WIDTH_INPUT));
-        final int tableIndex = PlatformDependent.getInt(ordinalAddr);
-        final int chunkIndex = tableIndex >>> LBlockHashTableNoSpill.BITS_IN_CHUNK;
-        final int chunkOffset = tableIndex & LBlockHashTableNoSpill.CHUNK_OFFSET_MASK;
-        final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
-        final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
-        final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
-        final int bitUpdateVal = bitVal << (chunkOffset & 31);
         PlatformDependent.putLong(minAddr, min(PlatformDependent.getLong(minAddr), newVal, bitVal));
         PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
       }
@@ -308,7 +247,8 @@ public class MinAccumulators {
     }
 
 
-    public void accumulate(final long memoryAddr, final int count) {
+    public void accumulate(final long memoryAddr, final int count,
+                           final int bitsInChunk, final int chunkOffsetMask) {
       final long maxAddr = memoryAddr + count * PARTITIONINDEX_HTORDINAL_WIDTH;
       FieldVector inputVector = getInput();
       final long incomingBit = inputVector.getValidityBufferAddress();
@@ -326,35 +266,13 @@ public class MinAccumulators {
         final double newVal = Double.longBitsToDouble(PlatformDependent.getLong(incomingValue + (incomingIndex * WIDTH_INPUT)));
         final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
         /* get the hash table batch index */
-        final int chunkIndex = getChunkIndexForOrdinal(tableIndex, maxValuesPerBatch);
-        final int chunkOffset = getOffsetInChunkForOrdinal(tableIndex, maxValuesPerBatch);
+        final int chunkIndex = tableIndex >>> bitsInChunk;
+        final int chunkOffset = tableIndex & chunkOffsetMask;
         /* get the target addresses of accumulation vector */
         final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
         final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
         final int bitUpdateVal = bitVal << (chunkOffset & 31);
         /* store the accumulated values(new min or existing) at the target location of accumulation vector */
-        PlatformDependent.putLong(minAddr, Double.doubleToLongBits(min(Double.longBitsToDouble(PlatformDependent.getLong(minAddr)), newVal, bitVal)));
-        PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
-      }
-    }
-
-    public void accumulateNoSpill(final long memoryAddr, final int count) {
-      final long maxAddr = memoryAddr + count * 4;
-      final long incomingBit = getInput().getValidityBufferAddress();
-      final long incomingValue =  getInput().getDataBufferAddress();
-      final long[] bitAddresses = this.bitAddresses;
-      final long[] valueAddresses = this.valueAddresses;
-
-      int incomingIndex = 0;
-      for(long ordinalAddr = memoryAddr; ordinalAddr < maxAddr; ordinalAddr += 4, incomingIndex++){
-        final double newVal = Double.longBitsToDouble(PlatformDependent.getLong(incomingValue + (incomingIndex * WIDTH_INPUT)));
-        final int tableIndex = PlatformDependent.getInt(ordinalAddr);
-        final int chunkIndex = tableIndex >>> LBlockHashTableNoSpill.BITS_IN_CHUNK;
-        final int chunkOffset = tableIndex & LBlockHashTableNoSpill.CHUNK_OFFSET_MASK;
-        final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
-        final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
-        final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
-        final int bitUpdateVal = bitVal << (chunkOffset & 31);
         PlatformDependent.putLong(minAddr, Double.doubleToLongBits(min(Double.longBitsToDouble(PlatformDependent.getLong(minAddr)), newVal, bitVal)));
         PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
       }
@@ -380,7 +298,8 @@ public class MinAccumulators {
       setNullAndValue(vector, INIT);
     }
 
-    public void accumulate(final long memoryAddr, final int count) {
+    public void accumulate(final long memoryAddr, final int count,
+                           final int bitsInChunk, final int chunkOffsetMask) {
       final long maxAddr = memoryAddr + count * PARTITIONINDEX_HTORDINAL_WIDTH;
       FieldVector inputVector = getInput();
       final long incomingBit = inputVector.getValidityBufferAddress();
@@ -396,11 +315,11 @@ public class MinAccumulators {
         /* get the index of data in input vector */
         final int incomingIndex = PlatformDependent.getInt(partitionAndOrdinalAddr + KEYINDEX_OFFSET);
         /* get the corresponding data from input vector -- source data for accumulation */
-        java.math.BigDecimal newVal = DecimalAccumulatorUtils.getBigDecimal(incomingValue + (incomingIndex * WIDTH_INPUT), valBuf, scale);
+        java.math.BigDecimal newVal = DecimalUtils.getBigDecimalFromLEBytes(incomingValue + (incomingIndex * WIDTH_INPUT), valBuf, scale);
         final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
         /* get the hash table batch index */
-        final int chunkIndex = getChunkIndexForOrdinal(tableIndex, maxValuesPerBatch);
-        final int chunkOffset = getOffsetInChunkForOrdinal(tableIndex, maxValuesPerBatch);
+        final int chunkIndex = tableIndex >>> bitsInChunk;
+        final int chunkOffset = tableIndex & chunkOffsetMask;
         /* get the target addresses of accumulation vector */
         final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
         final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
@@ -410,28 +329,69 @@ public class MinAccumulators {
         PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
       }
     }
+  }
 
-    public void accumulateNoSpill(final long memoryAddr, final int count) {
-      final long maxAddr = memoryAddr + count * 4;
+  public static class DecimalMinAccumulatorV2 extends BaseSingleAccumulator {
+    private static final BigDecimal INIT = DecimalUtils.MAX_DECIMAL;
+    private static final int WIDTH_INPUT = 16;      // decimal inputs
+    private static final int WIDTH_ACCUMULATOR = 16; // decimal accumulators
+
+    public DecimalMinAccumulatorV2(FieldVector input, FieldVector output,
+                                   FieldVector transferVector, int maxValuesPerBatch,
+                                   BufferAllocator computationVectorAllocator) {
+      super(input, output, transferVector, AccumulatorBuilder.AccumulatorType.MIN, maxValuesPerBatch,
+        computationVectorAllocator);
+    }
+
+    @Override
+    void initialize(FieldVector vector) {
+      setNullAndValue(vector, INIT);
+    }
+
+    public void accumulate(final long memoryAddr, final int count,
+                           final int bitsInChunk, final int chunkOffsetMask) {
+      final long maxAddr = memoryAddr + count * PARTITIONINDEX_HTORDINAL_WIDTH;
       FieldVector inputVector = getInput();
       final long incomingBit = inputVector.getValidityBufferAddress();
       final long incomingValue = inputVector.getDataBufferAddress();
       final long[] bitAddresses = this.bitAddresses;
       final long[] valueAddresses = this.valueAddresses;
-      final int scale = ((DecimalVector)inputVector).getScale();
+      final int maxValuesPerBatch = super.maxValuesPerBatch;
 
-      int incomingIndex = 0;
-      for (long ordinalAddr = memoryAddr; ordinalAddr < maxAddr; ordinalAddr += 4, incomingIndex++) {
-        java.math.BigDecimal newVal = DecimalAccumulatorUtils.getBigDecimal(incomingValue + (incomingIndex * WIDTH_INPUT), valBuf, scale);
-        final int tableIndex = PlatformDependent.getInt(ordinalAddr);
-        final int chunkIndex = tableIndex >>> LBlockHashTableNoSpill.BITS_IN_CHUNK;
-        final int chunkOffset = tableIndex & LBlockHashTableNoSpill.CHUNK_OFFSET_MASK;
+      for (long partitionAndOrdinalAddr = memoryAddr; partitionAndOrdinalAddr < maxAddr; partitionAndOrdinalAddr += PARTITIONINDEX_HTORDINAL_WIDTH) {
+        /* get the hash table ordinal */
+        final int tableIndex = PlatformDependent.getInt(partitionAndOrdinalAddr + HTORDINAL_OFFSET);
+        /* get the index of data in input vector */
+        final int incomingIndex = PlatformDependent.getInt(partitionAndOrdinalAddr + KEYINDEX_OFFSET);
+        final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
+        // no point continuing.
+        if (bitVal == 0) {
+          continue;
+        }
+        /* get the corresponding data from input vector -- source data for accumulation */
+        long addressOfInput = incomingValue + (incomingIndex * WIDTH_INPUT);
+        long newValLow = PlatformDependent.getLong(addressOfInput);
+        long newValHigh = PlatformDependent.getLong(addressOfInput + DecimalUtils.LENGTH_OF_LONG);
+        /* get the hash table batch index */
+        final int chunkIndex = tableIndex >>> bitsInChunk;
+        final int chunkOffset = tableIndex & chunkOffsetMask;
+        /* get the target addresses of accumulation vector */
         final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
         final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
-        final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
         final int bitUpdateVal = bitVal << (chunkOffset & 31);
-        PlatformDependent.putLong(minAddr, Double.doubleToLongBits(min(Double.longBitsToDouble(PlatformDependent.getLong(minAddr)), newVal.doubleValue(), bitVal)));
-        PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
+        /* Get current value and compare */
+        long curValLow = PlatformDependent.getLong(minAddr);
+        long curValHigh = PlatformDependent.getLong(minAddr + DecimalUtils.LENGTH_OF_LONG);
+        int compare = DecimalUtils.compareDecimalsAsTwoLongs(newValHigh, newValLow, curValHigh,
+          curValLow);
+
+        if (compare < 0) {
+          /* store the accumulated values(new min or existing) at the target location of accumulation vector */
+          PlatformDependent.putLong(minAddr, newValLow);
+          PlatformDependent.putLong(minAddr + DecimalUtils.LENGTH_OF_LONG, newValHigh);
+          PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
+        }
+
       }
     }
   }
@@ -453,7 +413,8 @@ public class MinAccumulators {
       setNullAndValue(vector, INIT);
     }
 
-    public void accumulate(final long memoryAddr, final int count) {
+    public void accumulate(final long memoryAddr, final int count,
+                           final int bitsInChunk, final int chunkOffsetMask) {
       FieldVector inputVector = getInput();
       final long incomingBit = inputVector.getValidityBufferAddress();
       final long incomingValue = inputVector.getDataBufferAddress();
@@ -482,8 +443,8 @@ public class MinAccumulators {
         final int tableIndex = PlatformDependent.getInt(partitionAndOrdinalAddr + HTORDINAL_OFFSET);
         /* get the index of data in input vector */
         final int incomingIndex = PlatformDependent.getInt(partitionAndOrdinalAddr + KEYINDEX_OFFSET);
-        final int chunkIndex = getChunkIndexForOrdinal(tableIndex, maxValuesPerBatch);
-        final int chunkOffset = getOffsetInChunkForOrdinal(tableIndex, maxValuesPerBatch);
+        final int chunkIndex = tableIndex >>> bitsInChunk;
+        final int chunkOffset = tableIndex & chunkOffsetMask;
         final long minBitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);  // 32-bit read-update-write
         // Update rules:
         // min of two boolean values boils down to doing a bitwise AND on the two
@@ -507,70 +468,6 @@ public class MinAccumulators {
         PlatformDependent.putInt(minBitUpdateAddr, PlatformDependent.getInt(minBitUpdateAddr) | minBitUpdateVal);
       }
     }
-
-    public void accumulateNoSpill(final long memoryAddr, final int count) {
-      final int WIDTH_LONG = 8;        // operations done on long boundaries
-      final int BITS_PER_LONG_SHIFT = 6;  // (1<<6) bits per long
-      final int BITS_PER_LONG = (1<<BITS_PER_LONG_SHIFT);
-
-      FieldVector inputVector = getInput();
-      final long incomingBit = inputVector.getValidityBufferAddress();
-      final long incomingValue = inputVector.getDataBufferAddress();
-      final long[] bitAddresses = this.bitAddresses;
-      final long[] valueAddresses = this.valueAddresses;
-
-      final long numWords = (count + (BITS_PER_LONG-1)) >>> BITS_PER_LONG_SHIFT; // rounded up number of words that cover 'count' bits
-      final long maxInputAddr = incomingValue + numWords * WIDTH_LONG;
-      final long maxOrdinalAddr = memoryAddr + count * 4;
-
-      // Like every accumulator, the code below essentially implements:
-      //   accumulators[ordinals[i]] += inputs[i]
-      // with the only complication that both accumulators and inputs are bits.
-      // There's nothing we can do about the locality of the accumulators, but inputs can be processed a word at a time.
-      // Algorithm:
-      // - get 64 bits worth of inputs, until all inputs exhausted. For each long:
-      //   - find the accumulator word it pertains to
-      //   - read/update/write the accumulator bit
-      // In the code below:
-      // - input* refers to the data values in the incoming batch
-      // - ordinal* refers to the temporary table that hashAgg passes in, identifying which hash table entry each input matched to
-      // - min* refers to the accumulator
-      for (long inputAddr = incomingValue, inputBitAddr = incomingBit, batchCount = 0;
-           inputAddr < maxInputAddr;
-           inputAddr += WIDTH_LONG, inputBitAddr += WIDTH_LONG, batchCount++) {
-        final long inputBatch = PlatformDependent.getLong(inputAddr);
-        final long inputBits = PlatformDependent.getLong(inputBitAddr);
-        long ordinalAddr = memoryAddr + (batchCount << BITS_PER_LONG_SHIFT);
-        for (long bitNum = 0; bitNum < BITS_PER_LONG && ordinalAddr < maxOrdinalAddr; bitNum++, ordinalAddr += 4) {
-          final int tableIndex = PlatformDependent.getInt(ordinalAddr);
-          final int chunkIndex = tableIndex >>> LBlockHashTableNoSpill.BITS_IN_CHUNK;
-          final int chunkOffset = tableIndex & LBlockHashTableNoSpill.CHUNK_OFFSET_MASK;
-          final long minBitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
-          // Update rules:
-          // min of two boolean values boils down to doing a bitwise AND on the two
-          // If the input bit is set, we update both the accumulator value and its bit
-          //    -- the accumulator is AND-ed with the value of the input bit
-          //    -- the accumulator bit is OR-ed with 1 (since the input is valid)
-          // If the input bit is not set, we update neither the accumulator nor its bit
-          //    -- the accumulator is AND-ed with a 1 (thus remaining unchanged)
-          //    -- the accumulator bit is OR-ed with 0 (thus remaining unchanged)
-          // Thus, the logical function for updating the accumulator is: oldVal AND (NOT(inputBit) OR inputValue)
-          // Thus, the logical function for updating the accumulator is: oldBitVal OR inputBit
-          // Because the operations are all done in a word length (and not on an individual bit), the AND value for
-          // updating the accumulator must have all its other bits set to 1
-          final int inputBitVal = (int)((inputBits >>> bitNum) & 0x01);
-          final int inputVal = (int)((inputBatch >>> bitNum) & 0x01);
-          final int minBitUpdateVal = inputBitVal << (chunkOffset & 31);
-          // NB: ~inputBitVal will set all the bits to 1, with only the LSB set to 0 or 1. Shifting left leaves zeroes
-          // in the bottom (chunkOffset & 31) bits. They need to get set to 1s too
-          int minUpdateVal = ((~inputBitVal) | inputVal) << (chunkOffset & 31); // see note above
-          minUpdateVal = minUpdateVal | ((1 << (chunkOffset & 31)) - 1);
-          final long minAddr = valueAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
-          PlatformDependent.putInt(minAddr, PlatformDependent.getInt(minAddr) & minUpdateVal);
-          PlatformDependent.putInt(minBitUpdateAddr, PlatformDependent.getInt(minBitUpdateAddr) | minBitUpdateVal);
-        }
-      }
-    }
   }
 
   public static class IntervalDayMinAccumulator extends BaseSingleAccumulator {
@@ -590,7 +487,8 @@ public class MinAccumulators {
       setNullAndValue(vector, INIT);
     }
 
-    public void accumulate(final long memoryAddr, final int count) {
+    public void accumulate(final long memoryAddr, final int count,
+                           final int bitsInChunk, final int chunkOffsetMask) {
       final long maxMemAddr = memoryAddr + count * PARTITIONINDEX_HTORDINAL_WIDTH;
       FieldVector inputVector = getInput();
       final long incomingBit = inputVector.getValidityBufferAddress();
@@ -608,8 +506,8 @@ public class MinAccumulators {
         final long newVal = PlatformDependent.getLong(incomingValue + (incomingIndex * WIDTH_INPUT));
         final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
         /* get the hash table batch index */
-        final int chunkIndex = getChunkIndexForOrdinal(tableIndex, maxValuesPerBatch);
-        final int chunkOffset = getOffsetInChunkForOrdinal(tableIndex, maxValuesPerBatch);
+        final int chunkIndex = tableIndex >>> bitsInChunk;
+        final int chunkOffset = tableIndex & chunkOffsetMask;
         /* get the target addresses of accumulation vector */
         final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
         final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
@@ -626,40 +524,6 @@ public class MinAccumulators {
         final int minMillis = (int)(minVal >>> 32);
         final long minSwappedVal = (((long)minDays) << 32) | minMillis;
         /* store the accumulated values(new min or existing) at the target location of accumulation vector */
-        PlatformDependent.putLong(minAddr, (minSwappedVal < newSwappedVal) ? minVal : newVal);
-        PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
-      }
-    }
-
-    public void accumulateNoSpill(final long memoryAddr, final int count) {
-      final long maxAddr = memoryAddr + count * 4;
-      FieldVector inputVector = getInput();
-      final long incomingBit = inputVector.getValidityBufferAddress();
-      final long incomingValue = inputVector.getDataBufferAddress();
-      final long[] bitAddresses = this.bitAddresses;
-      final long[] valueAddresses = this.valueAddresses;
-
-      int incomingIndex = 0;
-      for(long ordinalAddr = memoryAddr; ordinalAddr < maxAddr; ordinalAddr += 4, incomingIndex++){
-        final long newVal = PlatformDependent.getLong(incomingValue + (incomingIndex * WIDTH_INPUT));
-        final int tableIndex = PlatformDependent.getInt(ordinalAddr);
-        int chunkIndex = tableIndex >>> LBlockHashTableNoSpill.BITS_IN_CHUNK;
-        int chunkOffset = tableIndex & LBlockHashTableNoSpill.CHUNK_OFFSET_MASK;
-        final long minAddr = valueAddresses[chunkIndex] + (chunkOffset) * WIDTH_ACCUMULATOR;
-        final long bitUpdateAddr = bitAddresses[chunkIndex] + ((chunkOffset >>> 5) * 4);
-        final int bitVal = (PlatformDependent.getByte(incomingBit + ((incomingIndex >>> 3))) >>> (incomingIndex & 7)) & 1;
-        final int bitUpdateVal = bitVal << (chunkOffset & 31);
-        // first 4 bytes are the number of days (in little endian, that's the bottom 32 bits)
-        // second 4 bytes are the number of milliseconds (in little endian, that's the top 32 bits)
-        final int newDays = (int) newVal;
-        final int newMillis = (int)(newVal >>> 32);
-        // To compare the pairs of day/milli, we swap them, with days getting the most significant bits
-        // The incoming value is updated to either be MAX (if incoming is null), or keep as is (if the value is not null)
-        final long newSwappedVal = ((((long)newDays) << 32) | newMillis) * bitVal + Long.MAX_VALUE * (bitVal ^ 1);
-        final long minVal = PlatformDependent.getLong(minAddr);
-        final int minDays = (int) minVal;
-        final int minMillis = (int)(minVal >>> 32);
-        final long minSwappedVal = (((long)minDays) << 32) | minMillis;
         PlatformDependent.putLong(minAddr, (minSwappedVal < newSwappedVal) ? minVal : newVal);
         PlatformDependent.putInt(bitUpdateAddr, PlatformDependent.getInt(bitUpdateAddr) | bitUpdateVal);
       }

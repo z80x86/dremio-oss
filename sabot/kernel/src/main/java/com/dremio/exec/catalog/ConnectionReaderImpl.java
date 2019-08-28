@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import com.dremio.common.scanner.persistence.ScanResult;
 import com.dremio.exec.catalog.conf.ConnectionConf;
 import com.dremio.exec.catalog.conf.ConnectionSchema;
 import com.dremio.exec.catalog.conf.SourceType;
+import com.dremio.exec.exception.MissingSourceTypeException;
+import com.dremio.exec.store.MissingPluginConf;
 import com.dremio.service.namespace.AbstractConnectionConf;
 import com.dremio.service.namespace.source.proto.SourceConfig;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -107,7 +109,7 @@ public class ConnectionReaderImpl implements ConnectionReader {
   public <T extends AbstractConnectionConf> T getConnectionConf(String typeName, ByteString bytesS) {
     Schema<T> schema = (Schema<T>) schemaByName.get(typeName);
     if(schema == null) {
-      throw new IllegalStateException(String.format("Unable to find handler for source of type [%s].", typeName));
+      throw new MissingSourceTypeException(typeName, String.format("Unable to find handler for source of type [%s].", typeName));
     }
 
     T conf = schema.newMessage();
@@ -118,7 +120,15 @@ public class ConnectionReaderImpl implements ConnectionReader {
 
   @Override
   public ConnectionConf<?, ?> getConnectionConf(SourceConfig config) {
-    return (ConnectionConf<?, ?>) getConnectionConf(ConnectionReader.toType(config), config.getConfig());
+    try {
+      return (ConnectionConf<?, ?>) getConnectionConf(ConnectionReader.toType(config), config.getConfig());
+    } catch (MissingSourceTypeException sourceTypeEx) {
+      final MissingPluginConf missingPluginConf = new MissingPluginConf();
+      missingPluginConf.errorMessage = sourceTypeEx.getMessage();
+      config.setConfig(missingPluginConf.toBytesString());
+      config.setType(MissingPluginConf.TYPE);
+      return missingPluginConf;
+    }
   }
 
   @Override

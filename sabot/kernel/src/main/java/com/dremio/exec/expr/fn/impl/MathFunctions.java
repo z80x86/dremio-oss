@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,18 @@ import java.text.DecimalFormat;
 
 import javax.inject.Inject;
 
-import org.apache.arrow.vector.holders.NullableFloat8Holder;
 import org.apache.arrow.vector.holders.BigIntHolder;
 import org.apache.arrow.vector.holders.Float8Holder;
+import org.apache.arrow.vector.holders.NullableFloat8Holder;
 import org.apache.arrow.vector.holders.VarCharHolder;
 
 import com.dremio.exec.expr.SimpleFunction;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
+import com.dremio.exec.expr.annotations.FunctionTemplate.FunctionScope;
+import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
 import com.dremio.exec.expr.annotations.Output;
 import com.dremio.exec.expr.annotations.Param;
 import com.dremio.exec.expr.annotations.Workspace;
-import com.dremio.exec.expr.annotations.FunctionTemplate.FunctionScope;
-import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
 import com.dremio.exec.expr.fn.FunctionErrorContext;
 
 public class MathFunctions{
@@ -110,7 +110,7 @@ public class MathFunctions{
       }
 
       // Round the value
-      java.math.BigDecimal roundedValue = new java.math.BigDecimal(out.value);
+      java.math.BigDecimal roundedValue = java.math.BigDecimal.valueOf(out.value);
       out.value = (roundedValue.setScale(decimalDigits, java.math.BigDecimal.ROUND_HALF_UP)).doubleValue();
     }
   }

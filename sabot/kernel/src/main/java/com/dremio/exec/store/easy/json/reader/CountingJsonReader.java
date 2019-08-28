@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,9 @@ package com.dremio.exec.store.easy.json.reader;
 
 import java.io.IOException;
 
-import com.fasterxml.jackson.core.JsonToken;
 import org.apache.arrow.vector.complex.writer.BaseWriter;
+
+import com.fasterxml.jackson.core.JsonToken;
 
 /**
  * JSON parser that just parses records and doesn't write to output.

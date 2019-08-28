@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,21 +18,26 @@ package com.dremio.exec.planner.sql.handlers.commands;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import com.dremio.common.DeferredException;
 import com.dremio.common.concurrent.ExtendedLatch;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.exec.planner.PhysicalPlanReader;
+import com.dremio.exec.planner.PlanFragmentStats;
+import com.dremio.exec.planner.fragment.PlanFragmentFull;
 import com.dremio.exec.planner.observer.AttemptObserver;
 import com.dremio.exec.proto.CoordExecRPC;
+import com.dremio.exec.proto.CoordExecRPC.ActivateFragments;
 import com.dremio.exec.proto.CoordExecRPC.InitializeFragments;
-import com.dremio.exec.proto.CoordExecRPC.PlanFragment;
-import com.dremio.exec.proto.CoordExecRPC.SharedData;
+import com.dremio.exec.proto.CoordExecRPC.MinorAttr;
+import com.dremio.exec.proto.CoordExecRPC.PlanFragmentMajor;
+import com.dremio.exec.proto.CoordExecRPC.PlanFragmentSet;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.proto.GeneralRPCProtos.Ack;
 import com.dremio.exec.rpc.RpcException;
@@ -47,6 +52,7 @@ import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.MessageLite;
 
 import io.netty.buffer.ByteBuf;
 
@@ -59,9 +65,9 @@ class FragmentStarter {
 
   private static final long RPC_WAIT_IN_MSECS_PER_FRAGMENT = 5000;
 
-  private final DeferredException exception = new DeferredException();
   private final CoordToExecTunnelCreator tunnelCreator;
   private final ResourceSchedulingDecisionInfo resourceSchedulingDecisionInfo;
+  private AttemptObserver observer = null;
 
   public FragmentStarter(CoordToExecTunnelCreator tunnelCreator,
                          ResourceSchedulingDecisionInfo resourceSchedulingDecisionInfo) {
@@ -70,13 +76,8 @@ class FragmentStarter {
   }
 
   public void start(ExecutionPlan plan, AttemptObserver observer) throws Exception {
-    try{
-      startFragments(plan, observer);
-    } catch(ForemanException ex){
-      exception.addException(ex);
-    } finally {
-      exception.close();
-    }
+    Preconditions.checkNotNull(observer, "observer should not be null.");
+    startFragments(plan, observer);
   }
 
   /**
@@ -87,72 +88,78 @@ class FragmentStarter {
    * @throws ForemanException
    */
   protected void startFragments(ExecutionPlan plan, AttemptObserver observer) throws ForemanException {
-    final Collection<PlanFragment> fragments = plan.getFragments();
-    if (fragments.isEmpty()) {
+    final Collection<PlanFragmentFull> fullFragments = plan.getFragments();
+    if (fullFragments.isEmpty()) {
       // nothing to do here
       return;
     }
+
     /*
-     * We will send a single message to each endpoint, regardless of how many fragments will be
-     * executed there. We need to start up the intermediate fragments first so that they will be
-     * ready once the leaf fragments start producing data. To satisfy both of these, we will
-     * make a pass through the fragments and put them into these two maps according to their
-     * leaf/intermediate state, as well as their target node.
+     * Done using two rpcs to each endpoint :
+     *
+     * 1. StartFragments
+     *    The fragments are instantiated at the end point and can accept incoming messages. At this
+     *    point, none of the fragments can send messages.
+     *
+     * 2. ActivateFragments
+     *    Start execution pipeline, can send messages.
      */
-    final Multimap<NodeEndpoint, PlanFragment> leafFragmentMap = ArrayListMultimap.create();
-    final Multimap<NodeEndpoint, PlanFragment> intFragmentMap = ArrayListMultimap.create();
+    final Multimap<NodeEndpoint, PlanFragmentFull> fragmentMap = ArrayListMultimap.create();
 
     // record all fragments for status purposes.
-    for (final PlanFragment planFragment : fragments) {
+    for (final PlanFragmentFull fragmentFull : fullFragments) {
+      final PlanFragmentMajor major = fragmentFull.getMajor();
+
       if (logger.isTraceEnabled()) {
-        // planFragment.getFragmentJson() might be costly (internal ByteString <-> String conversion)
+        // major.getFragmentJson() might be costly (internal ByteString <-> String conversion)
         try {
-          logger.trace("Tracking intermediate remote node {} with data {}",
-              planFragment.getAssignment(),
-              PhysicalPlanReader.toString(planFragment.getFragmentJson(), planFragment.getFragmentCodec()));
+          logger.trace("Tracking remote node {} with data {}",
+              fragmentFull.getAssignment(),
+              PhysicalPlanReader.toString(major.getFragmentJson(), major.getFragmentCodec()));
         } catch (IOException e) {
           logger.warn("Error when trying to read fragment", e);
         }
       }
-      if (planFragment.getLeafFragment()) {
-        leafFragmentMap.put(planFragment.getAssignment(), planFragment);
-      } else {
-        intFragmentMap.put(planFragment.getAssignment(), planFragment);
-      }
+      fragmentMap.put(fragmentFull.getAssignment(), fragmentFull);
     }
 
     /*
-     * We need to wait for the intermediates to be sent so that they'll be set up by the time
-     * the leaves start producing data. We'll use this latch to wait for the responses.
+     * We need to wait for the start rpcs to be sent before sending the activate rpcs. We'll use
+     * this latch to wait for the responses.
      *
      * However, in order not to hang the process if any of the RPC requests fails, we always
      * count down (see FragmentSubmitFailures), but we count the number of failures so that we'll
      * know if any submissions did fail.
      */
-    final int numIntFragments = intFragmentMap.keySet().size();
-    final ExtendedLatch endpointLatch = new ExtendedLatch(numIntFragments);
+    final int numFragments = fragmentMap.keySet().size();
+    final ExtendedLatch endpointLatch = new ExtendedLatch(numFragments);
     final FragmentSubmitFailures fragmentSubmitFailures = new FragmentSubmitFailures();
+    final List<NodeEndpoint> endpointsIndex = plan.getIndexBuilder().getEndpointsIndexBuilder().getAllEndpoints();
 
+    PlanFragmentStats stats = new PlanFragmentStats();
     Stopwatch stopwatch = Stopwatch.createStarted();
-    // send remote intermediate fragments
-    for (final NodeEndpoint ep : intFragmentMap.keySet()) {
-      sendRemoteFragments(ep, intFragmentMap.get(ep), plan.getSharedData(), endpointLatch, fragmentSubmitFailures);
+    // send rpcs to start fragments
+    for (final NodeEndpoint ep : fragmentMap.keySet()) {
+      final List<MinorAttr> sharedAttrs =
+        plan.getIndexBuilder().getSharedAttrsIndexBuilder(ep).getAllAttrs();
+      sendStartFragments(ep, fragmentMap.get(ep), endpointsIndex, sharedAttrs,
+        endpointLatch, fragmentSubmitFailures, stats);
     }
 
-    final long timeout = RPC_WAIT_IN_MSECS_PER_FRAGMENT * numIntFragments;
-    if(numIntFragments > 0 && !endpointLatch.awaitUninterruptibly(timeout)){
+    final long timeout = RPC_WAIT_IN_MSECS_PER_FRAGMENT * numFragments;
+    if (numFragments > 0 && !endpointLatch.awaitUninterruptibly(timeout)){
       long numberRemaining = endpointLatch.getCount();
       throw UserException.connectionError()
           .message(
-              "Exceeded timeout (%d) while waiting send intermediate work fragments to remote nodes. " +
+              "Exceeded timeout (%d) while waiting after sending work fragments to remote nodes. " +
                   "Sent %d and only heard response back from %d nodes.",
-              timeout, numIntFragments, numIntFragments - numberRemaining)
+              timeout, numFragments, numFragments - numberRemaining)
           .build(logger);
     }
     stopwatch.stop();
-    observer.intermediateFragmentScheduling(stopwatch.elapsed(TimeUnit.MILLISECONDS));
+    observer.fragmentsStarted(stopwatch.elapsed(TimeUnit.MILLISECONDS), stats.getSummary());
 
-    // if any of the intermediate fragment submissions failed, fail the query
+    // if any of the fragment submissions failed, fail the query
     final List<FragmentSubmitFailures.SubmissionException> submissionExceptions = fragmentSubmitFailures.submissionExceptions;
     if (submissionExceptions.size() > 0) {
       Set<NodeEndpoint> endpoints = Sets.newHashSet();
@@ -171,39 +178,61 @@ class FragmentStarter {
         }
       }
       throw UserException.connectionError(submissionExceptions.get(0).rpcException)
-          .message("Error setting up remote intermediate fragment execution")
+          .message("Error setting up remote fragment execution")
           .addContext("Nodes with failures", sb.toString())
           .build(logger);
     }
+    stopwatch.reset();
 
+    this.observer = observer;
     stopwatch.start();
     /*
-     * Send the remote (leaf) fragments; we don't wait for these. Any problems will come in through
+     * Send the activate fragment rpcs; we don't wait for these. Any problems will come in through
      * the regular sendListener event delivery.
      */
-    for (final NodeEndpoint ep : leafFragmentMap.keySet()) {
-      sendRemoteFragments(ep, leafFragmentMap.get(ep), plan.getSharedData(), null, null);
+    final ActivateFragments activateFragments = ActivateFragments
+      .newBuilder()
+      .setQueryId(plan.getQueryId())
+      .build();
+    for (final NodeEndpoint ep : fragmentMap.keySet()) {
+      sendActivateFragments(ep, activateFragments);
     }
     stopwatch.stop();
-    // No waiting on acks of sent leaf fragments; so this number is not be reliable
-    observer.leafFragmentScheduling(stopwatch.elapsed(TimeUnit.MILLISECONDS));
+    // No waiting on acks of sent activate fragment rpcs; so this number is not reliable
+    observer.fragmentsActivated(stopwatch.elapsed(TimeUnit.MILLISECONDS));
   }
 
   /**
    * Send all the remote fragments belonging to a single target node in one request.
    *
    * @param assignment the node assigned to these fragments
-   * @param fragments the set of fragments
+   * @param fullFragments the set of fragments
    * @param latch the countdown latch used to track the requests to all endpoints
    * @param fragmentSubmitFailures the submission failure counter used to track the requests to all endpoints
    */
-  private void sendRemoteFragments(final NodeEndpoint assignment, final Collection<PlanFragment> fragments,
-      List<SharedData> sharedData, final CountDownLatch latch, final FragmentSubmitFailures fragmentSubmitFailures) {
+  private void sendStartFragments(final NodeEndpoint assignment, final Collection<PlanFragmentFull> fullFragments,
+      List<NodeEndpoint> endpointsIndex, List<MinorAttr> sharedAttrs,
+      final CountDownLatch latch, final FragmentSubmitFailures fragmentSubmitFailures,
+      PlanFragmentStats planFragmentStats) {
 
     final InitializeFragments.Builder fb = InitializeFragments.newBuilder();
-    for(final PlanFragment planFragment : fragments) {
-      fb.addFragment(planFragment);
+    final PlanFragmentSet.Builder setb = fb.getFragmentSetBuilder();
+
+    Set<Integer> majorsAddedSet = new HashSet<>();
+    for(final PlanFragmentFull fullFragment : fullFragments) {
+      final PlanFragmentMajor major = fullFragment.getMajor();
+
+      // add major info to the msg only once.
+      int majorId = fullFragment.getMajorFragmentId();
+      if (!majorsAddedSet.contains(majorId)) {
+        majorsAddedSet.add(majorId);
+        setb.addMajor(major);
+      }
+
+      // add minor info.
+      setb.addMinor(fullFragment.getMinor());
     }
+
     if (resourceSchedulingDecisionInfo != null && resourceSchedulingDecisionInfo.getQueueId() != null) {
       CoordExecRPC.SchedulingInfo.Builder schedulingInfo =
         CoordExecRPC.SchedulingInfo.newBuilder().setQueueId(resourceSchedulingDecisionInfo.getQueueId());
@@ -215,13 +244,22 @@ class FragmentStarter {
       }
       fb.setSchedulingInfo(schedulingInfo);
     }
-    fb.addAllSharedData(sharedData);
+    setb.addAllEndpointsIndex(endpointsIndex);
+    setb.addAllAttr(sharedAttrs);
     final InitializeFragments initFrags = fb.build();
+    planFragmentStats.add(assignment, initFrags);
 
     logger.debug("Sending remote fragments to \nNode:\n{} \n\nData:\n{}", assignment, initFrags);
     final FragmentSubmitListener listener =
         new FragmentSubmitListener(assignment, initFrags, latch, fragmentSubmitFailures);
-    tunnelCreator.getTunnel(assignment).sendFragments(listener, initFrags);
+    tunnelCreator.getTunnel(assignment).startFragments(listener, initFrags);
+  }
+
+  private void sendActivateFragments(final NodeEndpoint assignment, ActivateFragments activateFragments) {
+    logger.debug("Sending activate for remote fragments to \nNode:\n{} \n\nData:\n{}", assignment, activateFragments);
+    final FragmentSubmitListener listener =
+      new FragmentSubmitListener(assignment, activateFragments, null, null);
+    tunnelCreator.getTunnel(assignment).activateFragments(listener, activateFragments);
   }
 
   /**
@@ -240,14 +278,14 @@ class FragmentStarter {
       }
     }
 
-    final List<SubmissionException> submissionExceptions = new LinkedList<>();
+    final List<SubmissionException> submissionExceptions = Collections.synchronizedList(new LinkedList<>());
 
     void addFailure(final NodeEndpoint nodeEndpoint, final RpcException rpcException) {
       submissionExceptions.add(new SubmissionException(nodeEndpoint, rpcException));
     }
   }
 
-  private class FragmentSubmitListener extends EndpointListener<Ack, InitializeFragments> {
+  private class FragmentSubmitListener extends EndpointListener<Ack, MessageLite> {
     private final CountDownLatch latch;
     private final FragmentSubmitFailures fragmentSubmitFailures;
 
@@ -259,7 +297,7 @@ class FragmentStarter {
      * @param latch the latch to count down when the status is known; may be null
      * @param fragmentSubmitFailures the counter to use for failures; must be non-null iff latch is non-null
      */
-    public FragmentSubmitListener(final NodeEndpoint endpoint, final InitializeFragments value,
+    public FragmentSubmitListener(final NodeEndpoint endpoint, final MessageLite value,
         final CountDownLatch latch, final FragmentSubmitFailures fragmentSubmitFailures) {
       super(endpoint, value);
       Preconditions.checkState((latch == null) == (fragmentSubmitFailures == null));
@@ -276,12 +314,11 @@ class FragmentStarter {
 
     @Override
     public void failed(final RpcException ex) {
-      if (latch != null) { // this block only applies to intermediate fragments
+      if (latch != null) { // this block only applies to start rpcs.
         fragmentSubmitFailures.addFailure(endpoint, ex);
         latch.countDown();
-      } else { // this block only applies to leaf fragments
-        // since this won't be waited on, we can wait to deliver this event once the AttemptManager is ready
-        exception.addException(new RpcException(String.format("Failure sending leaf fragment to %s:%d.", endpoint.getAddress(), endpoint.getFabricPort()), ex));
+      } else { // this block only applies to activate rpcs.
+        observer.activateFragmentFailed(new RpcException(String.format("Failure sending activate rpc for fragments to %s:%d.", endpoint.getAddress(), endpoint.getFabricPort()), ex));
       }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -153,8 +153,7 @@ export class WikiModalWithSave extends PureComponent {
         body: JSON.stringify({
           text: newValue,
           version: wikiVersion
-        }),
-        headers: {'Content-Type': 'application/json'}
+        })
       }, 3).then((response) => {
         this.resetError();
         this.wikiChanged = false;

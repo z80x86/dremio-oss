@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,14 +42,19 @@ public class AggregateRule extends RelOptRule {
     final LogicalAggregate aggregate = (LogicalAggregate) call.rel(0);
     final RelNode input = call.rel(1);
 
-    if (aggregate.containsDistinctCall()) {
-      // currently, don't use this rule if any of the aggregates contains DISTINCT
+    if (aggregate.containsDistinctCall() || ProjectableSqlAggFunctions.isProjectableAggregate(aggregate)) {
+      // currently, don't use this rule if any of the aggregates contains DISTINCT or projectable agg calls
       return;
     }
 
     final RelTraitSet traits = aggregate.getTraitSet().plus(Rel.LOGICAL);
     final RelNode convertedInput = convert(input, input.getTraitSet().plus(Rel.LOGICAL).simplify());
-    call.transformTo(new AggregateRel(aggregate.getCluster(), traits, convertedInput, aggregate.indicator,
-        aggregate.getGroupSet(), aggregate.getGroupSets(), aggregate.getAggCallList()));
+    try {
+      call.transformTo(AggregateRel.create(aggregate.getCluster(), traits, convertedInput, aggregate.indicator,
+          aggregate.getGroupSet(), aggregate.getGroupSets(), aggregate.getAggCallList()));
+    } catch (InvalidRelException e) {
+      // Do nothing. Planning might not succeed, but that's okay.
+      tracer.debug("Cannot create aggregate node", e);
+    }
   }
 }

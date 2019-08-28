@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,9 @@ export default function data(state, action) {
   case LOAD_PARENTS_FAILURE:
     return state.setIn(['datasetUI', 'parentList'], []);
   case REAPPLY_DATASET_SUCCESS: {
+    // seems like this block does not work, as previousId has wrong format.
+    // Example: previousId: "77dbab5e-a924-4cae-bdc9-eed4da63216d"
+    // But table data is stored by dataset version.
     const newDataId = action.payload.getIn(['entities', 'datasetUI', action.payload.get('result'), 'id']);
     const oldData = state.getIn(['tableData', action.meta.previousId]);
     if (oldData) {

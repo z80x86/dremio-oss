@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ describe('NewQueryButton', () => {
       expect(commonProps.showConfirmationDialog).to.not.be.called;
       expect(commonProps.resetNewQuery).to.be.called;
 
-      wrapper.setProps({currentSql: undefined});
+      wrapper.setProps({currentSql: null});
       instance.handleClick(clickEvent);
       expect(context.router.push).to.not.be.called;
       expect(commonProps.showConfirmationDialog).to.not.be.called;

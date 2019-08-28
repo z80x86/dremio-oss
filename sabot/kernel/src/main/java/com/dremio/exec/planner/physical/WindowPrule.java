@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,9 +38,7 @@ import org.apache.calcite.util.BitSets;
 import com.dremio.exec.planner.logical.Rel;
 import com.dremio.exec.planner.logical.RelOptHelper;
 import com.dremio.exec.planner.logical.WindowRel;
-import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
 public class WindowPrule extends Prule {
@@ -53,18 +51,25 @@ public class WindowPrule extends Prule {
   @Override
   public void onMatch(RelOptRuleCall call) {
     final WindowRel window = call.rel(0);
-    RelNode input = call.rel(1);
+    final RelNode input = call.rel(1);
 
     // TODO: Order window based on existing partition by
     //input.getTraitSet().subsumes()
 
-    // The start index of the constant fields of WindowRel
-    final int startConstantsIndex = window.getInput().getRowType().getFieldCount();
+    // Convert a WindowRel with several groups into a chain of WindowPrel with
+    // one group each. As we go over each group, create a new output on top of
+    // the previous WindowPrel operator (or the original input after being converted)
+    RelNode currentInput = input;
+
+    // The start index of the constant fields (internal)/aggregate calls (external) of WindowRel
+    final int startConstantsIndex = input.getRowType().getFieldCount();
+
+    final RelTraitSet initialTraits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL);
 
     int constantShiftIndex = 0;
     for (final Ord<Window.Group> w : Ord.zip(window.groups)) {
       Window.Group windowBase = w.getValue();
-      RelTraitSet traits = call.getPlanner().emptyTraitSet().plus(Prel.PHYSICAL);
+      RelTraitSet traits = initialTraits;
 
       boolean partitionby = false;
       boolean addMerge = false;
@@ -97,7 +102,7 @@ public class WindowPrule extends Prule {
         traits = traits.plus(collation);
       }
 
-      RelNode convertedInput = convert(input, traits);
+      RelNode convertedInput = convert(currentInput, traits);
 
       if (addMerge) {
         traits = traits.plus(DistributionTrait.SINGLETON);
@@ -107,17 +112,9 @@ public class WindowPrule extends Prule {
 
       List<RelDataTypeField> newRowFields = Lists.newArrayList();
       newRowFields.addAll(convertedInput.getRowType().getFieldList());
-
-      Iterable<RelDataTypeField> newWindowFields = Iterables.filter(window.getRowType().getFieldList(), new Predicate<RelDataTypeField>() {
-            @Override
-            public boolean apply(RelDataTypeField relDataTypeField) {
-              return relDataTypeField.getName().startsWith("w" + w.i + "$");
-            }
-      });
-
-      for(RelDataTypeField newField : newWindowFields) {
-        newRowFields.add(newField);
-      }
+      // Copy current window group aggregate call fields
+      final int offset = startConstantsIndex + constantShiftIndex;
+      newRowFields.addAll(window.getRowType().getFieldList().subList(offset, offset + windowBase.aggCalls.size()));
 
       RelDataType rowType = new RelRecordType(newRowFields);
 
@@ -165,9 +162,9 @@ public class WindowPrule extends Prule {
           newWinAggCalls
       );
 
-      input = new WindowPrel(
+      currentInput = WindowPrel.create(
           window.getCluster(),
-          window.getTraitSet().merge(traits),
+          initialTraits,
           convertedInput,
           window.getConstants(),
           rowType,
@@ -176,7 +173,7 @@ public class WindowPrule extends Prule {
       constantShiftIndex += windowBase.aggCalls.size();
     }
 
-    call.transformTo(input);
+    call.transformTo(currentInput);
   }
 
   /**

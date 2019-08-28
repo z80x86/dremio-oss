@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -332,7 +332,7 @@ public abstract class RpcBus<T extends EnumLite, C extends RemoteConnection> imp
 
   protected class InboundHandler extends MessageToMessageDecoder<InboundRpcMessage> {
 
-    private final Executor exec;
+    private final SerializedExecutor<Runnable> exec;
     private final C connection;
 
     public InboundHandler(C connection) {
@@ -423,10 +423,10 @@ public abstract class RpcBus<T extends EnumLite, C extends RemoteConnection> imp
     }
   }
 
-  class RpcEventHandler extends SerializedExecutor {
+  class RpcEventHandler extends SerializedExecutor<Runnable> {
 
     public RpcEventHandler(Executor underlyingExecutor) {
-      super(rpcConfig.getName() + "-rpc-event-queue", underlyingExecutor);
+      super(rpcConfig.getName() + "-rpc-event-queue", underlyingExecutor, false);
     }
 
     @Override

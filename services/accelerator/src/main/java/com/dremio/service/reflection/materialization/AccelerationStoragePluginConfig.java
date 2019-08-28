@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package com.dremio.service.reflection.materialization;
+
+import static com.google.common.base.Strings.isNullOrEmpty;
 
 import java.net.URI;
 import java.util.List;
@@ -47,16 +49,23 @@ public class AccelerationStoragePluginConfig extends FileSystemConf<Acceleration
   @Tag(2)
   public String path = "/";
 
+  @Tag(3)
+  public boolean enableAsync = true;
+
   public AccelerationStoragePluginConfig() {
   }
 
-  public AccelerationStoragePluginConfig(URI path) {
+  public AccelerationStoragePluginConfig(URI path, boolean enableAsync) {
     if(path.getAuthority() != null) {
       connection = path.getScheme() + "://" + path.getAuthority() + "/";
     } else {
       connection = path.getScheme() + ":///";
     }
-    this.path = path.getPath();
+    String storagePath = path.getPath();
+    if (!isNullOrEmpty(storagePath)) {
+      this.path = storagePath;
+    }
+    this.enableAsync = enableAsync;
   }
 
   @Override
@@ -94,9 +103,14 @@ public class AccelerationStoragePluginConfig extends FileSystemConf<Acceleration
     return SchemaMutability.SYSTEM_TABLE;
   }
 
-  public static SourceConfig create(URI path) {
+  @Override
+  public List<String> getConnectionUniqueProperties() {
+    return ImmutableList.of();
+  }
+
+  public static SourceConfig create(URI path, boolean enableAsync) {
     SourceConfig conf = new SourceConfig();
-    AccelerationStoragePluginConfig connection = new AccelerationStoragePluginConfig(path);
+    AccelerationStoragePluginConfig connection = new AccelerationStoragePluginConfig(path, enableAsync);
     conf.setConnectionConf(connection);
     conf.setMetadataPolicy(CatalogService.NEVER_REFRESH_POLICY);
     conf.setName(ReflectionServiceImpl.ACCELERATOR_STORAGEPLUGIN_NAME);
@@ -106,5 +120,10 @@ public class AccelerationStoragePluginConfig extends FileSystemConf<Acceleration
   @Override
   public boolean createIfMissing() {
     return true;
+  }
+
+  @Override
+  public boolean isAsyncEnabled() {
+    return enableAsync;
   }
 }

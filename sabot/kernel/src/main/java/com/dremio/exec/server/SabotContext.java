@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.dremio.exec.server;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.Collection;
+import java.util.Optional;
 import java.util.Set;
 
 import javax.inject.Provider;
@@ -34,12 +35,14 @@ import com.dremio.exec.catalog.ConnectionReader;
 import com.dremio.exec.catalog.ViewCreatorFactory;
 import com.dremio.exec.catalog.ViewCreatorFactory.ViewCreator;
 import com.dremio.exec.compile.CodeCompiler;
+import com.dremio.exec.expr.fn.DecimalFunctionImplementationRegistry;
 import com.dremio.exec.expr.fn.FunctionImplementationRegistry;
 import com.dremio.exec.planner.PhysicalPlanReader;
 import com.dremio.exec.planner.observer.QueryObserverFactory;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.server.options.SystemOptionManager;
 import com.dremio.exec.store.CatalogService;
+import com.dremio.exec.store.dfs.FileSystemWrapperCreator;
 import com.dremio.exec.store.sys.PersistentStoreProvider;
 import com.dremio.exec.store.sys.accel.AccelerationListManager;
 import com.dremio.exec.store.sys.accel.AccelerationManager;
@@ -64,6 +67,7 @@ public class SabotContext implements AutoCloseable {
   private final ClusterCoordinator coord;
   private final NodeEndpoint endpoint;
   private final FunctionImplementationRegistry functionRegistry;
+  private final DecimalFunctionImplementationRegistry decimalFunctionImplementationRegistry;
   private final SystemOptionManager systemOptions;
   private final PersistentStoreProvider provider;
   private final Provider<WorkStats> workStatsProvider;
@@ -86,6 +90,7 @@ public class SabotContext implements AutoCloseable {
   private final Provider<SpillService> spillService;
   private final Provider<ConnectionReader> connectionReaderProvider;
   private final ClusterResourceInformation clusterInfo;
+  private final FileSystemWrapperCreator fileSystemWrapperCreator;
 
   public SabotContext(
       DremioConfig dremioConfig,
@@ -131,6 +136,7 @@ public class SabotContext implements AutoCloseable {
     this.reader = new PhysicalPlanReader(config, classpathScan, lpPersistence, endpoint, catalogService, this);
     this.systemOptions = new SystemOptionManager(classpathScan, lpPersistence, provider);
     this.functionRegistry = new FunctionImplementationRegistry(config, classpathScan, systemOptions);
+    this.decimalFunctionImplementationRegistry = new DecimalFunctionImplementationRegistry(config, classpathScan, systemOptions);
     this.compiler = new CodeCompiler(config, systemOptions);
 
     this.kvStoreProvider = kvStoreProvider;
@@ -145,6 +151,13 @@ public class SabotContext implements AutoCloseable {
     this.queryPlanningAllocator = queryPlanningAllocator;
     this.spillService = spillService;
     this.clusterInfo = new ClusterResourceInformation(coord);
+    this.fileSystemWrapperCreator = config.getInstance(
+      FileSystemWrapperCreator.FILE_SYSTEM_WRAPPER_CREATOR_CLASS,
+      FileSystemWrapperCreator.class,
+      FileSystemWrapperCreator.DEFAULT_INSTANCE,
+      dremioConfig,
+      systemOptions,
+      allocator);
   }
 
   private void checkIfCoordinator() {
@@ -174,7 +187,11 @@ public class SabotContext implements AutoCloseable {
   }
 
   public FunctionImplementationRegistry getFunctionImplementationRegistry() {
-    return functionRegistry;
+    return functionRegistry ;
+  }
+
+  public DecimalFunctionImplementationRegistry getDecimalFunctionImplementationRegistry() {
+    return decimalFunctionImplementationRegistry;
   }
 
   public Set<Role> getRoles() {
@@ -205,8 +222,28 @@ public class SabotContext implements AutoCloseable {
     return coord.getServiceSet(ClusterCoordinator.Role.COORDINATOR).getAvailableEndpoints();
   }
 
+  public Optional<NodeEndpoint> getMaster() {
+    return Optional.ofNullable(coord.getServiceSet(Role.MASTER).getAvailableEndpoints())
+      .flatMap(nodeEndpoints -> nodeEndpoints.stream().findFirst());
+  }
+
   public Collection<NodeEndpoint> getExecutors() {
     return coord.getServiceSet(ClusterCoordinator.Role.EXECUTOR).getAvailableEndpoints();
+  }
+
+  /**
+   * To return task leader nodeEndpoint if masterless mode is on
+   * otherwise return master
+   * @param serviceName
+   * @return
+   */
+  public Optional<NodeEndpoint> getServiceLeader(final String serviceName) {
+    if (getDremioConfig().isMasterlessEnabled()) {
+      return Optional.ofNullable(
+        coord.getOrCreateServiceSet(serviceName).getAvailableEndpoints())
+        .flatMap(nodeEndpoints -> nodeEndpoints.stream().findFirst());
+    }
+    return getMaster();
   }
 
   public ClusterResourceInformation getClusterResourceInformation() {
@@ -294,7 +331,7 @@ public class SabotContext implements AutoCloseable {
 
   @Override
   public void close() throws Exception {
-    AutoCloseables.close(systemOptions);
+    AutoCloseables.close(fileSystemWrapperCreator, systemOptions);
   }
 
   public Provider<WorkStats> getWorkStatsProvider() {
@@ -327,5 +364,9 @@ public class SabotContext implements AutoCloseable {
 
   public ViewCreator getViewCreator(String userName) {
     return viewCreatorFactory.get().get(userName);
+  }
+
+  public FileSystemWrapperCreator getFileSystemWrapperCreator() {
+    return fileSystemWrapperCreator;
   }
 }

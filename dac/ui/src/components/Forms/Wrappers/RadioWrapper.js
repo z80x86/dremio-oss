@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,19 @@
  */
 import { Component } from 'react';
 import Radio from 'components/Fields/Radio';
+import HoverHelp from 'components/HoverHelp';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
 
 import { rowOfInputsSpacing } from '@app/uiTheme/less/forms.less';
-import { radioColumnWrapper, radioTopLabel, radioBody, radioBodyColumn } from './FormWrappers.less';
+import {
+  radioColumnWrapper,
+  radioTopLabel,
+  radioBody,
+  radioBodyColumn,
+  tooltipIcon,
+  flexContainer
+} from './FormWrappers.less';
 
 
 export default class RadioWrapper extends Component {
@@ -35,16 +43,24 @@ export default class RadioWrapper extends Component {
     const {elementConfig, field} = this.props;
     const isLayoutColumn = elementConfig.getConfig().layout === 'column';
     const label = elementConfig.getConfig().label;
+    const tooltip = elementConfig.getConfig().tooltip;
 
     return (
-      <div className={classNames({[radioColumnWrapper]: isLayoutColumn, [rowOfInputsSpacing]: !isLayoutColumn})}>
-        {label && <div className={radioTopLabel}>{label}</div>}
-        {elementConfig.getConfig().options.map((option, index) => {
-          const radioClassName = classNames(radioBody, {[radioBodyColumn]: isLayoutColumn});
-          return (
-            <Radio key={index} label={option.label || option.value} radioValue={option.value} {...field} className={radioClassName}/>
-          );
-        })}
+      <div className={flexContainer}>
+        <div className={classNames({[radioColumnWrapper]: isLayoutColumn, [rowOfInputsSpacing]: !isLayoutColumn})}>
+          {label &&
+            <div className={radioTopLabel}>
+              {label}
+              {tooltip && <HoverHelp content={tooltip} className={tooltipIcon} iconStyle={{marginTop: -3}}/>}
+            </div>
+          }
+          {elementConfig.getConfig().options.map((option, index) => {
+            const radioClassName = classNames(radioBody, {[radioBodyColumn]: isLayoutColumn});
+            return (
+              <Radio key={index} label={option.label || option.value} radioValue={option.value} {...field} className={radioClassName}/>
+            );
+          })}
+        </div>
       </div>
     );
   }

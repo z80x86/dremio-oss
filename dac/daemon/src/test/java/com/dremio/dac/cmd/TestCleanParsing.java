@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
+import com.beust.jcommander.JCommander;
 import com.beust.jcommander.ParameterException;
 
 /**
@@ -62,16 +63,37 @@ public class TestCleanParsing {
   }
 
   @Test
-  public void parseWrongJobs() {
+  public void parseWrongJobsAlpha() {
     thrown.expect(ParameterException.class);
-    thrown.expectMessage("couldn't convert \"abc\" to an integer");
-    assertEquals(30, Clean.Options.parse(new String[] {"-j", "abc"}).getMaxJobDays());
+    thrown.expectMessage("Parameter -j should be a positive integer (found abc)");
+
+    Clean.Options args = new Clean.Options();
+    JCommander jc = JCommander.newBuilder().addObject(args).build();
+
+    jc.parse(new String[] { "-j", "abc" } );
+
+  }
+
+  @Test
+  public void parseWrongJobsNumeric() {
+    thrown.expect(ParameterException.class);
+    thrown.expectMessage("Parameter -j should be a positive integer (found -345)");
+
+    Clean.Options args = new Clean.Options();
+    JCommander jc = JCommander.newBuilder().addObject(args).build();
+
+    jc.parse(new String[] { "-j", "-345" } );
+
   }
 
   @Test
   public void reportInvalidParameter() {
     thrown.expect(ParameterException.class);
     thrown.expectMessage("no main parameter was defined");
-    Clean.Options.parse(new String[] {"--my-fake-parameter"});
+
+    Clean.Options args = new Clean.Options();
+    JCommander jc = JCommander.newBuilder().addObject(args).build();
+
+    jc.parse(new String[] { "--my-fake-parameter" } );
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,11 @@
  */
 package com.dremio.exec.expr.fn.impl;
 
-import com.dremio.exec.expr.fn.FunctionErrorContext;
-import io.netty.buffer.ArrowBuf;
+import java.util.List;
+
+import javax.inject.Inject;
+
+import org.apache.arrow.vector.complex.reader.FieldReader;
 import org.apache.arrow.vector.complex.writer.BaseWriter.ComplexWriter;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -28,14 +31,11 @@ import com.dremio.exec.expr.SimpleFunction;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
 import com.dremio.exec.expr.annotations.Output;
 import com.dremio.exec.expr.annotations.Param;
+import com.dremio.exec.expr.fn.FunctionErrorContext;
 import com.dremio.exec.expr.fn.OutputDerivation;
 import com.google.common.base.Preconditions;
 
-import org.apache.arrow.vector.complex.reader.FieldReader;
-
-import java.util.List;
-
-import javax.inject.Inject;
+import io.netty.buffer.ArrowBuf;
 
 public class Mappify {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(Mappify.class);

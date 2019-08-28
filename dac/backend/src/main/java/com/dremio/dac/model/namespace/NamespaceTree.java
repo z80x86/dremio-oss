@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.dremio.dac.explore.model.Dataset;
 import com.dremio.dac.explore.model.DatasetName;
@@ -40,6 +41,7 @@ import com.dremio.dac.model.sources.SourceName;
 import com.dremio.dac.proto.model.collaboration.CollaborationTag;
 import com.dremio.dac.proto.model.dataset.VirtualDatasetUI;
 import com.dremio.dac.service.collaboration.CollaborationHelper;
+import com.dremio.dac.service.collaboration.TagsSearchResult;
 import com.dremio.dac.service.datasets.DatasetVersionMutator;
 import com.dremio.dac.service.errors.DatasetNotFoundException;
 import com.dremio.dac.util.DatasetsUtil;
@@ -107,14 +109,11 @@ public class NamespaceTree {
     // get a list of all ids so we can fetch all collaboration tags in one search
     final Map<String, CollaborationTag> tags = new HashMap<>();
     if (collaborationService != null) {
-      children.forEach(input -> {
-        tags.put(NamespaceUtils.getId(input), null);
-      });
+      TagsSearchResult tagsInfo = collaborationService.getTagsForIds(children.stream().
+        map(NamespaceUtils::getId).collect(Collectors.toSet()));
 
-      final Iterable<Map.Entry<String, CollaborationTag>> tagsForIds = collaborationService.getTagsForIds(tags.keySet());
-      tagsForIds.forEach(input -> {
-        tags.put(input.getKey(), input.getValue());
-      });
+      tags.putAll(tagsInfo.getTags());
+      tree.setCanTagsBeSkipped(tagsInfo.getCanTagsBeSkipped());
     }
 
     for (final NameSpaceContainer container: children) {

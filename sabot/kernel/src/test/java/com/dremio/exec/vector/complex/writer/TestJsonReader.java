@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ import org.apache.arrow.vector.util.JsonStringHashMap;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import com.dremio.PlanTestBase;
 import com.dremio.common.expression.SchemaPath;
@@ -48,8 +49,6 @@ import com.dremio.exec.record.VectorWrapper;
 import com.dremio.sabot.rpc.user.QueryDataBatch;
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
-
-import org.junit.rules.TemporaryFolder;
 
 
 public class TestJsonReader extends PlanTestBase {

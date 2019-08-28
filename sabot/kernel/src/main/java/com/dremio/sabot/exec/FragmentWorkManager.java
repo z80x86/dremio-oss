@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.dremio.sabot.exec;
 
 import java.sql.Timestamp;
 import java.util.Iterator;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -28,6 +29,7 @@ import org.apache.curator.utils.CloseableExecutorService;
 import com.codahale.metrics.Gauge;
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.concurrent.ExtendedLatch;
+import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.ExecConstants;
 import com.dremio.exec.proto.CoordExecRPC.FragmentStatus;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
@@ -35,14 +37,13 @@ import com.dremio.exec.proto.ExecProtos;
 import com.dremio.exec.proto.UserBitShared.MinorFragmentProfile;
 import com.dremio.exec.proto.UserBitShared.OperatorProfile;
 import com.dremio.exec.proto.UserBitShared.StreamProfile;
-import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.server.BootStrapContext;
 import com.dremio.exec.server.SabotContext;
-import com.dremio.options.OptionManager;
 import com.dremio.exec.store.CatalogService;
 import com.dremio.exec.work.SafeExit;
 import com.dremio.exec.work.WorkStats;
 import com.dremio.metrics.Metrics;
+import com.dremio.options.OptionManager;
 import com.dremio.sabot.exec.context.ContextInformationFactory;
 import com.dremio.sabot.exec.fragment.FragmentExecutor;
 import com.dremio.sabot.exec.fragment.FragmentExecutorBuilder;
@@ -59,7 +60,9 @@ import com.dremio.service.users.SystemUser;
 import com.dremio.services.fabric.api.FabricRunnerFactory;
 import com.dremio.services.fabric.api.FabricService;
 import com.google.common.base.Function;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
+import com.google.common.collect.Sets;
 
 /**
  * Service managing fragment execution.
@@ -78,6 +81,7 @@ public class FragmentWorkManager implements Service, SafeExit {
 
   private FragmentStatusThread statusThread;
   private ThreadsStatsCollector statsCollectorThread;
+  private HeapMonitorThread heapMonitorThread;
 
   private final Provider<TaskPool> pool;
   private FragmentExecutors fragmentExecutors;
@@ -146,6 +150,7 @@ public class FragmentWorkManager implements Service, SafeExit {
     @Override
     public float getClusterLoad() {
       final long maxWidthPerNode = bitContext.getClusterResourceInformation().getAverageExecutorCores(bitContext.getOptionManager());
+      Preconditions.checkState(maxWidthPerNode > 0, "No executors are available. Unable to determine cluster load");
       return fragmentExecutors.size() / (maxWidthPerNode * 1.0f);
     }
 
@@ -279,6 +284,7 @@ public class FragmentWorkManager implements Service, SafeExit {
         sources.get(),
         contextInformationFactory.get(),
         bitContext.getFunctionImplementationRegistry(),
+        bitContext.getDecimalFunctionImplementationRegistry(),
         context.getNodeDebugContextProvider(),
         bitContext.getSpillService(),
         ClusterCoordinator.Role.fromEndpointRoles(identity.get().getRoles()));
@@ -288,8 +294,24 @@ public class FragmentWorkManager implements Service, SafeExit {
 
     statusThread = new FragmentStatusThread(fragmentExecutors, clerk, creator);
     statusThread.start();
-    statsCollectorThread = new ThreadsStatsCollector();
+    Iterable<TaskPool.ThreadInfo> slicingThreads = pool.get().getSlicingThreads();
+    Set<Long> slicingThreadIds = Sets.newHashSet();
+    for (TaskPool.ThreadInfo slicingThread : slicingThreads) {
+      slicingThreadIds.add(slicingThread.threadId);
+    }
+    statsCollectorThread = new ThreadsStatsCollector(slicingThreadIds);
     statsCollectorThread.start();
+
+    // This makes sense only on executor nodes.
+    if (bitContext.isExecutor() &&
+        bitContext.getOptionManager().getOption(ExecConstants.ENABLE_HEAP_MONITORING)) {
+
+      HeapClawBackStrategy strategy = new FailGreediestQueriesStrategy(fragmentExecutors, clerk);
+      long thresholdPercentage =
+          bitContext.getOptionManager().getOption(ExecConstants.HEAP_MONITORING_CLAWBACK_THRESH_PERCENTAGE);
+      heapMonitorThread = new HeapMonitorThread(strategy, thresholdPercentage);
+      heapMonitorThread.start();
+    }
 
     final String prefix = "rpc";
     Metrics.registerGauge(prefix + "bit.data.current", new Gauge<Long>() {
@@ -321,7 +343,8 @@ public class FragmentWorkManager implements Service, SafeExit {
 
   @Override
   public void close() throws Exception {
-    AutoCloseables.close(statusThread, statsCollectorThread, closeableExecutor, fragmentExecutors, allocator);
+    AutoCloseables.close(statusThread, statsCollectorThread, heapMonitorThread,
+      closeableExecutor, fragmentExecutors, allocator);
   }
 
 }

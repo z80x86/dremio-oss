@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,24 +24,28 @@ import com.dremio.exec.proto.UserBitShared.ExternalId;
 public interface LocalQueryExecutor {
 
   /**
+   * Should be called as early as possible before submitting a new query, this allows the coordinator to protect itself
+   * from running out of resources
+   *
+   * @return true if the local query executor can accept more work
+   */
+  boolean canAcceptWork();
+
+  /**
    * Will submit a query locally without going through the client.
    * @param observer QueryObserver used to get notifications about the queryJob.
    *                    Overrides the use of QueryObserverFactory defined in the context
    * @param query the query definition
    * @param prepare whether this is a prepared statement
    * @param config local execution config
+   * @param runInSameThread if true, query will run in the same thread
    */
   void submitLocalQuery(
       ExternalId externalId,
       QueryObserver observer,
       Object query,
       boolean prepare,
-      LocalExecutionConfig config);
-
-  /**
-   * Cancel a locally running query.
-   * @param externalId QueryId of the query to cancel.
-   */
-  void cancelLocalQuery(ExternalId externalId);
+      LocalExecutionConfig config,
+      boolean runInSameThread);
 
 }

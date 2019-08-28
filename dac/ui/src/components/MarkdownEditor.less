@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,6 +71,15 @@
       border-left: @border-width solid #dfe2e5;
       color: #6a737d;;
     }
+
+    table { // show scroll for wide tables
+      display: block;
+      overflow-y: auto;
+    }
+
+    img {
+      max-width: 100% // fit image to wiki width
+    }
   }
 
   // -------------------------------------------
@@ -108,6 +117,8 @@
         border: none;
         padding: 0 2px;
         position: relative;
+        top: -1px;
+        line-height: 24px;
 
         &:before {
           content: '';
@@ -149,14 +160,18 @@
 
     .max-width() {
       max-width: 800px;
-      margin: 0 auto;
     }
 
     .editor-preview, .editor-preview-side {
       overflow-x: hidden; // to avoid horizontal scroll in IE.
-      margin: 0 !important;
       padding: @vert-padding @horiz-padding;
-      .max-width();
+
+      // need apply max width to all children, not to a preview, as preview is a single div, which is absolutely
+      // positioned above code mirror. If width more tham 800 code mirror become visible, especcially
+      // it's scroll
+      > * {
+        .max-width();
+      }
     }
 
     .CodeMirror-lines { // paddding for edit mode

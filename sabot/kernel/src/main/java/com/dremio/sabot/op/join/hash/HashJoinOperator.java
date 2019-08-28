@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,21 +41,21 @@ import com.dremio.exec.expr.ClassGenerator;
 import com.dremio.exec.expr.CodeGenerator;
 import com.dremio.exec.physical.config.HashJoinPOP;
 import com.dremio.exec.record.BatchSchema;
+import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.exec.record.ExpandableHyperContainer;
 import com.dremio.exec.record.TypedFieldId;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorContainer;
-import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.exec.context.OperatorStats;
-import com.dremio.sabot.op.common.hashtable.HashTable.BatchAddedListener;
-import com.dremio.sabot.op.common.hashtable.HashTable;
-import com.dremio.sabot.op.common.hashtable.HashTableStats;
 import com.dremio.sabot.op.common.hashtable.ChainedHashTable;
-import com.dremio.sabot.op.common.hashtable.HashTableConfig;
-import com.dremio.sabot.op.join.vhash.HashJoinStats;
 import com.dremio.sabot.op.common.hashtable.Comparator;
+import com.dremio.sabot.op.common.hashtable.HashTable;
+import com.dremio.sabot.op.common.hashtable.HashTable.BatchAddedListener;
+import com.dremio.sabot.op.common.hashtable.HashTableConfig;
+import com.dremio.sabot.op.common.hashtable.HashTableStats;
 import com.dremio.sabot.op.join.JoinUtils;
+import com.dremio.sabot.op.join.vhash.HashJoinStats;
 import com.dremio.sabot.op.join.vhash.VectorizedHashJoinOperator;
 import com.dremio.sabot.op.spi.DualInputOperator;
 import com.google.common.collect.ImmutableList;
@@ -293,7 +293,7 @@ public class HashJoinOperator implements DualInputOperator {
     // Create the chained hash table
     final ChainedHashTable ht =
         new ChainedHashTable(htConfig, context.getClassProducer(), context.getAllocator(), this.right, this.left, outgoing, new Listener());
-    hashTable = ht.createAndSetupHashTable(null);
+    hashTable = ht.createAndSetupHashTable(null, context.getOptions());
   }
 
 

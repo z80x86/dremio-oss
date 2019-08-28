@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -139,12 +139,14 @@ const DEFAULT_STYLES = {
   },
   [FOLDER_CONVERT]: {
     'Icon': {
+      'marginTop': -2,
       'width': 55,
       'height': 24
     }
   },
   [FILE_CONVERT]: {
     'Icon': {
+      'marginTop': -2,
       'width': 55,
       'height': 24
     }
@@ -174,7 +176,7 @@ const DEFAULT_STYLES = {
  * This component consist of two parts Icon and Container in which Icon is placed.
  */
 
-// todo: stop using a "font icon" component to display custom things that aren't in an icon font
+// TODO: stop using a "font icon" component to display custom things that aren't in an icon font
 
 @Radium
 @PureRender
@@ -186,6 +188,7 @@ export class FullFontIcon extends Component {
     hoverType: PropTypes.string, // todo: only works with custom icons
     type: PropTypes.string,
     theme: PropTypes.object,
+    tooltip: PropTypes.string,
     style: PropTypes.object,
     iconClass: PropTypes.string,
     iconStyle: PropTypes.object,
@@ -249,11 +252,12 @@ export class FullFontIcon extends Component {
 
   render() {
     const styles = this.getStylesForThemeItem('Container');
-    const id = this.props.id || '';
-    const className = this.props.class || '';
+    const {id = '', tooltip = '', class: className = ''} = this.props;
+
     const ret =  (
       <span
         className={`font-icon ${className}`}
+        title={tooltip}
         id={id} style={styles.concat(this.props.style)}>
         {this.getIcon()}
       </span>
@@ -271,6 +275,7 @@ export default class FontIcon extends Component {
   static propTypes = {
     type: PropTypes.string,
     theme: PropTypes.object,
+    tooltip: PropTypes.string,
     dataQa: PropTypes.string
   }
 
@@ -295,15 +300,16 @@ export default class FontIcon extends Component {
     class FastIcon extends Component {
       static propTypes = {
         theme: PropTypes.object,
+        tooltip: PropTypes.string,
         dataQa: PropTypes.string
       }
 
       render() {
-        const { theme, dataQa } = this.props;
+        const { theme, tooltip, dataQa } = this.props;
         return <span
           className='font-icon'
           style={theme && theme.Container || defaultContainerStyle}>
-          <span data-qa={dataQa} className={className} style={theme && theme.Icon || defaultIconStyle}/>
+          <span data-qa={dataQa} title={tooltip} className={className} style={theme && theme.Icon || defaultIconStyle}/>
         </span>;
       }
     }
@@ -311,7 +317,7 @@ export default class FontIcon extends Component {
   }
 
   render() {
-    const { type, theme, dataQa, ...otherProps } = this.props;
+    const { type, theme, dataQa, tooltip, ...otherProps } = this.props;
     for (const key in otherProps) {
       if (otherProps.hasOwnProperty(key)) {
         return <FullFontIcon {...this.props}/>;
@@ -326,6 +332,6 @@ export default class FontIcon extends Component {
         defaultTheme.Container
       );
     }
-    return React.createElement(component, {theme, dataQa});
+    return React.createElement(component, {theme, tooltip, dataQa});
   }
 }

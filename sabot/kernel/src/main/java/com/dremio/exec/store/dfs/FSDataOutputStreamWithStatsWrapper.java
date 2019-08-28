@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,11 @@
 package com.dremio.exec.store.dfs;
 
 import java.io.IOException;
+
 import org.apache.hadoop.fs.FSDataOutputStream;
+
 import com.dremio.sabot.exec.context.OperatorStats;
+import com.dremio.sabot.exec.context.OperatorStats.WaitRecorder;
 
 /**
  * Wrapper around FSDataOutputStream to collect IO Stats.
@@ -32,92 +35,65 @@ public class FSDataOutputStreamWithStatsWrapper extends FSDataOutputStreamWrappe
 
   @Override
   public void write(int b) throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.write(b);
-    } finally {
-      operatorStats.stopWait();
     }
   }
 
   @Override
   public void write(byte[] b) throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.write(b);
-    } finally {
-      operatorStats.stopWait();
     }
   }
 
   @Override
   public void write(byte[] b, int off, int len) throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.write(b, off, len);
-    } finally {
-      operatorStats.stopWait();
     }
   }
 
   @Override
   public void flush() throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.flush();
-    } finally {
-      operatorStats.stopWait();
     }
   }
 
   @Override
   public void close() throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.close();
-    } finally {
-      operatorStats.stopWait();
     }
   }
 
   @Override
   @Deprecated
   public void sync() throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.sync();
-    } finally {
-      operatorStats.stopWait();
     }
   }
 
   @Override
   public void hflush() throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.hflush();
-    } finally {
-      operatorStats.stopWait();
     }
   }
 
   @Override
   public void hsync() throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.hsync();
-    } finally {
-      operatorStats.stopWait();
     }
   }
 
   @Override
   public void setDropBehind(Boolean dropBehind) throws IOException {
-    operatorStats.startWait();
-    try {
+    try (WaitRecorder recorder = OperatorStats.getWaitRecorder(operatorStats)) {
       super.setDropBehind(dropBehind);
-    } finally {
-      operatorStats.stopWait();
     }
   }
 }

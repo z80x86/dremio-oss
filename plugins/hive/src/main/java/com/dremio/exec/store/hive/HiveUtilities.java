@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,10 +46,7 @@ import com.dremio.common.exceptions.UserException;
 import com.dremio.common.types.TypeProtos.DataMode;
 import com.dremio.common.types.TypeProtos.MajorType;
 import com.dremio.exec.planner.physical.PlannerSettings;
-import com.dremio.exec.store.hive.exec.HiveReaderProtoUtil;
 import com.dremio.exec.work.ExecErrorConstants;
-import com.dremio.hive.proto.HiveReaderProto.HiveSplitXattr;
-import com.dremio.hive.proto.HiveReaderProto.HiveTableXattr;
 import com.dremio.hive.proto.HiveReaderProto.Prop;
 import com.dremio.hive.proto.HiveReaderProto.SerializedInputSplit;
 import com.dremio.options.OptionManager;
@@ -58,6 +55,8 @@ import com.google.common.io.ByteStreams;
 
 public class HiveUtilities {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(HiveUtilities.class);
+  public static final String MAP_KEY_FIELD_NAME = "key";
+  public static final String MAP_VALUE_FIELD_NAME = "value";
 
   private static final String ERROR_MSG = "Unsupported Hive data type %s. \n"
       + "Following Hive data types are supported in Dremio for querying: "
@@ -103,42 +102,23 @@ public class HiveUtilities {
   }
 
   /**
-   * Get {@link InputFormat} class name for given table and partition definitions. We try to load the input format class
-   * from partition definition if it exists. If not we load from the table definition.
+   * Get {@link InputFormat} class name for given table and partition definitions. We try to get the InputFormat class name
+   * from inputFormat if explicitly specified in inputFormat, else we get the InputFormat class name from storageHandlerName.
    * @param jobConf
-   * @param tableXattr
-   * @param splitXattr
-   * @return
+   * @param inputFormat
+   * @param storageHandlerName
+   * @return InputFormat
    * @throws Exception
    */
-  public static final Class<? extends InputFormat<?, ?>> getInputFormatClass(final JobConf jobConf,
-      final HiveTableXattr tableXattr, final HiveSplitXattr splitXattr) throws Exception {
-    if (splitXattr != null) {
-      final Optional<String> inputFormat =
-          HiveReaderProtoUtil.getPartitionInputFormat(tableXattr, splitXattr.getPartitionId());
-      if (inputFormat.isPresent()) {
-        return (Class<? extends InputFormat<?, ?>>) Class.forName(inputFormat.get());
-      }
-
-      final Optional<String> storageHandlerName =
-          HiveReaderProtoUtil.getPartitionStorageHandler(tableXattr, splitXattr.getPartitionId());
-      if (storageHandlerName.isPresent()) {
-        final HiveStorageHandler storageHandler = HiveUtils.getStorageHandler(jobConf, storageHandlerName.get());
-        return (Class<? extends InputFormat<?, ?>>) storageHandler.getInputFormatClass();
-      }
+  public static final Class<? extends InputFormat<?, ?>> getInputFormatClass(final JobConf jobConf, Optional<String> inputFormat,
+    Optional<String> storageHandlerName) throws Exception {
+    if (inputFormat.isPresent()) {
+      return (Class<? extends InputFormat<?, ?>>) Class.forName(inputFormat.get());
     }
 
-    if (tableXattr != null) {
-      final Optional<String> inputFormat = HiveReaderProtoUtil.getTableInputFormat(tableXattr);
-      if (inputFormat.isPresent()) {
-        return (Class<? extends InputFormat<?, ?>>) Class.forName(inputFormat.get());
-      }
-
-      final Optional<String> storageHandlerName = HiveReaderProtoUtil.getTableStorageHandler(tableXattr);
-      if (storageHandlerName.isPresent()) {
-        final HiveStorageHandler storageHandler = HiveUtils.getStorageHandler(jobConf, storageHandlerName.get());
-        return (Class<? extends InputFormat<?, ?>>) storageHandler.getInputFormatClass();
-      }
+    if (storageHandlerName.isPresent()) {
+      final HiveStorageHandler storageHandler = HiveUtils.getStorageHandler(jobConf, storageHandlerName.get());
+      return (Class<? extends InputFormat<?, ?>>) storageHandler.getInputFormatClass();
     }
 
     throw new ExecutionSetupException("Unable to get Hive table InputFormat class. There is neither " +
@@ -169,10 +149,31 @@ public class HiveUtilities {
         return typeBuilder.build();
       }
 
-      case LIST:
-      case MAP:
-      case STRUCT:
-      case UNION:
+      case LIST: {
+        MinorType minorType = MinorType.LIST;
+        MajorType.Builder typeBuilder = MajorType.newBuilder().setMinorType(getMinorTypeFromArrowMinorType(minorType))
+          .setMode(DataMode.OPTIONAL);
+        return typeBuilder.build();
+      }
+      case STRUCT:  {
+        MinorType minorType = MinorType.STRUCT;
+        MajorType.Builder typeBuilder = MajorType.newBuilder().setMinorType(getMinorTypeFromArrowMinorType(minorType))
+          .setMode(DataMode.OPTIONAL);
+        return typeBuilder.build();
+      }
+      case MAP: {
+        // Treating hive map datatype as a "list of structs" datatype in arrow.
+        MinorType minorType = MinorType.LIST;
+        MajorType.Builder typeBuilder = MajorType.newBuilder().setMinorType(getMinorTypeFromArrowMinorType(minorType))
+          .setMode(DataMode.OPTIONAL);
+        return typeBuilder.build();
+      }
+      case UNION: {
+        MinorType minorType = MinorType.UNION;
+        MajorType.Builder typeBuilder = MajorType.newBuilder().setMinorType(getMinorTypeFromArrowMinorType(minorType))
+            .setMode(DataMode.OPTIONAL);
+        return typeBuilder.build();
+      }
       default:
         throwUnsupportedHiveDataTypeError(typeInfo.getCategory().toString());
     }

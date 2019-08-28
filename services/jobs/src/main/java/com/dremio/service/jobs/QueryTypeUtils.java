@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -157,8 +157,9 @@ final class QueryTypeUtils {
       case UI_INITIAL_PREVIEW:
         return WorkloadType.INTERNAL_PREVIEW;
       case UI_RUN:
-      case UI_EXPORT:
         return WorkloadType.UI_RUN;
+      case UI_EXPORT:
+        return WorkloadType.UI_DOWNLOAD;
       case UI_INTERNAL_RUN:
         return WorkloadType.INTERNAL_RUN;
       case JDBC:

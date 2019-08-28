@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,8 @@ import java.util.Map.Entry;
 import javax.annotation.Nullable;
 import javax.inject.Provider;
 
+
+import com.dremio.common.types.MinorType;
 import com.dremio.datastore.IndexedStore;
 import com.dremio.datastore.IndexedStore.FindByCondition;
 import com.dremio.datastore.KVStoreProvider;
@@ -50,6 +52,7 @@ import com.dremio.datastore.StoreBuildingFactory;
 import com.dremio.datastore.StoreCreationFunction;
 import com.dremio.datastore.VersionExtractor;
 import com.dremio.datastore.indexed.IndexKey;
+import com.dremio.proto.model.UpdateId;
 import com.dremio.service.reflection.proto.Materialization;
 import com.dremio.service.reflection.proto.MaterializationId;
 import com.dremio.service.reflection.proto.MaterializationMetrics;
@@ -58,9 +61,9 @@ import com.dremio.service.reflection.proto.ReflectionId;
 import com.dremio.service.reflection.proto.Refresh;
 import com.dremio.service.reflection.proto.RefreshId;
 import com.google.common.base.Function;
-import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
+import com.google.common.base.Strings;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.FluentIterable;
@@ -101,7 +104,9 @@ public class MaterializationStore {
     @Nullable
     @Override
     public Materialization apply(@Nullable Map.Entry<MaterializationId, Materialization> entry) {
-      return entry == null ? null : entry.getValue();
+      Materialization value = entry == null ? null : entry.getValue();
+      materializationGoalVersionUpdate(value);
+      return value;
     }
   };
 
@@ -165,7 +170,7 @@ public class MaterializationStore {
     return FluentIterable.from(refreshStore.get().find(condition)).transform(new Function<Entry<RefreshId, Refresh>, Refresh>() {
       @Override
       public Refresh apply(Entry<RefreshId, Refresh> refreshIdRefreshEntry) {
-        return refreshIdRefreshEntry.getValue();
+        return inlineUpgrade(refreshIdRefreshEntry.getValue());
       }
     });
   }
@@ -187,7 +192,17 @@ public class MaterializationStore {
       return null;
     }
 
-    return entry.getValue();
+    return inlineUpgrade(entry.getValue());
+  }
+
+  private Refresh inlineUpgrade(Refresh old) {
+    if ((old.getUpdateId() == null) && (old.getLegacyUpdateId() != null)) { // Do inline upgrade for updateId field
+      UpdateId updateId = new UpdateId();
+      updateId.setLongUpdateId(old.getLegacyUpdateId());
+      updateId.setType(MinorType.BIGINT);
+      old.setUpdateId(updateId);
+    }
+    return old;
   }
 
   public FluentIterable<Refresh> getRefreshesByReflectionId(ReflectionId reflectionId) {
@@ -198,7 +213,7 @@ public class MaterializationStore {
     return FluentIterable.from(refreshStore.get().find(condition)).transform(new Function<Entry<RefreshId, Refresh>, Refresh>() {
       @Override
       public Refresh apply(Entry<RefreshId, Refresh> refreshIdRefreshEntry) {
-        return refreshIdRefreshEntry.getValue();
+        return inlineUpgrade(refreshIdRefreshEntry.getValue());
       }
     });
   }
@@ -220,7 +235,9 @@ public class MaterializationStore {
       return null;
     }
 
-    return entry.getValue();
+    Materialization value = entry.getValue();
+    materializationGoalVersionUpdate(value);
+    return value;
   }
 
   public FluentIterable<Refresh> getRefreshes(final Materialization materialization) {
@@ -241,7 +258,7 @@ public class MaterializationStore {
 
         @Override
         public Refresh apply(Entry<RefreshId, Refresh> input) {
-          return input.getValue();
+          return inlineUpgrade(input.getValue());
         }});
   }
 
@@ -263,7 +280,7 @@ public class MaterializationStore {
     return FluentIterable.from(refreshStore.get().find()).transform(new Function<Entry<RefreshId, Refresh>, Refresh>() {
       @Override
       public Refresh apply(Entry<RefreshId, Refresh> refreshIdRefreshEntry) {
-        return refreshIdRefreshEntry.getValue();
+        return inlineUpgrade(refreshIdRefreshEntry.getValue());
       }
     });
   }
@@ -289,7 +306,9 @@ public class MaterializationStore {
       return null;
     }
 
-    return entry.getValue();
+    Materialization value = entry.getValue();
+    materializationGoalVersionUpdate(value);
+    return value;
   }
 
   public Materialization getRunningMaterialization(final ReflectionId id) {
@@ -318,7 +337,9 @@ public class MaterializationStore {
       return null;
     }
 
-    return entry.getValue();
+    Materialization value = entry.getValue();
+    materializationGoalVersionUpdate(value);
+    return value;
   }
 
   /**
@@ -392,7 +413,9 @@ public class MaterializationStore {
   }
 
   public Materialization get(MaterializationId materializationId) {
-    return materializationStore.get().get(materializationId);
+    Materialization value = materializationStore.get().get(materializationId);
+    materializationGoalVersionUpdate(value);
+    return value;
   }
 
   public Iterable<Materialization> find(final ReflectionId id) {
@@ -400,6 +423,7 @@ public class MaterializationStore {
       and(notNull(), new Predicate<Materialization>() {
         @Override
         public boolean apply(Materialization m) {
+          materializationGoalVersionUpdate(m);
           return id.equals(m.getReflectionId());
         }
       }));
@@ -420,15 +444,18 @@ public class MaterializationStore {
     }
 
     @Override
-    public Long incrementVersion(Materialization value) {
-      final Long current = value.getVersion();
-      value.setVersion(Optional.fromNullable(current).or(-1L) + 1);
-      return current;
+    public void setVersion(Materialization value, Long version) {
+      value.setVersion(version);
     }
 
     @Override
-    public void setVersion(Materialization value, Long version) {
-      value.setVersion(version == null ? 0 : version);
+    public String getTag(Materialization value) {
+      return value.getTag();
+    }
+
+    @Override
+    public void setTag(Materialization value, String tag) {
+      value.setTag(tag);
     }
   }
 
@@ -481,6 +508,16 @@ public class MaterializationStore {
         .keySerializer(Serializers.RefreshIdSerializer.class)
         .valueSerializer(Serializers.RefreshSerializer.class)
         .buildIndexed(RefreshConverter.class);
+    }
+  }
+
+  public static void materializationGoalVersionUpdate(Materialization value) {
+    if(value == null) {
+      return;
+    }
+    if(Strings.isNullOrEmpty(value.getReflectionGoalVersion())) {
+      String version = value.getLegacyReflectionGoalVersion() == null ? null : Long.toString(value.getLegacyReflectionGoalVersion());
+      value.setReflectionGoalVersion(version);
     }
   }
 }

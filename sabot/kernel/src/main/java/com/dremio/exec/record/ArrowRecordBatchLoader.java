@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +26,10 @@ import org.apache.arrow.flatbuf.Buffer;
 import org.apache.arrow.flatbuf.FieldNode;
 import org.apache.arrow.flatbuf.RecordBatch;
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.TypeLayout;
 import org.apache.arrow.vector.AllocationHelper;
-import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.BufferLayout;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.TypeLayout;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.ipc.message.ArrowFieldNode;
 import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;

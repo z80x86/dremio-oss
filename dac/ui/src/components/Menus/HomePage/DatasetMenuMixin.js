@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,10 @@ import { abilities } from 'utils/datasetUtils';
 
 export default function(input) {
   Object.assign(input.prototype, { // eslint-disable-line no-restricted-properties
+    getGraphLink() {
+      return null;
+    },
+
     render() {
       const { entity, closeMenu, entityType } = this.props;
 
@@ -65,11 +69,16 @@ export default function(input) {
         <DividerHr />
 
         {
-          canDelete && <MenuItem
-            onTouchTap={this.handleRemove}>
-
-            {la('Remove')}
-          </MenuItem>
+          canDelete &&
+          (entityType !== 'file' && <MenuItemLink
+              closeMenu={closeMenu}
+              href={this.getRemoveLocation()}
+              text={la('Remove')}/> ||
+            entityType === 'file' && <MenuItem
+              onClick={this.handleRemoveFile}>
+              {la('Remove')}
+              </MenuItem>
+          )
         }
 
         {
@@ -86,7 +95,7 @@ export default function(input) {
             text={la('Move')}/>
         }
 
-        <MenuItem onTouchTap={this.copyPath}>{la('Copy Path')}</MenuItem>
+        <MenuItem onClick={this.copyPath}>{la('Copy Path')}</MenuItem>
 
         <DividerHr />
 
@@ -96,13 +105,11 @@ export default function(input) {
           text={la('Settings')}/>
 
         {
-          canRemoveFormat && <MenuItem
-            onTouchTap={this.handleRemoveFormat}>
-
-            {la('Remove Format')}
-          </MenuItem>
+          canRemoveFormat && <MenuItemLink
+            closeMenu={closeMenu}
+            href={this.getRemoveFormatLocation()}
+            text={la('Remove Format')}/>
         }
-
       </Menu>;
     }
   });

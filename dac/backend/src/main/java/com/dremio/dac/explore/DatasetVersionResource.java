@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -260,20 +260,24 @@ public class DatasetVersionResource {
    */
   @GET @Path("preview")
   @Produces(APPLICATION_JSON)
-  public InitialPreviewResponse getDatasetForVersion(@QueryParam("tipVersion") DatasetVersion tipVersion) throws DatasetVersionNotFoundException, NamespaceException {
+  public InitialPreviewResponse getDatasetForVersion(
+      @QueryParam("tipVersion") DatasetVersion tipVersion,
+      @QueryParam("limit") Integer limit) throws DatasetVersionNotFoundException, NamespaceException, JobNotFoundException {
     // tip version is optional, as it is only needed when we are navigated back in history
     // otherwise assume the current version is at the tip of the history
     VirtualDatasetUI dataset = getDatasetConfig();
     tipVersion = tipVersion != null ? tipVersion : dataset.getVersion();
-    return tool.createPreviewResponseForExistingDataset(datasetPath, dataset, tipVersion);
+    return tool.createPreviewResponseForExistingDataset(dataset, new DatasetVersionResourcePath(datasetPath, tipVersion), limit);
   }
 
   @GET @Path("review")
   @Produces(APPLICATION_JSON)
-  public InitialPreviewResponse reviewDatasetVersion(@QueryParam("jobId") String jobId,
-                                                     @QueryParam("tipVersion") DatasetVersion tipVersion)
+  public InitialPreviewResponse reviewDatasetVersion(
+      @QueryParam("jobId") String jobId,
+      @QueryParam("tipVersion") DatasetVersion tipVersion,
+      @QueryParam("limit") Integer limit)
       throws DatasetVersionNotFoundException, NamespaceException, JobNotFoundException {
-    return tool.createReviewResponse(datasetPath, getDatasetConfig(), jobId, tipVersion);
+    return tool.createReviewResponse(datasetPath, getDatasetConfig(), jobId, tipVersion, limit);
   }
 
   /**
@@ -294,13 +298,12 @@ public class DatasetVersionResource {
       /* Body */ TransformBase transform,
       @QueryParam("newVersion") DatasetVersion newVersion,
       @QueryParam("limit") @DefaultValue("50") int limit)
-      throws DatasetVersionNotFoundException, DatasetNotFoundException, NamespaceException {
+      throws DatasetVersionNotFoundException, DatasetNotFoundException, NamespaceException, JobNotFoundException {
     if (newVersion == null) {
       throw new ClientErrorException("Query parameter 'newVersion' should not be null");
     }
 
-    final DatasetVersionResourcePath resourcePath = resourcePath();
-    final DatasetAndJob datasetAndJob = transformer.transformWithExecute(newVersion, resourcePath.getDataset(), getDatasetConfig(), transform, QueryType.UI_PREVIEW);
+    final DatasetAndJob datasetAndJob = transformer.transformWithExecute(newVersion, datasetPath, getDatasetConfig(), transform, QueryType.UI_PREVIEW);
     return tool.createPreviewResponse(datasetPath, datasetAndJob, limit, false);
   }
 
@@ -360,6 +363,13 @@ public class DatasetVersionResource {
     // otherwise assume the current version is at the tip of the history
     tipVersion = tipVersion != null ? tipVersion : virtualDatasetUI.getVersion();
     final History history = tool.getHistory(datasetPath, virtualDatasetUI.getVersion(), tipVersion);
+    // VBesschetnov 2019-01-08
+    // this is requires as BE generates apiLinks, that is used by UI to send requests for preview/run. In case, when history
+    // of a dataset reference on a version for other dataset. And a user navigate to that version and tries to preview it,
+    // we would not be resolve a tip version and preview will fail. We should always send requests to original dataset
+    // path (tip version path) to be able to get a preview/run data
+    // TODO(DX-14701) move links from BE to UI
+    virtualDatasetUI.setFullPathList(datasetPath.toPathList());
     return InitialRunResponse.of(newDataset(virtualDatasetUI, tipVersion), job.getJobId(), history);
   }
 
@@ -390,7 +400,7 @@ public class DatasetVersionResource {
    * Saves this version as the current version of a dataset under the asDatasetPath if provided
    *
    * @param asDatasetPath
-   * @param savedVersion the last OCC version known the the client. If no one else has saved
+   * @param savedTag the last OCC version known the the client. If no one else has saved
    *                     to this name since the client making request learned of this OCC
    *                     version then the request will be successful. Otherwise it will fail
    *                     because saving would clobber the already saved dataset that the client
@@ -404,18 +414,18 @@ public class DatasetVersionResource {
   @Produces(APPLICATION_JSON) @Consumes(APPLICATION_JSON)
   public DatasetUIWithHistory saveAsDataSet(
       @QueryParam("as") DatasetPath asDatasetPath,
-      @QueryParam("savedVersion") Long savedVersion // null for the first save
+      @QueryParam("savedTag") String savedTag // null for the first save
   ) throws DatasetVersionNotFoundException, UserNotFoundException, NamespaceException, DatasetNotFoundException {
     if (asDatasetPath == null) {
       asDatasetPath = datasetPath;
     }
 
     final VirtualDatasetUI vds = getDatasetConfig();
-    DatasetUI savedDataset = save(vds, asDatasetPath, savedVersion);
+    DatasetUI savedDataset = save(vds, asDatasetPath, savedTag);
     return new DatasetUIWithHistory(savedDataset, tool.getHistory(asDatasetPath, savedDataset.getDatasetVersion()));
   }
 
-  public DatasetUI save(VirtualDatasetUI vds, DatasetPath asDatasetPath, Long savedVersion, NamespaceAttribute... attributes)
+  public DatasetUI save(VirtualDatasetUI vds, DatasetPath asDatasetPath, String savedTag, NamespaceAttribute... attributes)
       throws DatasetNotFoundException, UserNotFoundException, NamespaceException, DatasetVersionNotFoundException {
     final List<String> fullPathList = asDatasetPath.toPathList();
     if (isAncestor(vds, fullPathList)) {
@@ -429,7 +439,7 @@ public class DatasetVersionResource {
 
     vds.setFullPathList(asDatasetPath.toPathList());
     vds.setName(asDatasetPath.getDataset().getName());
-    vds.setSavedVersion(savedVersion);
+    vds.setSavedTag(savedTag);
     vds.setIsNamed(true);
 
     try {
@@ -561,9 +571,10 @@ public class DatasetVersionResource {
    */
   @POST @Path("/editOriginalSql")
   @Produces(APPLICATION_JSON)
-  public InitialPreviewResponse reapplyDatasetAndPreview() throws DatasetVersionNotFoundException, DatasetNotFoundException, NamespaceException {
+  public InitialPreviewResponse reapplyDatasetAndPreview() throws DatasetVersionNotFoundException, DatasetNotFoundException, NamespaceException, JobNotFoundException {
     DatasetAndJob datasetAndJob = reapplyDataset(QueryType.UI_PREVIEW);
-    return tool.createPreviewResponse(new DatasetPath(datasetAndJob.getDataset().getFullPathList()), datasetAndJob, 50, false);
+    //max records = 0 means, that we should not wait for job completion
+    return tool.createPreviewResponse(new DatasetPath(datasetAndJob.getDataset().getFullPathList()), datasetAndJob, 0, false);
   }
 
   private DatasetAndJob reapplyDataset(QueryType queryType) throws DatasetVersionNotFoundException, DatasetNotFoundException, NamespaceException {
@@ -588,6 +599,7 @@ public class DatasetVersionResource {
     return new DatasetUIWithHistory(savedDataset, tool.getHistory(asDatasetPath, datasetAndJob.getDataset().getVersion()));
   }
 
+  // a partial duplicate of gethistory
   private List<VirtualDatasetUI> getPreviousDatasetVersions(VirtualDatasetUI dataset)
       throws DatasetVersionNotFoundException {
     List<VirtualDatasetUI> items = new ArrayList<>();

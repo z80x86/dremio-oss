@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package com.dremio.exec.store.dfs;
 import java.util.List;
 
 import javax.inject.Provider;
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
 
 import org.apache.hadoop.fs.Path;
 import org.hibernate.validator.constraints.NotBlank;
@@ -28,6 +30,7 @@ import com.dremio.exec.catalog.conf.NotMetadataImpacting;
 import com.dremio.exec.catalog.conf.Property;
 import com.dremio.exec.catalog.conf.SourceType;
 import com.dremio.exec.server.SabotContext;
+import com.google.common.collect.ImmutableList;
 
 import io.protostuff.Tag;
 
@@ -46,6 +49,7 @@ public class HDFSConf extends FileSystemConf<HDFSConf, HDFSStoragePlugin> {
   //  optional string root_path = 5 [default = "/"];
   //  optional ShortCircuitFlag short_circuit_enabled = 6
   //  optional string short_circuit_socket_path = 7
+  //  optional bool allow_create_drop = 8
 
   @NotBlank
   @Tag(1)
@@ -53,6 +57,8 @@ public class HDFSConf extends FileSystemConf<HDFSConf, HDFSStoragePlugin> {
   public String hostname;
 
   @Tag(2)
+  @Min(1)
+  @Max(65535)
   @DisplayMetadata(label = "Port")
   public int port = 8020;
 
@@ -107,6 +113,11 @@ public class HDFSConf extends FileSystemConf<HDFSConf, HDFSStoragePlugin> {
     return allowCreateDrop ? SchemaMutability.USER_TABLE : SchemaMutability.NONE;
   }
 
+  @Override
+  public List<String> getConnectionUniqueProperties() {
+    return ImmutableList.of();
+  }
+
   public ShortCircuitFlag getShortCircuitFlag() {
     return shortCircuitFlag;
   }
@@ -117,7 +128,7 @@ public class HDFSConf extends FileSystemConf<HDFSConf, HDFSStoragePlugin> {
 
   @Override
   public HDFSStoragePlugin newPlugin(SabotContext context, String name, Provider<StoragePluginId> idProvider) {
-    return new HDFSStoragePlugin(this, context, name, null, idProvider);
+    return new HDFSStoragePlugin(this, context, name, idProvider);
   }
 
 }

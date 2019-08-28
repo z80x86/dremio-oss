@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,23 @@
  */
 package com.dremio.exec.planner.acceleration.substitution;
 
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.Writer;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.calcite.plan.RelOptMaterialization;
-import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelShuttle;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.externalize.RelWriterImpl;
 import org.apache.calcite.sql.SqlExplainLevel;
 
 import com.dremio.exec.planner.RoutingShuttle;
 import com.dremio.exec.planner.StatelessRelShuttleImpl;
+import com.dremio.exec.planner.acceleration.DremioMaterialization;
 import com.dremio.reflection.rules.ReplacementPointer;
 import com.dremio.service.Pointer;
 import com.google.common.base.Preconditions;
@@ -68,6 +71,32 @@ public final class SubstitutionUtils {
     return usedTables;
   }
 
+  public static int hash(RelNode rel) {
+    Hasher hasher = new Hasher();
+    PrintWriter pw = new PrintWriter(hasher, false);
+    rel.explain(new RelWriterImpl(pw, SqlExplainLevel.DIGEST_ATTRIBUTES, false));
+    return hasher.hash;
+  }
+
+  private static class Hasher extends Writer {
+    private int hash = 0;
+
+    @Override
+    public void write(char[] cbuf, int off, int len) throws IOException {
+      int h = hash;
+      for (char aCbuf : cbuf) {
+        h = 31 * h + aCbuf;
+      }
+      hash = h;
+    }
+
+    @Override
+    public void flush() throws IOException { }
+
+    @Override
+    public void close() throws IOException { }
+  }
+
   /**
    * Returns whether {@code table} uses one or more of the tables in
    * {@code usedTables}.
@@ -93,14 +122,14 @@ public final class SubstitutionUtils {
     return used.value;
   }
 
-  public static List<RelOptMaterialization> findApplicableMaterializations(
-    final RelNode query, final Collection<RelOptMaterialization> materializations) {
+  public static List<DremioMaterialization> findApplicableMaterializations(
+    final RelNode query, final Collection<DremioMaterialization> materializations) {
     final Set<List<String>> queryTablesUsed = SubstitutionUtils.findTables(query);
     return FluentIterable.from(materializations)
-      .filter(new Predicate<RelOptMaterialization>() {
+      .filter(new Predicate<DremioMaterialization>() {
         @Override
-        public boolean apply(RelOptMaterialization materialization) {
-          return usesTable(queryTablesUsed, materialization.queryRel);
+        public boolean apply(DremioMaterialization materialization) {
+          return usesTable(queryTablesUsed, materialization.getQueryRel());
         }
       })
       .toList();
@@ -113,11 +142,11 @@ public final class SubstitutionUtils {
     Preconditions.checkNotNull(query, "query plan required");
     Preconditions.checkNotNull(candidate, "candidate plan required");
 
-    final String queryString = RelOptUtil.toString(query, SqlExplainLevel.DIGEST_ATTRIBUTES);
+    final int queryCode = hash(query);
     final RelNode updatedCandidate = candidate.accept(REMOVE_REPLACEMENT_POINTER);
-    final String candidateString = RelOptUtil.toString(updatedCandidate, SqlExplainLevel.DIGEST_ATTRIBUTES);
+    final int candidateCode = hash(updatedCandidate);
 
-    return queryString.equals(candidateString);
+    return queryCode == candidateCode;
   }
 
 }

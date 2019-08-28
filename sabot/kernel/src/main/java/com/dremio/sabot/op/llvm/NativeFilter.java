@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,9 @@
  */
 package com.dremio.sabot.op.llvm;
 
-import com.dremio.common.expression.LogicalExpression;
-import com.dremio.exec.record.VectorAccessible;
-import com.dremio.exec.record.selection.SelectionVector2;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
-import io.netty.buffer.ArrowBuf;
+import java.util.List;
+import java.util.Set;
+
 import org.apache.arrow.gandiva.evaluator.Filter;
 import org.apache.arrow.gandiva.evaluator.SelectionVector;
 import org.apache.arrow.gandiva.evaluator.SelectionVectorInt16;
@@ -29,8 +26,14 @@ import org.apache.arrow.gandiva.expression.Condition;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 
-import java.util.List;
-import java.util.Set;
+import com.dremio.common.expression.LogicalExpression;
+import com.dremio.exec.record.VectorAccessible;
+import com.dremio.exec.record.selection.SelectionVector2;
+import com.dremio.sabot.exec.context.FunctionContext;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+
+import io.netty.buffer.ArrowBuf;
 
 /**
  * Adapter to gandiva filter.
@@ -57,9 +60,9 @@ public class NativeFilter implements AutoCloseable {
    * @throws GandivaException when we fail to make the gandiva filter
    */
   static public NativeFilter build(LogicalExpression expr, VectorAccessible input,
-                                   SelectionVector2 selectionVector) throws GandivaException {
+                                   SelectionVector2 selectionVector, FunctionContext functionContext) throws GandivaException {
     Set referencedFields = Sets.newHashSet();
-    Condition condition = GandivaExpressionBuilder.serializeExprToCondition(input, expr, referencedFields);
+    Condition condition = GandivaExpressionBuilder.serializeExprToCondition(input, expr, referencedFields, functionContext);
     VectorSchemaRoot root = GandivaUtils.getSchemaRoot(input, referencedFields);
     Filter filter = Filter.make(root.getSchema(), condition);
     return new NativeFilter(filter, root, selectionVector);

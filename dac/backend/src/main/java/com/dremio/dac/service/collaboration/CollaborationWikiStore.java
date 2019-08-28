@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import com.dremio.datastore.StoreBuildingFactory;
 import com.dremio.datastore.StoreCreationFunction;
 import com.dremio.datastore.StringSerializer;
 import com.dremio.datastore.indexed.IndexKey;
-import com.dremio.service.accelerator.store.serializer.SchemaSerializer;
+import com.dremio.service.reflection.store.SchemaSerializer;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
@@ -40,8 +40,11 @@ import com.google.common.base.Suppliers;
 public class CollaborationWikiStore {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(CollaborationWikiStore.class);
 
-  public static final IndexKey ENTITY_ID = new IndexKey("id", "ENTITY_ID", String.class, null, false, false);
-  public static final IndexKey CREATED_AT = new IndexKey("createdAt", "CREATED_AT", Long.class, SearchTypes.SearchFieldSorting.FieldType.LONG, false, false);
+  public static final IndexKey ENTITY_ID = IndexKey.newBuilder("id", "ENTITY_ID", String.class)
+    .build();
+  public static final IndexKey CREATED_AT = IndexKey.newBuilder("createdAt", "CREATED_AT", Long.class)
+    .setSortedValueType(SearchTypes.SearchFieldSorting.FieldType.LONG)
+    .build();
 
   private static final long MAX_WIKI_LENGTH = 100_000;
 

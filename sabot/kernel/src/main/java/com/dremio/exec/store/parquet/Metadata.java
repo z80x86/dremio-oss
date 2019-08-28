@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,14 +22,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.parquet.column.statistics.Statistics;
 import org.apache.parquet.format.converter.ParquetMetadataConverter;
-import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
@@ -40,8 +38,10 @@ import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.apache.parquet.schema.Type;
 
 import com.dremio.common.expression.SchemaPath;
+import com.dremio.exec.ExecConstants;
 import com.dremio.exec.store.AbstractRecordReader;
 import com.dremio.exec.store.TimedRunnable;
+import com.dremio.exec.store.dfs.FileSystemPlugin;
 import com.dremio.exec.util.ImpersonationUtil;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -52,6 +52,7 @@ public class Metadata {
 
   private final FileSystem fs;
   private final ParquetFormatConfig formatConfig;
+  private final long maxFooterLen;
 
   /**
    * Get the parquet metadata for the parquet files in the given directory, including those in subdirectories
@@ -61,8 +62,8 @@ public class Metadata {
    * @throws IOException
    */
   public static ParquetTableMetadata getParquetTableMetadata(FileStatus status, FileSystem fs,
-      ParquetFormatConfig formatConfig, Configuration fsConf) throws IOException {
-    Metadata metadata = new Metadata(formatConfig, fsConf);
+      ParquetFormatConfig formatConfig, FileSystemPlugin<?> plugin) throws IOException {
+    Metadata metadata = new Metadata(formatConfig, plugin);
     return metadata.getParquetTableMetadata(ImmutableList.of(status));
   }
 
@@ -74,14 +75,17 @@ public class Metadata {
    * @throws IOException
    */
   public static ParquetTableMetadata getParquetTableMetadata(
-    List<FileStatus> fileStatuses, ParquetFormatConfig formatConfig, Configuration fsConf) throws IOException {
-    Metadata metadata = new Metadata(formatConfig, fsConf);
+    List<FileStatus> fileStatuses, ParquetFormatConfig formatConfig, FileSystemPlugin<?> plugin) throws IOException {
+    Metadata metadata = new Metadata(formatConfig, plugin);
     return metadata.getParquetTableMetadata(fileStatuses);
   }
 
-  private Metadata(ParquetFormatConfig formatConfig, Configuration fsConf) {
-    this.fs = ImpersonationUtil.createFileSystem(ImpersonationUtil.getProcessUserName(), fsConf);
+  private Metadata(ParquetFormatConfig formatConfig, FileSystemPlugin<?> plugin) {
+    this.fs = ImpersonationUtil.createFileSystem(plugin.getContext(), plugin.getId().getName(), plugin.getConfig(), null,
+      ImpersonationUtil.createProxyUgi(ImpersonationUtil.getProcessUserName()), plugin.getFsConf(), plugin.getConfig().getConnectionUniqueProperties(),
+      false);
     this.formatConfig = formatConfig;
+    this.maxFooterLen = plugin.getContext().getOptionManager().getOption(ExecConstants.PARQUET_MAX_FOOTER_LEN_VALIDATOR);
   }
 
   /**
@@ -158,7 +162,7 @@ public class Metadata {
   private ParquetFileMetadata getParquetFileMetadata(FileStatus file) throws IOException {
     final ParquetMetadata metadata;
 
-    metadata = SingletonParquetFooterCache.readFooter(fs, file, ParquetMetadataConverter.NO_FILTER);
+    metadata = SingletonParquetFooterCache.readFooter(fs, file, ParquetMetadataConverter.NO_FILTER, maxFooterLen);
 
     MessageType schema = metadata.getFileMetaData().getSchema();
 
@@ -185,7 +189,12 @@ public class Metadata {
       for (ColumnChunkMetaData col : rowGroup.getColumns()) {
         ColumnMetadata columnMetadata;
 
-        boolean statsAvailable = (col.getStatistics() != null && !col.getStatistics().isEmpty());
+        // statistics might just have the non-null counts with no min/max they might be
+        // initialized to zero instead of null.
+        // check statistics actually have non null values (or) column has all nulls.
+        boolean statsAvailable = (col.getStatistics() != null && !col.getStatistics().isEmpty()
+          && (col.getStatistics().hasNonNullValue()) || col.getStatistics().getNumNulls() ==
+          rowGroup.getRowCount());
 
         Statistics<?> stats = col.getStatistics();
         String[] columnName = col.getPath().toArray();

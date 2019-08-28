@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,23 @@
  */
 package com.dremio.sabot.op.copier;
 
+import static com.dremio.common.util.MajorTypeHelper.getMajorTypeForField;
+
 import javax.inject.Named;
 
-import static com.dremio.common.util.MajorTypeHelper.getMajorTypeForField;
 import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.vector.AllocationHelper;
+import org.apache.arrow.vector.DensityAwareVector;
+import org.apache.arrow.vector.ValueVector;
 
 import com.dremio.common.AutoCloseables;
-import com.dremio.common.types.Types;
 import com.dremio.common.types.TypeProtos.MajorType;
+import com.dremio.common.types.Types;
 import com.dremio.exec.exception.SchemaChangeException;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorWrapper;
 import com.dremio.exec.record.selection.SelectionVector2;
 import com.dremio.sabot.exec.context.FunctionContext;
-import org.apache.arrow.vector.DensityAwareVector;
-import org.apache.arrow.vector.ValueVector;
 
 
 public abstract class CopierTemplate2 implements Copier {

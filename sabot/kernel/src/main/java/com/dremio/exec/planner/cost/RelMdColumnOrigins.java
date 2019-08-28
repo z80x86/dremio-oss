@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,16 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.calcite.plan.RelOptTable;
+import org.apache.calcite.plan.volcano.RelSubset;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Window.Group;
 import org.apache.calcite.rel.core.Window.RexWinAggCall;
 import org.apache.calcite.rel.logical.LogicalWindow;
+import org.apache.calcite.rel.metadata.BuiltInMetadata;
+import org.apache.calcite.rel.metadata.BuiltInMetadata.ColumnOrigin;
+import org.apache.calcite.rel.metadata.MetadataDef;
+import org.apache.calcite.rel.metadata.MetadataHandler;
 import org.apache.calcite.rel.metadata.ReflectiveRelMetadataProvider;
 import org.apache.calcite.rel.metadata.RelColumnOrigin;
 import org.apache.calcite.rel.metadata.RelMetadataProvider;
@@ -34,6 +39,7 @@ import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.util.BuiltInMethod;
 
+import com.dremio.exec.planner.acceleration.ExpansionNode;
 import com.dremio.exec.planner.common.JdbcRelBase;
 import com.dremio.exec.planner.common.LimitRelBase;
 import com.dremio.exec.planner.common.SampleRelBase;
@@ -43,6 +49,7 @@ import com.dremio.exec.planner.physical.ExchangePrel;
 import com.dremio.exec.planner.physical.SelectionVectorRemoverPrel;
 import com.dremio.sabot.op.fromjson.ConvertFromJsonPOP.ConversionColumn;
 import com.dremio.sabot.op.fromjson.ConvertFromJsonPrel;
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 
 /**
@@ -52,10 +59,20 @@ import com.google.common.base.Preconditions;
  * - {@link JdbcRelBase}
  * - {@link TableScan}
  */
-public class RelMdColumnOrigins extends org.apache.calcite.rel.metadata.RelMdColumnOrigins {
+public class RelMdColumnOrigins implements MetadataHandler<BuiltInMetadata.ColumnOrigin> {
   public static final RelMetadataProvider SOURCE =
       ReflectiveRelMetadataProvider.reflectiveSource(
           BuiltInMethod.COLUMN_ORIGIN.method, new RelMdColumnOrigins());
+
+
+  @Override
+  public MetadataDef<ColumnOrigin> getDef() {
+    return BuiltInMetadata.ColumnOrigin.DEF;
+  }
+
+  public Set<RelColumnOrigin> getColumnOrigins(RelSubset rel, RelMetadataQuery mq, int iOutputColumn) {
+    return mq.getColumnOrigins(MoreObjects.firstNonNull(rel.getBest(), rel.getOriginal()), iOutputColumn);
+  }
 
   public Set<RelColumnOrigin> getColumnOrigins(ConvertFromJsonPrel rel, RelMetadataQuery mq, int iOutputColumn) {
     final List<ConversionColumn> conversions = rel.getConversions();
@@ -66,6 +83,10 @@ public class RelMdColumnOrigins extends org.apache.calcite.rel.metadata.RelMdCol
   }
 
   public Set<RelColumnOrigin> getColumnOrigins(LimitRelBase rel, RelMetadataQuery mq, int iOutputColumn) {
+    return mq.getColumnOrigins(rel.getInput(), iOutputColumn);
+  }
+
+  public Set<RelColumnOrigin> getColumnOrigins(ExpansionNode rel, RelMetadataQuery mq, int iOutputColumn) {
     return mq.getColumnOrigins(rel.getInput(), iOutputColumn);
   }
 

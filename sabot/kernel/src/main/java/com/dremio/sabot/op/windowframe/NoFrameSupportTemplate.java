@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import java.util.List;
 
 import javax.inject.Named;
 
-import io.netty.buffer.ArrowBuf;
 import org.apache.arrow.vector.BaseValueVector;
 import org.apache.arrow.vector.ValueVector;
 
@@ -30,6 +29,8 @@ import com.dremio.exec.record.VectorContainer;
 import com.dremio.exec.record.VectorWrapper;
 import com.dremio.sabot.exec.context.FunctionContext;
 import com.dremio.sabot.exec.context.OperatorContext;
+
+import io.netty.buffer.ArrowBuf;
 
 
 /**

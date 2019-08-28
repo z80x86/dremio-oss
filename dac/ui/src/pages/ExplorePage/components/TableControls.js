@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { Component } from 'react';
-import { connect }   from 'react-redux';
+import { connect } from 'react-redux';
 import pureRender from 'pure-render-decorator';
 import PropTypes from 'prop-types';
 import Radium from 'radium';
@@ -23,10 +23,10 @@ import exploreUtils from 'utils/explore/exploreUtils';
 import { PageTypes, pageTypesProp } from '@app/pages/ExplorePage/pageTypes';
 import { changePageTypeInUrl } from '@app/pages/ExplorePage/pageTypeUtils';
 import { collapseExploreSql } from 'actions/explore/ui';
+import { getExploreState, getTableColumns, getApproximate } from '@app/selectors/explore';
 
 import { performTransform } from 'actions/explore/dataset/transform';
 
-import { getTableColumns, getApproximate } from 'selectors/explore';
 import TableControlsView from './TableControlsView';
 
 @pureRender
@@ -56,35 +56,15 @@ export class TableControls extends Component {
     location: PropTypes.object.isRequired
   };
 
-  constructor(props) {
-    super(props);
-    this.toogleDropdown = this.toogleDropdown.bind(this);
-    this.closeDropdown = this.closeDropdown.bind(this);
-
-    this.state = {
-      dropdownState: false,
-      columnsModalVisibility: false
-    };
-  }
-
   getLocationWithoutGraph(location) {
     let newLocation = location;
-    const {
-      pageType
-    } = this.props;
 
     newLocation = {
       ...newLocation,
-      pathname: changePageTypeInUrl(pageType, newLocation.pathname, PageTypes.default)
+      pathname: changePageTypeInUrl(newLocation.pathname, PageTypes.default)
     };
 
     return newLocation;
-  }
-
-  closeDropdown() {
-    this.setState({
-      dropdownState: false
-    });
   }
 
   navigateToTransformWizard(wizardParams) {
@@ -120,28 +100,14 @@ export class TableControls extends Component {
     this.navigateToTransformWizard({ detailType: 'JOIN', column: '', location: this.context.location });
   }
 
-  handleRequestClose = () => {
-    this.setState({
-      dropdownState: false
-    });
-  };
-
   preventTooltipHide() {
     clearTimeout(this.timer);
-  }
-
-  toogleDropdown(e) {
-    this.setState({
-      dropdownState: !this.state.dropdownState,
-      anchorEl: e.currentTarget
-    });
   }
 
   union() {}
 
   render() {
     const { dataset, sqlState, approximate, rightTreeVisible, exploreViewState } = this.props;
-    const { anchorEl, dropdownState } = this.state;
     return (
       <TableControlsView
         dataset={dataset}
@@ -149,11 +115,6 @@ export class TableControls extends Component {
         addField={this.addField}
         sqlState={sqlState}
         groupBy={this.groupBy.bind(this)}
-        dropdownState={dropdownState}
-        closeDropdown={this.closeDropdown.bind(this)}
-        toogleDropdown={this.toogleDropdown.bind(this)}
-        handleRequestClose={this.handleRequestClose.bind(this)}
-        anchorEl={anchorEl}
         join={this.join}
         approximate={approximate}
         rightTreeVisible={rightTreeVisible}
@@ -165,9 +126,11 @@ export class TableControls extends Component {
 function mapStateToProps(state, props) {
   const location = state.routing.locationBeforeTransitions || {};
   const datasetVersion = props.dataset.get('datasetVersion');
+  const explorePageState = getExploreState(state);
+
   return {
-    currentSql: state.explore.view.get('currentSql'),
-    queryContext: state.explore.view.get('queryContext'),
+    currentSql: explorePageState.view.currentSql,
+    queryContext: explorePageState.view.queryContext,
     defaultColumnName: getTableColumns(state, datasetVersion, location).getIn([0, 'name']),
     approximate: getApproximate(state, datasetVersion)
   };

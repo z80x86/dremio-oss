@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import org.apache.calcite.plan.Convention;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
 
-import com.dremio.common.logical.data.LogicalOperator;
 import com.dremio.exec.planner.physical.Prel;
 
 /**
@@ -39,6 +38,4 @@ public interface Rel extends RelNode {
       return canConvertConvention((Convention) toTraits.getTrait(this.getTraitDef()));
     }
   };
-
-  LogicalOperator implement(LogicalPlanImplementor implementor);
 }

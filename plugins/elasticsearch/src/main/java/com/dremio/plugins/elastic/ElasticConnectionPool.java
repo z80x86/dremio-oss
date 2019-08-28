@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -210,9 +210,13 @@ public class ElasticConnectionPool implements AutoCloseable {
     client.register(DeflateEncoder.class);
     client.register(EncodingFilter.class);
 
-    if(REQUEST_LOGGER.isInfoEnabled()){
+    if (REQUEST_LOGGER.isDebugEnabled()) {
       java.util.logging.Logger julLogger = java.util.logging.Logger.getLogger(REQUEST_LOGGER_NAME);
-      client.register(new LoggingFeature(julLogger, Level.INFO, LoggingFeature.Verbosity.PAYLOAD_TEXT, 65536));
+      client.register(new LoggingFeature(
+          julLogger,
+          Level.FINE,
+          REQUEST_LOGGER.isTraceEnabled() ? LoggingFeature.Verbosity.PAYLOAD_TEXT : LoggingFeature.Verbosity.HEADERS_ONLY,
+          65536));
     }
 
     final JacksonJaxbJsonProvider provider = new JacksonJaxbJsonProvider();

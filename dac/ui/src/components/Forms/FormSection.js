@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import classNames from 'classnames';
 
 import FormElement from 'components/Forms/FormElement';
 import HoverHelp from 'components/HoverHelp';
-import Art from 'components/Art';
+import SourceIcon from 'components/Icon/SourceIcon';
 
 import { sectionLabel, sectionBody, inlineHelp } from 'uiTheme/less/forms.less';
 import { flexColumnContainer } from 'uiTheme/less/layout.less';
@@ -54,11 +54,18 @@ export default class FormSection extends Component {
         <div className={groupStyleClass}>
           {
             sectionConfig.getDirectElements().map((elementConfig, index) => {
-              const fieldClass = (elementConfig.getConfig().size === 'half')
-                ? classNames(elementLayoutHalf, isLayoutRow && elementLayoutRow)
-                : classNames(elementLayoutFull, isLayoutRow && elementLayoutRow);
+              const { size } = elementConfig.getConfig();
+              const isFixedSize = typeof size === 'number' && size > 0;
+              const isHalfWidth = size === 'half';
+              const style = isFixedSize ? { width: size } : null;
+
+              const fieldClass = classNames({
+                [elementLayoutRow]: isLayoutRow,
+                [elementLayoutHalf]: !isFixedSize && isHalfWidth,
+                [elementLayoutFull]: !isFixedSize && !isHalfWidth // full width by default
+              });
               return (
-                <div key={index} className={fieldClass}>
+                <div key={index} className={fieldClass} style={style}>
                   <FormElement key={index} fields={fields} disabled={this.props.disabled} elementConfig={elementConfig}/>
                 </div>
               );
@@ -70,26 +77,11 @@ export default class FormSection extends Component {
     return '';
   }
 
-  renderIcon(src) {
-    // svg can be passed by api as raw svg/xml or as base64;
-    // pre-existing icons have svg or png extension
-    const isInlineSvg = src.includes('<svg');
-    const isEncoded = !isInlineSvg && !src.includes('.svg') && !src.includes('.png');
-    if (isInlineSvg) {
-      return (<Art src={src} alt={''} style={styles.iconStyle} />);
-    }
-    if (isEncoded) {
-      return (<img src={`data:image/svg+xml;base64,${src}`} style={styles.iconStyle}></img>);
-    }
-    const iconSrc = `sources/${src}`;
-    return (<Art src={iconSrc} alt={''} style={styles.iconStyle} />);
-  }
-
   renderIconAndElements(sectionConfig, fields) {
     if (sectionConfig.getConfig().icon) {
       return (
         <div className={sectionWithIcon}>
-          {this.renderIcon(sectionConfig.getConfig().icon)}
+          <SourceIcon src={sectionConfig.getConfig().icon}/>
           <div className={elementsWithIcon}>
             {this.renderElements(sectionConfig, fields)}
           </div>
@@ -155,12 +147,3 @@ export default class FormSection extends Component {
   }
 
 }
-
-//TODO: refactor. iconStyle is passed deep into Art component hierarchy, which makes is hard to move to .less
-const styles = {
-  iconStyle: {
-    margin: '0 20px 0 10px',
-    width: 60,
-    height: 60
-  }
-};

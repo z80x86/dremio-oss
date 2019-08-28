@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.bytes.BytesInput;
@@ -42,6 +41,8 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter;
 import org.apache.parquet.hadoop.CodecFactory;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
+import org.apache.parquet.hadoop.util.HadoopStreams;
+import org.apache.parquet.io.SeekableInputStream;
 import org.apache.parquet.schema.PrimitiveType;
 
 import com.dremio.common.exceptions.ExecutionSetupException;
@@ -52,7 +53,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 
 import io.netty.buffer.ArrowBuf;
-import io.netty.buffer.ByteBuf;
 
 // class to keep track of the read position of variable length columns
 public class PageReader {
@@ -99,18 +99,18 @@ public class PageReader {
 
   int currentPageCount = -1;
 
-  private FSDataInputStream inputStream;
+  private SeekableInputStream inputStream;
 
   // These need to be held throughout reading of the entire column chunk
-  List<ByteBuf> allocatedDictionaryBuffers;
+  List<ArrowBuf> allocatedDictionaryBuffers;
 
   private final CodecFactory codecFactory;
 
   private final ParquetReaderStats stats;
 
-  PageReader(ColumnReader<?> parentStatus, FSDataInputStream inputStream, Path path, ColumnChunkMetaData columnChunkMetaData) throws ExecutionSetupException {
+  PageReader(ColumnReader<?> parentStatus, SeekableInputStream inputStream, Path path, ColumnChunkMetaData columnChunkMetaData) throws ExecutionSetupException {
     this.parentColumnReader = parentStatus;
-    allocatedDictionaryBuffers = new ArrayList<ByteBuf>();
+    allocatedDictionaryBuffers = new ArrayList<ArrowBuf>();
     codecFactory = parentColumnReader.parentReader.getCodecFactory();
     this.stats = parentColumnReader.parentReader.parquetReaderStats;
     long start = columnChunkMetaData.getFirstDataPageOffset();
@@ -129,9 +129,9 @@ public class PageReader {
     this(parentStatus, openFile(fs, path), path, columnChunkMetaData);
   }
 
-  private static FSDataInputStream openFile(FileSystem fs, Path path) throws ExecutionSetupException {
+  private static SeekableInputStream openFile(FileSystem fs, Path path) throws ExecutionSetupException {
     try {
-      return fs.open(path);
+      return HadoopStreams.wrap(fs.open(path));
     } catch (IOException e) {
       throw new ExecutionSetupException("Error opening or reading metadata for parquet file at location: "
         + path.getName(), e);
@@ -148,7 +148,7 @@ public class PageReader {
   }
 
   private void loadDictionaryIfExists(final ColumnReader<?> parentStatus,
-      final ColumnChunkMetaData columnChunkMetaData, final FSDataInputStream f) throws IOException {
+      final ColumnChunkMetaData columnChunkMetaData, final SeekableInputStream f) throws IOException {
     Stopwatch timer = Stopwatch.createUnstarted();
     if (columnChunkMetaData.getDictionaryPageOffset() > 0) {
       f.seek(columnChunkMetaData.getDictionaryPageOffset());
@@ -384,7 +384,7 @@ public class PageReader {
   }
 
   public void clearDictionaryBuffers() {
-    for (ByteBuf b : allocatedDictionaryBuffers) {
+    for (ArrowBuf b : allocatedDictionaryBuffers) {
       b.release();
     }
     allocatedDictionaryBuffers.clear();

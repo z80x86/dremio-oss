@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,22 +18,25 @@ import Immutable  from 'immutable';
 import Radium from 'radium';
 import PropTypes from 'prop-types';
 import { injectIntl } from 'react-intl';
+import { noop } from 'lodash';
+
 import { PALE_BLUE } from 'uiTheme/radium/colors';
-import FilterSelectMenu from 'components/Fields/FilterSelectMenu';
-import SelectMenu from 'components/Fields/SelectMenu';
+import FilterSelectMenu, { getDataQaForFilterItem } from 'components/Fields/FilterSelectMenu';
+import Select from '@app/components/Fields/Select';
 import FontIcon from 'components/Icon/FontIcon';
 import JobsFiltersMixin, { getSortItems } from 'dyn-load/pages/JobPage/components/JobsFilters/JobsFiltersMixin';
 
 import ContainsText from './ContainsText';
 import * as IntervalTypes from './StartTimeSelect/IntervalTypes';
 import StartTimeSelect from './StartTimeSelect/StartTimeSelect';
-import './JobsFilters.less';
+import { ddSort } from './JobsFilters.less';
 
 const itemsForStateFilter = [ // todo: `la` loc not building correctly here
   {id: 'RUNNING', label: ('Running'), icon: 'Loader'},
   {id: 'COMPLETED', label: ('Completed'), icon: 'OKSolid'},
   {id: 'FAILED', label: ('Failed'), icon: 'ErrorSolid'},
-  {id: 'CANCELED', label: ('Canceled'), icon: 'Canceled' }
+  {id: 'CANCELED', label: ('Canceled'), icon: 'Canceled' },
+  {id: 'ENQUEUED', label: ('Enqueued'), icon: 'Ellipsis' }
 ];
 
 const itemsForQueryTypeFilter = [ // todo: `la` loc not building correctly here
@@ -44,7 +47,7 @@ const itemsForQueryTypeFilter = [ // todo: `la` loc not building correctly here
   {id: 'DOWNLOAD', label: ('Downloads'), default: false}
 ];
 
-const sortItems = Immutable.fromJS(getSortItems());
+const sortItems = getSortItems().map(item => ({...item, dataQa: getDataQaForFilterItem(item.id) }));
 
 @injectIntl
 @Radium
@@ -242,9 +245,9 @@ export default class JobsFilters extends Component {
   renderSortLabel() {
     const sortId = this.props.queryState.get('sort');
     const selectedItem = sortItems.find(item => {
-      return item.get('id') === sortId;
+      return item.id === sortId;
     });
-    const label = selectedItem ? selectedItem.get('label') : '';
+    const label = selectedItem ? selectedItem.label : '';
     return (
       <div
         data-qa='order-filter'
@@ -282,13 +285,14 @@ export default class JobsFilters extends Component {
         />
         <div style={styles.order}>
           {this.renderSortLabel()}
-          {/* todo: SelectMenu is deprecated */}
-          <SelectMenu
-            hideSelectedLabel
-            name='sort'
-            selectedItem={queryState.get('sort')}
+          <Select
+            dataQa='sort-filter'
             items={sortItems}
-            onItemSelect={this.changeSortItem}
+            valueField='id'
+            selectedValueRenderer={noop}
+            className={ddSort}
+            value={queryState.get('sort')}
+            onChange={this.changeSortItem}
           />
         </div>
       </div>
@@ -315,7 +319,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     paddingLeft: 10,
-    backgroundColor: PALE_BLUE
+    backgroundColor: PALE_BLUE,
+    height: 38
   },
   orderBy: {
     margin: '0 0 0 auto'

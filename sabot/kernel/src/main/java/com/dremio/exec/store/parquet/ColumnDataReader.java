@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,24 @@
  */
 package com.dremio.exec.store.parquet;
 
-import io.netty.buffer.ArrowBuf;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 
-import org.apache.hadoop.fs.FSDataInputStream;
-
 import org.apache.parquet.bytes.BytesInput;
 import org.apache.parquet.format.PageHeader;
 import org.apache.parquet.format.Util;
-import org.apache.parquet.hadoop.util.CompatibilityUtil;
+import org.apache.parquet.io.SeekableInputStream;
+
+import io.netty.buffer.ArrowBuf;
 
 public class ColumnDataReader {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ColumnDataReader.class);
 
   private final long endPosition;
-  public final FSDataInputStream input;
+  public final SeekableInputStream input;
 
-  public ColumnDataReader(FSDataInputStream input, long start, long length) throws IOException{
+  public ColumnDataReader(SeekableInputStream input, long start, long length) throws IOException{
     this.input = input;
     this.input.seek(start);
     this.endPosition = start + length;
@@ -44,7 +42,7 @@ public class ColumnDataReader {
     return Util.readPageHeader(input);
   }
 
-  public FSDataInputStream getInputStream() {
+  public SeekableInputStream getInputStream() {
     return input;
   }
 
@@ -57,10 +55,7 @@ public class ColumnDataReader {
   public void loadPage(ArrowBuf target, int pageLength) throws IOException {
     target.clear();
     ByteBuffer directBuffer = target.nioBuffer(0, pageLength);
-    int lengthLeftToRead = pageLength;
-    while (lengthLeftToRead > 0) {
-      lengthLeftToRead -= CompatibilityUtil.getBuf(input, directBuffer, lengthLeftToRead);
-    }
+    input.readFully(directBuffer);
     target.writerIndex(pageLength);
   }
 

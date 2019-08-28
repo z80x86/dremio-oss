@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,6 +58,7 @@ public class DremioTest {
   private static final Properties TEST_CONFIGURATIONS = new Properties() {
     {
       put("dremio.exec.http.enabled", "false");
+      put("dremio.test.parquet.schema.fallback.disabled", "true");
     }
   };
   public static final SabotConfig DEFAULT_SABOT_CONFIG = SabotConfig.create(TEST_CONFIGURATIONS);

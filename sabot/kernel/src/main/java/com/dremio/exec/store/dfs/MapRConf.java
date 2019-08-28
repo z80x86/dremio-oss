@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import com.dremio.exec.catalog.conf.Property;
 import com.dremio.exec.catalog.conf.SourceType;
 import com.dremio.exec.server.SabotContext;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
 import io.protostuff.Tag;
@@ -41,6 +42,7 @@ public class MapRConf extends FileSystemConf<MapRConf, FileSystemPlugin<MapRConf
   //  optional bool secure = 3;
   //  repeated Property property = 4;
   //  optional string root_path = 5 [default = "/"];
+  //  optional bool allowCreateDrop = 6;
 
   @NotBlank
   @Tag(1)
@@ -95,8 +97,13 @@ public class MapRConf extends FileSystemConf<MapRConf, FileSystemPlugin<MapRConf
   }
 
   @Override
+  public List<String> getConnectionUniqueProperties() {
+    return ImmutableList.of();
+  }
+
+  @Override
   public FileSystemPlugin<MapRConf> newPlugin(SabotContext context, String name, Provider<StoragePluginId> pluginIdProvider) {
-    return new FileSystemPlugin<>(this, context, name, null, pluginIdProvider);
+    return new FileSystemPlugin<>(this, context, name, pluginIdProvider);
   }
 
 }

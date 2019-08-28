@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@ public class ContextFunctions {
    * Difference between {@link User} and this function is, the latter can be constant folded and the
    * former cannot.
    */
-  @FunctionTemplate(names = {"query_user"}, scope = FunctionTemplate.FunctionScope.SIMPLE)
+  @FunctionTemplate(names = {"query_user"}, scope = FunctionTemplate.FunctionScope.SIMPLE, isDynamic = true)
   public static class QueryUserFunction implements SimpleFunction {
     @Output NullableVarCharHolder out;
     @Inject ContextInformation contextInfo;
@@ -91,7 +91,7 @@ public class ContextFunctions {
   /**
    * Implement "current_schema" function. Returns the default schema in current session.
    */
-  @FunctionTemplate(name = "current_schema", scope = FunctionTemplate.FunctionScope.SIMPLE, syntax = FunctionSyntax.FUNCTION_ID)
+  @FunctionTemplate(name = "current_schema", scope = FunctionTemplate.FunctionScope.SIMPLE, syntax = FunctionSyntax.FUNCTION_ID, isDynamic = true)
   public static class CurrentSchema implements SimpleFunction {
     @Output NullableVarCharHolder out;
     @Inject ContextInformation contextInfo;

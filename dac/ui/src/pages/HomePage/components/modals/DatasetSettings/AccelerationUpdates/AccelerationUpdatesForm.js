@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,12 +44,12 @@ export class AccelerationUpdatesForm extends Component {
     accelerationSettings: PropTypes.instanceOf(Immutable.Map),
     datasetFields: PropTypes.instanceOf(Immutable.List),
     entityType: PropTypes.string,
-    entity: PropTypes.instanceOf(Immutable.Map)
+    entityId: PropTypes.string
   };
 
   whyCannotUseIncremental() {
     if (this.props.entityType === 'physicalDataset' && !this.props.datasetFields.size) {
-      return la('Incremental updating is not available for datasets without any BigInt fields.');
+      return la('Incremental updating is not available for datasets without any Int, BigInt, Decimal, Float, Double, Varchar, Date, or Timestamp fields.');
     }
     if (this.props.entityType === 'file') {
       return la('Incremental updating is not available for file-based datasets.');
@@ -130,7 +130,7 @@ export class AccelerationUpdatesForm extends Component {
         <DataFreshnessSection
           fields={fields}
           entityType='dataset'
-          dataset={this.props.entity}
+          datasetId={this.props.entityId}
         />
       </div>
     );

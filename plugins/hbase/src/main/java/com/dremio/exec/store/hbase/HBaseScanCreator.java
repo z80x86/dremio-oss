@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.List;
 import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.exec.physical.base.GroupScan;
+import com.dremio.exec.proto.CoordExecRPC.HBaseSubScanSpec;
 import com.dremio.exec.store.RecordReader;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.exec.fragment.FragmentExecutionContext;
@@ -47,7 +48,7 @@ public class HBaseScanCreator implements ProducerOperator.Creator<HBaseSubScan>{
         return new HBaseRecordReader(plugin2.getConnection(), scanSpec, columns, context, false);
       }});
 
-    return new ScanOperator(fragmentExecContext.getSchemaUpdater(), subScan, context, readers.iterator());
+    return new ScanOperator(subScan, context, readers.iterator());
   }
 
 

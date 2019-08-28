@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,14 @@ public class TaskPoolInitializer implements Service {
     pool = factory.newInstance(context.getOptionManager(), context.getDremioConfig());
 
     bindingCreator.bind(TaskPool.class, pool);
+  }
+
+  public boolean isTaskPoolHealthy() {
+    if (pool == null) {
+      return true;
+    }
+
+    return pool.areAllThreadsAlive();
   }
 
   @Override

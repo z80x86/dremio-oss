@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,9 @@ import org.apache.calcite.plan.RelTraitSet;
 import com.dremio.exec.planner.logical.EmptyRel;
 import com.dremio.exec.planner.logical.RelOptHelper;
 
+/**
+ * Converts dremio logical {@link EmptyRel} to dremio physical {@link EmptyPrel}
+ */
 public class EmptyPrule extends Prule {
 
   public static final RelOptRule INSTANCE = new EmptyPrule();

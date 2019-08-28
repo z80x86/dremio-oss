@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -153,6 +153,11 @@ public class EventBasedRecordWriter {
     if (reader.getField().getFieldType().getType().getTypeID() == ArrowTypeID.Union) {
       return recordWriter.getNewUnionConverter(fieldId, fieldName, reader);
     }
+    return getFieldConverter(recordWriter,fieldId, fieldName, type, reader);
+  }
+
+  public static FieldConverter getFieldConverter(final RowBasedRecordWriter recordWriter, final int
+    fieldId, final String fieldName, final MinorType type, final  FieldReader reader) {
     switch (type) {
       case NULL:
         return recordWriter.getNewNullConverter(fieldId, fieldName, reader);
@@ -170,8 +175,8 @@ public class EventBasedRecordWriter {
       case ${minor.class?upper_case}:
         return recordWriter.getNewNullable${minor.class}Converter(fieldId, fieldName, reader);
         </#if>
-      </#list>
-      </#list>
+      </#list >
+      </#list >
       default:
         throw new UnsupportedOperationException("unknown type: " + type);
     }

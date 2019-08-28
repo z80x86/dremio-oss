@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,16 @@ package com.dremio;
 
 import java.util.concurrent.TimeUnit;
 
-import com.dremio.common.util.TestTools;
-import com.dremio.exec.ExecConstants;
-import com.dremio.exec.planner.physical.PlannerSettings;
-
 import org.junit.ClassRule;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestRule;
+
+import com.dremio.common.util.TestTools;
+import com.dremio.exec.ExecConstants;
+import com.dremio.exec.physical.config.HashSenderCalculator;
+import com.dremio.exec.planner.physical.PlannerSettings;
 
 public class TestVectorizedPartitionSender extends BaseTestQuery {
 
@@ -50,7 +51,7 @@ public class TestVectorizedPartitionSender extends BaseTestQuery {
           .sqlQuery(query)
           .go();
 
-      try (AutoCloseable ac = withOption(ExecConstants.PARTITION_SENDER_BATCH_ADAPTIVE, true)) {
+      try (AutoCloseable ac = withOption(HashSenderCalculator.ENABLE_ADAPTIVE, true)) {
         testBuilder()
             .unOrdered()
             .optionSettingQueriesForBaseline("SET \"exec.operator.partitioner.vectorize\" = false")

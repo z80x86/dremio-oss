@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import com.dremio.service.jobs.Job;
 import com.dremio.service.jobs.JobNotFoundException;
 import com.dremio.service.jobs.JobRequest;
 import com.dremio.service.jobs.JobsService;
+import com.dremio.service.jobs.JobsServiceUtil;
 import com.dremio.service.jobs.NoOpJobStatusListener;
 import com.dremio.service.jobs.SqlQuery;
 import com.dremio.service.namespace.NamespaceKey;
@@ -189,14 +190,16 @@ public class TestDatasetProfiles extends BaseTestServer {
   }
 
   private static QueryProfile getQueryProfile(final String query) throws JobNotFoundException {
-    final Job job = getJobsService().submitJob(JobRequest.newBuilder()
-      .setSqlQuery(new SqlQuery(query, DEFAULT_USERNAME))
-      .setQueryType(QueryType.UI_INTERNAL_RUN)
-      .setDatasetPath(DatasetPath.NONE.toNamespaceKey())
-      .setDatasetVersion(DatasetVersion.NONE)
-      .build(), new NoOpJobStatusListener());
-
-    job.getData().loadIfNecessary();
+    final Job job = JobsServiceUtil.waitForJobCompletion(
+      getJobsService().submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(new SqlQuery(query, DEFAULT_USERNAME))
+          .setQueryType(QueryType.UI_INTERNAL_RUN)
+          .setDatasetPath(DatasetPath.NONE.toNamespaceKey())
+          .setDatasetVersion(DatasetVersion.NONE)
+          .build(),
+        new NoOpJobStatusListener())
+    );
     return getJobsService().getProfile(job.getJobId(), 0);
   }
 
@@ -215,7 +218,7 @@ public class TestDatasetProfiles extends BaseTestServer {
       .setFullPathList(path.toPathList())
       .setName(path.getLeaf().getName())
       .setCreatedAt(System.currentTimeMillis())
-      .setVersion(null)
+      .setTag(null)
       .setOwner(DEFAULT_USERNAME)
       .setPhysicalDataset(new PhysicalDataset()
         .setFormatSettings(new FileConfig().setType(FileType.JSON))

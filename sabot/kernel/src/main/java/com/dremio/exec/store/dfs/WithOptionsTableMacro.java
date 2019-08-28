@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,10 @@
 package com.dremio.exec.store.dfs;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -25,12 +28,21 @@ import org.apache.calcite.schema.TableMacro;
 import org.apache.calcite.schema.TranslatableTable;
 
 import com.dremio.common.exceptions.UserException;
+import com.dremio.connector.ConnectorException;
+import com.dremio.connector.metadata.DatasetMetadata;
+import com.dremio.connector.metadata.PartitionChunk;
+import com.dremio.exec.catalog.CatalogOptions;
+import com.dremio.exec.catalog.MetadataObjectsUtils;
+import com.dremio.exec.store.DatasetRetrievalOptions;
 import com.dremio.exec.store.MaterializedDatasetTable;
 import com.dremio.exec.store.SchemaConfig;
 import com.dremio.service.namespace.NamespaceKey;
-import com.dremio.service.namespace.QuietAccessor;
-import com.dremio.service.namespace.SourceTableDefinition;
 import com.dremio.service.namespace.TableInstance;
+import com.dremio.service.namespace.dataset.proto.DatasetConfig;
+import com.dremio.service.namespace.dataset.proto.PartitionProtobuf;
+import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
+import com.google.common.base.Throwables;
 
 /**
  * Implementation of a table macro that generates a table based on parameters
@@ -86,15 +98,72 @@ public final class WithOptionsTableMacro implements TableMacro {
   @Override
   public TranslatableTable apply(final List<Object> arguments) {
     try {
-      SourceTableDefinition definition = plugin.getDatasetWithOptions(new NamespaceKey (tableSchemaPath), new TableInstance(sig, arguments), schemaConfig.getIgnoreAuthErrors(), schemaConfig.getUserName());
-      if(definition == null){
-        throw UserException.validationError().message("Unable to read table %s using provided options.",  new NamespaceKey(tableSchemaPath).toString()).build(logger);
-      }
-      return new MaterializedDatasetTable(plugin, schemaConfig.getUserName(), new QuietAccessor(definition));
+      final DatasetRetrievalOptions options = DatasetRetrievalOptions.DEFAULT.toBuilder()
+          .setIgnoreAuthzErrors(schemaConfig.getIgnoreAuthErrors())
+          .setMaxMetadataLeafColumns((int) schemaConfig.getOptions().getOption(CatalogOptions.METADATA_LEAF_COLUMN_MAX))
+          .build();
 
+      final FileDatasetHandle handle = plugin.getDatasetWithOptions(
+          new NamespaceKey(tableSchemaPath),
+          new TableInstance(sig, arguments),
+          schemaConfig.getIgnoreAuthErrors(),
+          schemaConfig.getUserName(),
+          (int) schemaConfig.getOptions().getOption(CatalogOptions.METADATA_LEAF_COLUMN_MAX)
+      );
+
+      if (handle == null) {
+        throw UserException.validationError()
+            .message("Unable to read table %s using provided options.",
+                new NamespaceKey(tableSchemaPath).toString())
+            .build(logger);
+      }
+
+      final Supplier<List<PartitionProtobuf.PartitionChunk>> partitionChunks = Suppliers.memoize(
+          () -> {
+            final Iterator<? extends PartitionChunk> chunks;
+            try {
+              chunks = plugin.listPartitionChunks(handle,
+                  options.asListPartitionChunkOptions(null)).iterator();
+            } catch (ConnectorException e) {
+              throw UserException.validationError(e)
+                  .build(logger);
+            }
+
+            final List<PartitionProtobuf.PartitionChunk> toReturn = new ArrayList<>();
+            int i = 0;
+            while (chunks.hasNext()) {
+              final PartitionChunk chunk = chunks.next();
+              toReturn.addAll(MetadataObjectsUtils.newPartitionChunk(i + "-", chunk)
+                  .collect(Collectors.toList()));
+              i++;
+            }
+
+            return toReturn;
+          });
+
+      final Supplier<DatasetConfig> datasetConfig = Suppliers.memoize(
+          () -> {
+            partitionChunks.get(); // to ensure partition chunks are populated
+
+            DatasetConfig toReturn = MetadataObjectsUtils.newShallowConfig(handle);
+            final DatasetMetadata datasetMetadata;
+            try {
+              datasetMetadata = plugin.getDatasetMetadata(handle, null,
+                  options.asGetMetadataOptions(null));
+            } catch (ConnectorException e) {
+              throw UserException.validationError(e)
+                  .build(logger);
+            }
+
+            MetadataObjectsUtils.overrideExtended(toReturn, datasetMetadata, Optional.empty(),
+                options.maxMetadataLeafColumns());
+            return toReturn;
+          });
+
+      return new MaterializedDatasetTable(plugin, schemaConfig.getUserName(), datasetConfig, partitionChunks);
     } catch (Exception e) {
+      Throwables.throwIfUnchecked(e);
       throw new RuntimeException(e);
     }
   }
-
 }

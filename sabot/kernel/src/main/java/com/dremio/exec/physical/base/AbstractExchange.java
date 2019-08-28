@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,26 @@
 package com.dremio.exec.physical.base;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
-import com.dremio.exec.expr.fn.FunctionLookupContext;
 import com.dremio.exec.physical.EndpointAffinity;
 import com.dremio.exec.physical.PhysicalOperatorSetupException;
 import com.dremio.exec.planner.fragment.ParallelizationInfo;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.record.BatchSchema;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
 
 public abstract class AbstractExchange extends AbstractSingle implements Exchange {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(AbstractExchange.class);
+
+  protected final OpProps senderProps;
+  protected final OpProps receiverProps;
+  protected final BatchSchema schema;
 
   // Ephemeral info for generating execution fragments.
   protected int senderMajorFragmentId;
@@ -38,32 +43,48 @@ public abstract class AbstractExchange extends AbstractSingle implements Exchang
   protected List<NodeEndpoint> senderLocations;
   protected List<NodeEndpoint> receiverLocations;
 
-  public AbstractExchange(PhysicalOperator child) {
-    super(child);
+  public AbstractExchange(OpProps props, OpProps senderProps, OpProps receiverProps, BatchSchema schema, PhysicalOperator child) {
+    super(props, child);
+    this.senderProps = senderProps;
+    this.receiverProps = receiverProps;
+    this.schema = schema;
   }
 
   /**
-   * Default sender parallelization width range is [1, Integer.MAX_VALUE] and no endpoint affinity
-   * @param receiverFragmentEndpoints Endpoints assigned to receiver fragment if available, otherwise an empty list.
-   * @return
+   * Default sender parallelization width range is unlimited
    */
   @Override
-  public ParallelizationInfo getSenderParallelizationInfo(List<NodeEndpoint> receiverFragmentEndpoints) {
-    return ParallelizationInfo.UNLIMITED_WIDTH_NO_ENDPOINT_AFFINITY;
+  public ParallelizationInfo.WidthConstraint getSenderParallelizationWidthConstraint() {
+    return ParallelizationInfo.WidthConstraint.UNLIMITED;
   }
 
   /**
-   * Default receiver parallelization width range is [1, Integer.MAX_VALUE] and affinity to nodes where sender
-   * fragments are running.
-   * @param senderFragmentEndpoints Endpoints assigned to receiver fragment if available, otherwise an empty list.
-   * @return
+   * Default sender parallelization affinity is no endpoint affinity
    */
   @Override
-  public ParallelizationInfo getReceiverParallelizationInfo(List<NodeEndpoint> senderFragmentEndpoints) {
-    Preconditions.checkArgument(senderFragmentEndpoints != null && senderFragmentEndpoints.size() > 0,
+  public Supplier<Collection<EndpointAffinity>> getSenderEndpointffinity(Supplier<Collection<NodeEndpoint>> receiverFragmentEndpointsSupplier) {
+    return () -> ImmutableList.of();
+  }
+
+  /**
+   * Default receiver parallelization width range is unlimited
+   */
+  @Override
+  public ParallelizationInfo.WidthConstraint getReceiverParallelizationWidthConstraint() {
+    return ParallelizationInfo.WidthConstraint.UNLIMITED;
+  }
+
+  /**
+   * Default receiver parallelization is affinity to nodes where sender fragments are running.
+   */
+  @Override
+  public Supplier<Collection<EndpointAffinity>> getReceiverEndpointAffinity(Supplier<Collection<NodeEndpoint>> senderFragmentEndpointsSupplier) {
+    return () -> {
+      Collection<NodeEndpoint> senderFragmentEndpoints = senderFragmentEndpointsSupplier.get();
+      Preconditions.checkArgument(senderFragmentEndpoints != null && senderFragmentEndpoints.size() > 0,
         "Sender fragment endpoint list should not be empty");
-
-    return ParallelizationInfo.create(1, Integer.MAX_VALUE, getDefaultAffinityMap(senderFragmentEndpoints));
+      return getDefaultAffinityMap(senderFragmentEndpoints);
+    };
   }
 
   /**
@@ -73,7 +94,7 @@ public abstract class AbstractExchange extends AbstractSingle implements Exchang
    * @param fragmentEndpoints SabotNode endpoint assignments of fragments.
    * @return List of EndpointAffinity objects for each SabotNode endpoint given <i>fragmentEndpoints</i>.
    */
-  protected static List<EndpointAffinity> getDefaultAffinityMap(List<NodeEndpoint> fragmentEndpoints) {
+  protected static List<EndpointAffinity> getDefaultAffinityMap(Collection<NodeEndpoint> fragmentEndpoints) {
     Map<NodeEndpoint, EndpointAffinity> affinityMap = Maps.newHashMap();
     final double affinityPerOccurrence = 1.0d / fragmentEndpoints.size();
     for(NodeEndpoint sender : fragmentEndpoints) {
@@ -101,7 +122,6 @@ public abstract class AbstractExchange extends AbstractSingle implements Exchang
     setupSenders(senderLocations);
   }
 
-
   @Override
   public final void setupReceivers(int majorFragmentId, List<NodeEndpoint> receiverLocations) throws PhysicalOperatorSetupException {
     this.receiverMajorFragmentId = majorFragmentId;
@@ -123,13 +143,4 @@ public abstract class AbstractExchange extends AbstractSingle implements Exchang
     return ParallelizationDependency.RECEIVER_DEPENDS_ON_SENDER;
   }
 
-  @Override
-  protected BatchSchema constructSchema(FunctionLookupContext functionLookupContext) {
-    BatchSchema schema = child.getSchema(functionLookupContext);
-    if(schema == null){
-      throw new UnsupportedOperationException();
-    }
-
-    return schema;
-  }
 }

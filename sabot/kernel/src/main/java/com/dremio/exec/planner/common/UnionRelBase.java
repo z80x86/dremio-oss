@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,9 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Union;
 import org.apache.calcite.rel.type.RelDataType;
 
+import com.dremio.exec.planner.physical.PlannerSettings;
+import com.dremio.exec.planner.physical.PrelUtil;
+
 /**
  * Base class for logical and physical Union implemented in Dremio
  */
@@ -33,16 +36,17 @@ public abstract class UnionRelBase extends Union {
       List<RelNode> inputs, boolean all, boolean checkCompatibility) throws InvalidRelException {
     super(cluster, traits, inputs, all);
     if (checkCompatibility &&
-        !this.isCompatible(false /* don't compare names */, true /* allow substrings */)) {
+        !this.isCompatible(cluster, false /* don't compare names */, true /* allow substrings */)) {
       throw new InvalidRelException("Input row types of the Union are not compatible.");
     }
   }
 
-  public boolean isCompatible(boolean compareNames, boolean allowSubstring) {
+  public boolean isCompatible(RelOptCluster cluster, boolean compareNames, boolean allowSubstring) {
     RelDataType unionType = getRowType();
+    PlannerSettings plannerSettings = PrelUtil.getPlannerSettings(cluster);
     for (RelNode input : getInputs()) {
       if (! MoreRelOptUtil.areRowTypesCompatible(
-          input.getRowType(), unionType, compareNames, allowSubstring)) {
+        input.getRowType(), unionType, compareNames, allowSubstring)) {
         return false;
       }
     }

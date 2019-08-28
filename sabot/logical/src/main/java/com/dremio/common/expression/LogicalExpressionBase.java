@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,29 +20,14 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 @JsonPropertyOrder({ "type" })
 public abstract class LogicalExpressionBase implements LogicalExpression {
+
+  // was pushed in 3.0 have to retain this so that serde does not break.
   private final EvaluationType evaluationType;
 
   protected LogicalExpressionBase() {
     super();
     this.evaluationType = new EvaluationType();
-    // Set default execution type to Java
-    // Supported types can be added later
-    addEvaluationType(EvaluationType.ExecutionType.JAVA);
-  }
-
-  @Override
-  public boolean isEvaluationTypeSupported(EvaluationType.ExecutionType executionType) {
-    return evaluationType.isEvaluationTypeSupported(executionType);
-  }
-
-  @Override
-  public void addEvaluationType(EvaluationType.ExecutionType executionType) {
-    evaluationType.addEvaluationType(executionType);
-  }
-
-  @Override
-  public EvaluationType getEvaluationType() {
-    return evaluationType;
+    evaluationType.addEvaluationType(EvaluationType.ExecutionType.JAVA);
   }
 
   protected void i(StringBuilder sb, int indent) {

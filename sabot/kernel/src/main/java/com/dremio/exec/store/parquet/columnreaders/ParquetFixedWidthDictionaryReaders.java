@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.TimeStampMilliVector;
 import org.apache.arrow.vector.TimeMilliVector;
+import org.apache.arrow.vector.TimeStampMilliVector;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.util.DecimalUtility;
 import org.apache.parquet.column.ColumnDescriptor;

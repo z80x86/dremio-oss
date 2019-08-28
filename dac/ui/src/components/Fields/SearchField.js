@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,7 +76,7 @@ export default class SearchField extends Component {
         />
         <input
           data-qa={this.props.dataQa}
-          className={classNames(['form-placeholder ' + (this.props.inputClassName || ''), searchInput])}
+          className={classNames([(this.props.inputClassName || ''), searchInput])}
           type='text'
           ref='input'
           placeholder={this.props.placeholder}

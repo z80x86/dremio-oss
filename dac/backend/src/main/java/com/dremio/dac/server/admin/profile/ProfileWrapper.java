@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,16 @@
  */
 package com.dremio.dac.server.admin.profile;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-
 
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.time.DurationFormatUtils;
@@ -39,6 +41,8 @@ import com.dremio.exec.proto.UserBitShared.OperatorProfile;
 import com.dremio.exec.proto.UserBitShared.QueryProfile;
 import com.dremio.service.accelerator.AccelerationDetailsUtils;
 import com.dremio.service.accelerator.proto.AccelerationDetails;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.google.common.base.Strings;
 import com.google.common.collect.Maps;
 
@@ -129,6 +133,18 @@ public class ProfileWrapper {
   }
 
   /**
+   * @return command pool wait time or "None" if not available.
+   */
+  @SuppressWarnings("unused")
+  public String getCommandPoolWaitMillis() {
+    final QueryProfile profile = getProfile();
+    if (!profile.hasCommandPoolWaitMillis()) {
+      return "None";
+    }
+    return NUMBER_FORMAT.format(profile.getCommandPoolWaitMillis()) + "ms";
+  }
+
+  /**
    * @return Get query planning time. If the planning hasn't started, returns "Planning not started". If planning hasn't
    * completed, returns "Still planning".
    */
@@ -195,8 +211,11 @@ public class ProfileWrapper {
         dlb.addItem("Query Cost:", String.format("%.0f", rsp.getQueryCost()));
       }
       if (rsp.hasQueryType()) {
-        dlb.addItem("Query Type:", rsp.getQueryType());
+        dlb.addItem("Query Type:", rsp.getQueryType()); // this maps to WorkloadType internally
       }
+    }
+    if (profile.hasCancelReason()) {
+      dlb.addItem("Cancellation Reason:", profile.getCancelReason());
     }
     return dlb.build();
   }
@@ -301,7 +320,14 @@ public class ProfileWrapper {
 
     for (UserBitShared.LayoutMaterializedViewProfile viewProfile : layoutProfilesList) {
       String reflectionDatasetPath = accelerationDetails.getReflectionDatasetPath(viewProfile.getLayoutId());
-      DatasetPath path = new DatasetPath(reflectionDatasetPath);
+
+      DatasetPath path;
+
+      if ("".equals(reflectionDatasetPath)) {
+        path = new DatasetPath(Arrays.asList("unknown", "missing dataset"));
+      } else {
+        path = new DatasetPath(reflectionDatasetPath);
+      }
 
       if (!map.containsKey(path)) {
         map.put(path, new ArrayList<UserBitShared.LayoutMaterializedViewProfile>());
@@ -310,6 +336,41 @@ public class ProfileWrapper {
     }
 
     return map;
+  }
+
+  @SuppressWarnings("unused")
+  public String getFragmentsJSON() throws IOException {
+    final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+    final JsonGenerator jsonGenerator = new JsonFactory().createGenerator(outputStream);
+
+    jsonGenerator.writeStartObject();
+
+    for (FragmentWrapper fragmentWrapper : getFragmentProfiles()) {
+      fragmentWrapper.addFragment(jsonGenerator);
+    }
+
+    jsonGenerator.writeEndObject();
+
+    jsonGenerator.flush();
+    return outputStream.toString();
+  }
+
+
+  @SuppressWarnings("unused")
+  public String getOperatorProfilesJSON() throws IOException {
+    final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+    final JsonGenerator jsonGenerator = new JsonFactory().createGenerator(outputStream);
+
+    jsonGenerator.writeStartObject();
+
+    for (OperatorWrapper operatorWrapper : getOperatorProfiles()) {
+      operatorWrapper.addOperator(jsonGenerator);
+    }
+
+    jsonGenerator.writeEndObject();
+
+    jsonGenerator.flush();
+    return outputStream.toString();
   }
 
   public String getPerdiodFromStart(Long datetime) {

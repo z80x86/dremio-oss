@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,12 @@ public interface TaskPool extends AutoCloseable {
     return Collections.emptyList();
   }
 
+  /**
+   * Determines if all threads created by the taskpool are alive
+   * @return true, if all threads are alive; false otherwise
+   */
+  default boolean areAllThreadsAlive() { return true; }
+
   GroupManager<AsyncTaskWrapper> getGroupManager();
 
   class ThreadInfo {
@@ -41,9 +47,12 @@ public interface TaskPool extends AutoCloseable {
     public final int numStagedTasks;
     public final int numRequestedWork;
 
+    /** Java thread id**/
+    public final long threadId;
+
 
     public ThreadInfo(String threadName, int slicingThreadId, int osThreadId, int cpuId, int numTasks, int numStagedTasks,
-               int numRequestedWork) {
+               int numRequestedWork, long threadId) {
       this.threadName = threadName;
       this.slicingThreadId = slicingThreadId;
       this.osThreadId = osThreadId;
@@ -51,6 +60,7 @@ public interface TaskPool extends AutoCloseable {
       this.numTasks = numTasks;
       this.numStagedTasks = numStagedTasks;
       this.numRequestedWork = numRequestedWork;
+      this.threadId = threadId;
     }
 
   }}

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,11 @@ package com.dremio.exec.store.easy.text.compliant;
  * Text files.
  */
 abstract class TextOutput {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TextOutput.class);
+  protected final int maxCellLimit;
+
+  protected TextOutput(int maxCellLimit) {
+    this.maxCellLimit = maxCellLimit;
+  }
 
   /**
    * Start processing a new field within a record.
@@ -44,9 +48,9 @@ abstract class TextOutput {
    * @param data
    */
   public void appendIgnoringWhitespace(byte data){
-    if(TextReader.isWhite(data)){
+    if (TextReader.isWhite(data)){
       // noop
-    }else{
+    } else {
       append(data);
     }
   }

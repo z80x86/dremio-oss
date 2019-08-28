@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Iterator;
 
-import com.dremio.exec.ExecConstants;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.work.WorkStats;
@@ -74,7 +73,6 @@ public class NodeIterator implements Iterator<Object> {
     final WorkStats stats = dbContext.getWorkStatsProvider().get();
     i.cluster_load = stats.getClusterLoad();
     i.configured_max_width = (int)dbContext.getClusterResourceInformation().getAverageExecutorCores(dbContext.getOptionManager());
-
     i.actual_max_width = (int) Math.max(1, i.configured_max_width * stats.getMaxWidthFactor());
     return i;
   }

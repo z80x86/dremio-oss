@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { get } from 'lodash/object';
+
 export function getVersion(state) {
-  return state.routing.locationBeforeTransitions.query.version;
+  return get(getLocation(state), 'query.version', null);
 }
 
 export function getLocation(state) {
-  return state.routing.locationBeforeTransitions;
+  return get(state, 'routing.locationBeforeTransitions', null);
 }

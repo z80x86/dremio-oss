@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,9 @@ import java.util.stream.Collectors;
 
 import org.apache.calcite.rel.RelNode;
 
+import com.dremio.exec.planner.acceleration.DremioMaterialization;
 import com.dremio.exec.planner.acceleration.substitution.SubstitutionInfo;
 import com.dremio.exec.planner.physical.Prel;
-import com.dremio.exec.planner.sql.DremioRelOptMaterialization;
 import com.dremio.exec.proto.UserBitShared.QueryProfile;
 import com.dremio.exec.store.sys.accel.AccelerationDetailsPopulator;
 import com.dremio.service.accelerator.AccelerationDetailsUtils;
@@ -88,7 +88,7 @@ class ReflectionDetailsPopulatorImpl implements AccelerationDetailsPopulator {
   }
 
   @Override
-  public void planSubstituted(DremioRelOptMaterialization materialization, List<RelNode> substitutions, RelNode target, long millisTaken) {
+  public void planSubstituted(DremioMaterialization materialization, List<RelNode> substitutions, RelNode target, long millisTaken) {
     try {
       // reflection was considered and matched
       if (!consideredReflections.containsKey(materialization.getReflectionId())) {
@@ -131,16 +131,6 @@ class ReflectionDetailsPopulatorImpl implements AccelerationDetailsPopulator {
     final NamespaceKey datasetKey = new NamespaceKey(config.getFullPathList());
     // not all datasets have acceleration settings
     return isPhysicalDataset(config.getType()) ? reflectionSettings.getReflectionSettings(datasetKey) : null;
-  }
-
-  @Override
-  public void finalPrel(Prel prel) {
-    this.prel = prel;
-  }
-
-  @Override
-  public Prel getFinalPrel() {
-    return prel;
   }
 
   @Override

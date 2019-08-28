@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,7 @@ public class UserException extends RuntimeException {
 
   public static final String MEMORY_ERROR_MSG = "Query was cancelled because it exceeded the memory limits set by the administrator.";
 
+  public static final String QUERY_REJECTED_MSG = "Rejecting query because it exceeded the maximum allowed number of live queries in a single coordinator";
   /**
    * Creates a new INVALID_DATASET_METADATA exception builder.
    *
@@ -103,6 +104,32 @@ public class UserException extends RuntimeException {
   public static Builder schemaChangeError(final Throwable cause) {
     return builder(DremioPBError.ErrorType.SCHEMA_CHANGE, cause);
   }
+
+  /**
+   * Creates a new JSON_FIELD_CHANGE exception builder.
+   *
+   * @see com.dremio.exec.proto.UserBitShared.DremioPBError.ErrorType#FIELD_CHANGE
+   * @return user exception builder
+   */
+  public static Builder jsonFieldChangeError() {
+    return jsonFieldChangeError(null);
+  }
+
+  /**
+   * Wraps the passed exception inside a JSON field change error.
+   * <p>The cause message will be used unless {@link Builder#message(String, Object...)} is called.
+   * <p>If the wrapped exception is, or wraps, a user exception it will be returned by {@link Builder#build(Logger)}
+   * instead of creating a new exception. Any added context will be added to the user exception as well.
+   *
+   * @see com.dremio.exec.proto.UserBitShared.DremioPBError.ErrorType#JSON_FIELD_CHANGE
+   *
+   * @param cause exception we want the user exception to wrap. If cause is, or wrap, a user exception it will be
+   *              returned by the builder instead of creating a new user exception
+   * @return user exception builder
+   */
+   public static Builder jsonFieldChangeError(final Throwable cause) {
+     return builder(DremioPBError.ErrorType.JSON_FIELD_CHANGE, cause);
+   }
 
   /**
    * Creates an OUT_OF_MEMORY error with a prebuilt message
@@ -530,7 +557,7 @@ public class UserException extends RuntimeException {
     private final UserExceptionContext context;
 
     private String message;
-    private AdditionalExceptionContext additionalContext;
+    private ByteString rawAdditionalContext;
 
     private boolean fixedMessage; // if true, calls to message() are a no op
 
@@ -709,7 +736,7 @@ public class UserException extends RuntimeException {
      */
     public Builder setAdditionalExceptionContext(AdditionalExceptionContext additionalContext) {
       assert additionalContext.getErrorType() == errorType : "error type of context and builder must match";
-      this.additionalContext = additionalContext;
+      this.rawAdditionalContext = additionalContext.toByteString();
       return this;
     }
 
@@ -717,9 +744,12 @@ public class UserException extends RuntimeException {
      * builds a user exception or returns the wrapped one. If the error is a system error, the error message is logged
      * to the given {@link Logger}.
      *
-     * @param logger the logger to write to
+     * @param logger the logger to write to, if null call won't log
      * @return user exception
+     * @deprecated we are no longer required to log UserExceptions whenever we build them. The user will see the exception
+     * in the query profile, and the caller can always chose to log the exception if really needed.
      */
+    @Deprecated
     public UserException build(final Logger logger) {
       if (uex != null) {
         return uex;
@@ -745,22 +775,47 @@ public class UserException extends RuntimeException {
 
       final UserException newException = new UserException(this);
 
-      // since we just created a new exception, we should log it for later reference. If this is a system error, this is
-      // an issue that the system admin should pay attention to and we should log as ERROR. However, if this is a user
-      // mistake or data read issue, the system admin should not be concerned about these and thus we'll log this
-      // as an INFO message.
-      switch(errorType) {
-      case SYSTEM:
-        logger.error(newException.getMessage(), newException);
-        break;
-      case OUT_OF_MEMORY:
-        logger.error(newException.getMessage(), newException);
-        break;
-      case IO_EXCEPTION:
-        logger.debug(newException.getMessage(), newException);
-        break;
-      default:
-        logger.info("User Error Occurred [" + newException.getErrorIdWithIdentity() + "]", newException);
+      if (logger != null) {
+        // since we just created a new exception, we should log it for later reference. If this is a
+        // system error, this is
+        // an issue that the system admin should pay attention to and we should log as ERROR.
+        // However, if this is a user
+        // mistake or data read issue, the system admin should not be concerned about these and thus
+        // we'll log this
+        // as an INFO message.
+        try {
+          switch (errorType) {
+            case SYSTEM:
+              logger.error(newException.getMessage(), newException);
+              break;
+            case OUT_OF_MEMORY:
+              logger.error(newException.getMessage(), newException);
+              break;
+            case SCHEMA_CHANGE:
+            case IO_EXCEPTION:
+              logger.debug(newException.getMessage(), newException);
+              break;
+            case VALIDATION:
+            case PLAN:
+              // log SQL validation/plan errors in trace mode since the end user will anyway see
+              // them when failure is reported in UI
+              logger.trace(newException.getMessage(), newException);
+              break;
+            default:
+              logger.info(
+                  "User Error Occurred [" + newException.getErrorIdWithIdentity() + "]",
+                  newException);
+          }
+        } catch (Throwable ignore) {
+          // logback can cause stack overflow exceptions.
+          // see https://dremio.atlassian.net/browse/DX-15825
+          Exception e = new Exception("Failure while logging", ignore.getCause());
+          e.addSuppressed(newException);
+          // we can't log the exception so make sure we are printing to std.out otherwise it will be completely hidden
+          e.printStackTrace();
+
+          newException.addSuppressed(ignore);
+        }
       }
 
       return newException;
@@ -777,28 +832,38 @@ public class UserException extends RuntimeException {
     public UserException build() {
       return build(logger);
     }
+
+    /**
+     * Builds a user exception or returns the wrapped one.
+     * Doesn't log anything
+     *
+     * @return user exception
+     */
+    public UserException buildSilently() {
+      return build(null);
+    }
   }
 
   private final DremioPBError.ErrorType errorType;
 
   private final UserExceptionContext context;
 
-  private final AdditionalExceptionContext additionalContext;
+  private final ByteString rawAdditionalContext;
 
   protected UserException(final DremioPBError.ErrorType errorType, final String message, final Throwable cause,
-                          final AdditionalExceptionContext additionalContext) {
+                          final ByteString rawAdditionalContext) {
     super(message, cause);
 
     this.errorType = errorType;
     this.context = new UserExceptionContext();
-    this.additionalContext = additionalContext;
+    this.rawAdditionalContext = rawAdditionalContext;
   }
 
   private UserException(final Builder builder) {
     super(builder.message, builder.cause);
     this.errorType = builder.errorType;
     this.context = builder.context;
-    this.additionalContext = builder.additionalContext;
+    this.rawAdditionalContext = builder.rawAdditionalContext;
   }
 
   /**
@@ -865,22 +930,19 @@ public class UserException extends RuntimeException {
 
     builder.addAllContext(context.getContextAsStrings());
 
-    if (additionalContext != null) {
-      final ByteString serializedContext = ErrorHelper.serializeAdditionalContext(additionalContext);
-      if (serializedContext != null) {
-        builder.setTypeSpecificContext(serializedContext);
-      } // else, see debug log from ErrorHelper
+    if (rawAdditionalContext != null) {
+        builder.setTypeSpecificContext(rawAdditionalContext);
     }
     return builder.build();
   }
 
   /**
-   * Get type specific additional contextual information.
+   * Get serialized type specific additional contextual information.
    *
-   * @return additional context
+   * @return additional context in ByteString format.
    */
-  public AdditionalExceptionContext getAdditionalExceptionContext() {
-    return additionalContext;
+  public ByteString getRawAdditionalExceptionContext() {
+    return rawAdditionalContext;
   }
 
   public List<String> getContextStrings() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,13 @@
 
 package org.apache.arrow.vector;
 
-import io.netty.buffer.ArrowBuf;
-import io.netty.buffer.ByteBuf;
-import org.apache.arrow.vector.util.DecimalUtility;
-
 import java.math.BigDecimal;
 import java.math.BigInteger;
+
+import org.apache.arrow.vector.util.DecimalUtility;
+
+import io.netty.buffer.ArrowBuf;
+import io.netty.buffer.ByteBuf;
 
 public class DecimalHelper {
 

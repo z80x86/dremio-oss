@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,6 @@ import com.dremio.dac.server.tokens.TokenUtils;
 import com.dremio.service.users.User;
 import com.dremio.service.users.UserNotFoundException;
 import com.dremio.service.users.UserService;
-import com.google.common.net.HttpHeaders;
 
 /**
  * Read cookie from request and validate it.
@@ -50,8 +49,7 @@ public class DACAuthFilter implements ContainerRequestFilter {
   @Override
   public void filter(ContainerRequestContext requestContext) {
     try {
-      final String token = TokenUtils.getTokenFromAuthHeader(
-        requestContext.getHeaderString(HttpHeaders.AUTHORIZATION));
+      final String token = TokenUtils.getTokenFromAuthHeaderOrQueryParameter(requestContext);
       final UserName userName;
       try {
         userName = new UserName(tokenManager.validateToken(token).username);

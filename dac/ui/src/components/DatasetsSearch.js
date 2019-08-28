@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import ViewStateWrapper from 'components/ViewStateWrapper';
 import { injectIntl } from 'react-intl';
 import Art from 'components/Art';
 import { getIconDataTypeFromDatasetType } from 'utils/iconUtils';
+import { TagList } from '@app/pages/HomePage/components/TagList';
 
 import { bodySmall } from 'uiTheme/radium/typography';
 
@@ -31,25 +32,14 @@ import { PALE_NAVY, PALE_ORANGE } from 'uiTheme/radium/colors';
 import DatasetItemLabel from './Dataset/DatasetItemLabel';
 import './DatasetsSearch.less';
 
+const emptyList = new Immutable.List();
+
 @injectIntl
 @Radium
 @pureRender
 export default class DatasetsSearch extends Component {
-  static regExpForSort = (value, str) => {
-    return str.indexOf(value) !== -1;
-  };
-
-  static sortSearchData = (data, inputValue) => {
-    return data.sort(prev => {
-      const name = prev.get('fullPath').get(prev.get('fullPath').size - 1);
-      const datasetPrev = DatasetsSearch.regExpForSort(inputValue, name);
-      return !datasetPrev ? 1 : -1;
-    });
-  };
-
   static propTypes = {
     searchData: PropTypes.instanceOf(Immutable.List).isRequired,
-    visible: PropTypes.bool.isRequired,
     globalSearch: PropTypes.bool,
     handleSearchHide: PropTypes.func.isRequired,
     inputValue: PropTypes.string,
@@ -59,8 +49,7 @@ export default class DatasetsSearch extends Component {
 
   getDatasetsList(searchData, inputValue) {
     const { globalSearch } = this.props;
-    const sortSearchData = DatasetsSearch.sortSearchData(searchData, inputValue);
-    return sortSearchData.map((value, key) => {
+    return searchData.map((value, key) => {
       const name = value.getIn(['fullPath', -1]);
       const datasetItem = (
         <div key={key} style={[styles.datasetItem, bodySmall]}
@@ -78,6 +67,7 @@ export default class DatasetsSearch extends Component {
           {/* DX-11249 <div style={styles.parentDatasetsHolder} data-qa='ds-parent'>
             {this.getParentItems(value, inputValue)}
           </div> */}
+          <TagList tags={value.get('tags', emptyList)} style={{flex: 1, minWidth: 0}} />
           {this.getActionButtons(value)}
         </div>
       );
@@ -152,20 +142,18 @@ export default class DatasetsSearch extends Component {
   }
 
   render() {
-    const { searchData, visible, inputValue, searchViewState } = this.props;
+    const { searchData, inputValue, searchViewState } = this.props;
     const searchBlock = searchData && searchData.size && searchData.size > 0
       ? <div>{this.getDatasetsList(searchData, inputValue)}</div>
       : <div style={styles.notFound}>{la('Not found')}</div>;
-    return visible ?
-      <section className='datasets-search' style={styles.main}>
-        {this.getHeader(inputValue)}
-        <div className='dataset-wrapper' style={styles.datasetWrapper}>
-          <ViewStateWrapper viewState={searchViewState}>
-            {searchBlock}
-          </ViewStateWrapper>
-        </div>
-      </section>
-    : null;
+    return <section className='datasets-search' style={styles.main}>
+      {this.getHeader(inputValue)}
+      <div className='dataset-wrapper' style={styles.datasetWrapper}>
+        <ViewStateWrapper viewState={searchViewState}>
+          {searchBlock}
+        </ViewStateWrapper>
+      </div>
+    </section>;
   }
 }
 

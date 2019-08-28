@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
  */
 package com.dremio.sabot.op.sort.external;
 
-import io.netty.buffer.ArrowBuf;
-
 import java.io.IOException;
 
 import javax.inject.Named;
 
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.OutOfMemoryException;
+import org.apache.arrow.vector.DensityAwareVector;
+import org.apache.arrow.vector.ValueVector;
 
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.exceptions.UserException;
@@ -35,8 +35,7 @@ import com.dremio.sabot.exec.context.FunctionContext;
 import com.dremio.sabot.op.sort.external.DiskRunManager.DiskRunIterator;
 import com.google.common.collect.Iterables;
 
-import org.apache.arrow.vector.DensityAwareVector;
-import org.apache.arrow.vector.ValueVector;
+import io.netty.buffer.ArrowBuf;
 
 public abstract class PriorityQueueCopierTemplate implements PriorityQueueCopier {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(PriorityQueueCopierTemplate.class);

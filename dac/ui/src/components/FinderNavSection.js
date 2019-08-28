@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,12 +26,11 @@ export default class FinderNavSection extends Component {
     items: PropTypes.instanceOf(Immutable.List).isRequired,
     isInProgress: PropTypes.bool,
     maxItemsCount: PropTypes.number,
-    toggleActivePin: PropTypes.func,
     listHref: PropTypes.oneOfType([PropTypes.string, PropTypes.object])
   };
 
   render() {
-    const { items, maxItemsCount, toggleActivePin, listHref } = this.props;
+    const { items, maxItemsCount, listHref } = this.props;
     if (!items.size) return null;
 
     const hasMore = items.size > maxItemsCount;
@@ -46,7 +45,6 @@ export default class FinderNavSection extends Component {
                 <FinderNavItem
                   key={item.get('id')}
                   item={item.toJS()}
-                  toggleActivePin={toggleActivePin}
                 />
               );
             }

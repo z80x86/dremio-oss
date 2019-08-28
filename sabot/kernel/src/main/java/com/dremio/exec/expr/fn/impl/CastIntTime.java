@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,16 @@
  */
 package com.dremio.exec.expr.fn.impl;
 
+import org.apache.arrow.vector.holders.IntHolder;
+import org.apache.arrow.vector.holders.TimeMilliHolder;
+
 import com.dremio.common.expression.ExpressionStringBuilder;
 import com.dremio.common.expression.ValueExpressions.TimeExpression;
 import com.dremio.exec.expr.SimpleFunction;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
+import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
 import com.dremio.exec.expr.annotations.Output;
 import com.dremio.exec.expr.annotations.Param;
-import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
-
-import org.apache.arrow.vector.holders.IntHolder;
-import org.apache.arrow.vector.holders.TimeMilliHolder;
 
 /**
  * Casting an int to TIME. SQL standard doesn't allow this, but we need this because we store the time constant as int

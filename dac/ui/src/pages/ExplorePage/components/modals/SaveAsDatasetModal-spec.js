@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ describe('SaveAsDatasetModal', () => {
     minimalProps = {
       viewState: Immutable.Map(),
       saveAsDataset: sinon.spy(),
+      loadDependentDatasets: sinon.spy(),
       submitReapplyAndSaveAsDataset: sinon.stub().returns(Promise.resolve({payload: Immutable.Map()})),
       submitSaveAsDataset: sinon.stub().returns(Promise.resolve({payload: Immutable.Map()})),
       navigateToNextDataset: sinon.stub().returns(Promise.resolve('navigateToNextDataset')),

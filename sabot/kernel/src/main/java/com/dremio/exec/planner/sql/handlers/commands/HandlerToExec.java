@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,45 +17,41 @@ package com.dremio.exec.planner.sql.handlers.commands;
 
 import org.apache.calcite.sql.SqlNode;
 
+import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.exec.ops.QueryContext;
 import com.dremio.exec.physical.PhysicalPlan;
 import com.dremio.exec.planner.PhysicalPlanReader;
-import com.dremio.exec.planner.fragment.PlanningSet;
 import com.dremio.exec.planner.observer.AttemptObserver;
 import com.dremio.exec.planner.sql.handlers.SqlHandlerConfig;
 import com.dremio.exec.planner.sql.handlers.query.SqlToPlanHandler;
-import com.dremio.exec.work.foreman.ExecutionPlan;
 import com.dremio.exec.work.rpc.CoordToExecTunnelCreator;
 import com.dremio.resource.ResourceAllocator;
+import com.dremio.service.execselector.ExecutorSelectionService;
 
 /**
  * Take a sql node and run as async command.
  */
-public class HandlerToExec extends AsyncCommand<Object> {
+public class HandlerToExec extends AsyncCommand {
 
-  private final CoordToExecTunnelCreator tunnelCreator;
-  private final PhysicalPlanReader reader;
   private final AttemptObserver observer;
   private final SqlNode sqlNode;
   private final SqlToPlanHandler handler;
   private final String sql;
-  private final SqlHandlerConfig config;
-
-  private ExecutionPlan exec;
+  private SqlHandlerConfig config;
+  private PhysicalPlan physicalPlan;
 
   public HandlerToExec(
-    CoordToExecTunnelCreator tunnelCreator,
-    QueryContext context,
-    PhysicalPlanReader reader,
-    AttemptObserver observer,
-    String sql,
-    SqlNode sqlNode,
-    SqlToPlanHandler handler,
-    SqlHandlerConfig config,
-    ResourceAllocator queryResourceManager) {
-    super(context, queryResourceManager, observer);
-    this.tunnelCreator = tunnelCreator;
-    this.reader = reader;
+      CoordToExecTunnelCreator tunnelCreator,
+      QueryContext context,
+      PhysicalPlanReader reader,
+      AttemptObserver observer,
+      String sql,
+      SqlNode sqlNode,
+      SqlToPlanHandler handler,
+      SqlHandlerConfig config,
+      ResourceAllocator queryResourceManager,
+      ExecutorSelectionService executorSelectionService) {
+    super(context, queryResourceManager, executorSelectionService, observer, reader, tunnelCreator);
     this.observer = observer;
     this.sqlNode = sqlNode;
     this.sql = sql;
@@ -64,21 +60,22 @@ public class HandlerToExec extends AsyncCommand<Object> {
   }
 
   @Override
-  public double plan() throws Exception {
-    observer.planStart(sql);
-    PhysicalPlan plan = handler.getPlan(config, sql, sqlNode);
-    final PlanningSet planningSet = allocateResourcesBasedOnPlan(plan);
-    exec = ExecutionPlanCreator.getExecutionPlan(context, reader, observer, plan,
-      resourceSet, planningSet);
-    observer.planCompleted(exec);
-    return plan.getCost();
+  protected PhysicalPlan getPhysicalPlan() {
+    return physicalPlan;
   }
 
   @Override
-  public Object execute() throws Exception {
-    FragmentStarter starter = new FragmentStarter(tunnelCreator, resourceSchedulingDecisionInfo);
-    starter.start(exec, observer);
-    return null;
+  public double plan() throws Exception {
+    observer.planStart(sql);
+    physicalPlan = handler.getPlan(config, sql, sqlNode);
+    return physicalPlan.getCost();
+  }
+
+  @Override
+  public void planExecution() throws ExecutionSetupException {
+    super.planExecution();
+    physicalPlan = null; // no longer needed.
+    config = null; // no longer needed.
   }
 
   @Override

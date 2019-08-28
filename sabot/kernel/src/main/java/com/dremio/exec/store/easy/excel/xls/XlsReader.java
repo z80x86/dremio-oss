@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package com.dremio.exec.store.easy.excel.xls;
 
-import com.dremio.exec.store.easy.excel.xls.poi.DirectoryNode;
-import com.dremio.exec.store.easy.excel.xls.poi.DocumentNode;
-import com.dremio.exec.store.easy.excel.xls.properties.PropertyTable;
-import com.google.common.base.Preconditions;
+import static org.apache.poi.hssf.model.InternalWorkbook.OLD_WORKBOOK_DIR_ENTRY_NAME;
+import static org.apache.poi.hssf.model.InternalWorkbook.WORKBOOK_DIR_ENTRY_NAMES;
+
+import java.io.IOException;
+import java.io.InputStream;
 
 import org.apache.poi.EncryptedDocumentException;
 import org.apache.poi.hssf.OldExcelFormatException;
@@ -28,11 +29,10 @@ import org.apache.poi.poifs.filesystem.DocumentEntry;
 import org.apache.poi.poifs.filesystem.Entry;
 import org.apache.poi.poifs.storage.HeaderBlock;
 
-import java.io.IOException;
-import java.io.InputStream;
-
-import static org.apache.poi.hssf.model.InternalWorkbook.OLD_WORKBOOK_DIR_ENTRY_NAME;
-import static org.apache.poi.hssf.model.InternalWorkbook.WORKBOOK_DIR_ENTRY_NAMES;
+import com.dremio.exec.store.easy.excel.xls.poi.DirectoryNode;
+import com.dremio.exec.store.easy.excel.xls.poi.DocumentNode;
+import com.dremio.exec.store.easy.excel.xls.properties.PropertyTable;
+import com.google.common.base.Preconditions;
 
 /**
  * Bare minimum xls reader based on POI

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ package com.dremio.dac.cmd.upgrade;
 
 import java.util.stream.StreamSupport;
 
+import com.dremio.common.Version;
+import com.dremio.dac.cmd.AdminLogger;
 import com.dremio.service.DirectProvider;
 import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.NamespaceService;
@@ -25,17 +27,32 @@ import com.dremio.service.namespace.dataset.proto.DatasetConfig;
 import com.dremio.service.reflection.ReflectionUtils;
 import com.dremio.service.reflection.proto.ExternalReflection;
 import com.dremio.service.reflection.store.ExternalReflectionStore;
+import com.google.common.collect.ImmutableList;
 
 /**
  * Update all external reflections' query and target dataset hashes.
  */
-public class UpdateExternalReflectionHash extends UpgradeTask {
+public class UpdateExternalReflectionHash extends UpgradeTask implements LegacyUpgradeTask {
+
+
+  //DO NOT MODIFY
+  static final String taskUUID = "79312f25-49d6-40e7-8096-7e132e1b64c4";
 
   private NamespaceService namespace;
   private ExternalReflectionStore store;
 
   public UpdateExternalReflectionHash() {
-    super("Update External Reflections", VERSION_106, VERSION_210, NORMAL_ORDER + 13);
+    super("Update External Reflections", ImmutableList.of(MinimizeJobResultsMetadata.taskUUID));
+  }
+
+  @Override
+  public Version getMaxVersion() {
+    return VERSION_210;
+  }
+
+  @Override
+  public String getTaskUUID() {
+    return taskUUID;
   }
 
   @Override
@@ -56,10 +73,10 @@ public class UpdateExternalReflectionHash extends UpgradeTask {
       final String targetDatasetId = reflection.getTargetDatasetId();
       reflection.setTargetDatasetHash(computeDatasetHash(targetDatasetId));
 
-      System.out.printf("  Updated external reflection %s%n", reflection.getId());
+      AdminLogger.log("  Updated external reflection {}", reflection.getId());
       store.addExternalReflection(reflection);
     } catch (Exception e) {
-      System.err.printf("  Failed to update external reflection %s%n", reflection.getId());
+      AdminLogger.log("  Failed to update external reflection {}", reflection.getId());
     }
   }
 
@@ -77,5 +94,10 @@ public class UpdateExternalReflectionHash extends UpgradeTask {
     } catch (NamespaceException e) {
       return null;
     }
+  }
+
+  @Override
+  public String toString() {
+    return String.format("'%s' up to %s)", getDescription(), getMaxVersion());
   }
 }

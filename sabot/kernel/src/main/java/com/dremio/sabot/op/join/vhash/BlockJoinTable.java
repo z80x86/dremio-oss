@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,21 +20,20 @@ import static com.dremio.sabot.op.join.vhash.VectorizedProbe.SKIP;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.vector.SimpleBigIntVector;
 
+import com.dremio.sabot.op.common.ht2.BlockChunk;
 import com.dremio.sabot.op.common.ht2.FixedBlockVector;
+import com.dremio.sabot.op.common.ht2.HashComputation;
+import com.dremio.sabot.op.common.ht2.LBlockHashTable;
 import com.dremio.sabot.op.common.ht2.PivotDef;
 import com.dremio.sabot.op.common.ht2.Pivots;
-import com.dremio.sabot.op.common.ht2.LBlockHashTable;
 import com.dremio.sabot.op.common.ht2.ResizeListener;
 import com.dremio.sabot.op.common.ht2.VariableBlockVector;
-import com.dremio.sabot.op.common.ht2.HashComputation;
-import com.dremio.sabot.op.common.ht2.BlockChunk;
-
 import com.google.common.base.Stopwatch;
 import com.koloboke.collect.hash.HashConfig;
 
 import io.netty.util.internal.PlatformDependent;
-import org.apache.arrow.vector.SimpleBigIntVector;
 
 public class BlockJoinTable implements JoinTable {
 

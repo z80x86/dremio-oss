@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,13 @@ package com.dremio;
 
 import static com.dremio.TestBuilder.listOf;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -74,6 +76,76 @@ public class TestExampleQueries extends PlanTestBase {
       .baselineColumns("A", "B")
       .baselineValues(0, "No")
       .go();
+  }
+
+  // See DX-17817
+  @Test
+  public void testCorrectConstantHandlingInNLJE() throws Exception {
+    try(AutoCloseable c = withOption(PlannerSettings.NLJOIN_FOR_SCALAR, false) ) {
+      testBuilder()
+        .sqlQuery("SELECT l_orderkey "
+            + "FROM "
+            + "cp.\"tpch/lineitem.parquet\" lineitem  left join  cp.\"tpch/orders.parquet\" on  (TO_DATE(o_orderdate, 'yyyy-mm-dd') > (TO_DATE(L_SHIPDATE, 'yyyy-mm-dd'))) "
+            + "limit 5")
+        .unOrdered()
+        .baselineColumns("l_orderkey")
+        .baselineValues(1)
+        .baselineValues(1)
+        .baselineValues(1)
+        .baselineValues(1)
+        .baselineValues(1)
+        .go();
+    }
+  }
+
+  // See DX-17818
+  @Test
+  public void leftJoinInequality() throws Exception {
+    try(AutoCloseable c = withOption(PlannerSettings.NLJOIN_FOR_SCALAR, false);
+        AutoCloseable c2 = withOption(PlannerSettings.ENABLE_JOIN_OPTIMIZATION, false)) {
+      String q = "SELECT l_orderkey "
+          + "FROM "
+          + "cp.\"tpch/orders.parquet\" left join cp.\"tpch/lineitem.parquet\"  on (L_orderkey = O_orderkey) and TO_DATE(o_orderdate, 'yyyy-mm-dd') between o_orderdate and l_shipdate "
+          + "LIMIT 5";
+      testBuilder()
+      .sqlQuery(q)
+      .unOrdered()
+      .baselineColumns("l_orderkey")
+      .baselineValues(1)
+      .baselineValues(1)
+      .baselineValues(1)
+      .baselineValues(1)
+      .baselineValues(1)
+      .go();
+      // check swaps the declared right to a left.
+      testPlanOneExpectedPattern(q, Pattern.quote("joinType=[left]"));
+    }
+  }
+
+  // See DX-17818
+  @Test
+  public void rightJoinInequality() throws Exception {
+    try(AutoCloseable c = withOption(PlannerSettings.NLJOIN_FOR_SCALAR, false);
+        AutoCloseable c2 = withOption(PlannerSettings.ENABLE_JOIN_OPTIMIZATION, false)) {
+
+      String q = "SELECT l_orderkey "
+          + "FROM "
+          + "cp.\"tpch/orders.parquet\" right join cp.\"tpch/lineitem.parquet\"  on (L_orderkey = O_orderkey) and TO_DATE(o_orderdate, 'yyyy-mm-dd') between o_orderdate and l_shipdate "
+          + "LIMIT 5";
+      testBuilder()
+        .sqlQuery(q)
+        .unOrdered()
+        .baselineColumns("l_orderkey")
+        .baselineValues(1)
+        .baselineValues(1)
+        .baselineValues(1)
+        .baselineValues(1)
+        .baselineValues(1)
+        .go();
+
+      // check swaps the declared right to a left.
+      testPlanOneExpectedPattern(q, Pattern.quote("joinType=[left]"));
+    }
   }
 
   @Test
@@ -227,6 +299,18 @@ public class TestExampleQueries extends PlanTestBase {
       .go();
   }
 
+  /**
+   * See DX-14959, when uint16/int16 et. al data types in a parquet file
+   * are considered as partition columns ,the datasource can't be added.
+   * @throws Exception
+   */
+  @Test
+  public void testParquetWithInt16ParitionedColumn() throws Exception {
+    String query = "select * from cp.\"/parquet/intTypes/DX_14959.parquet\" LIMIT 10";
+    test(query);
+  }
+
+
   @Test
   public void testSelectWithOptionsDataset() throws Exception {
     test("select * from table(cp.\"line.tbl\"(type => 'text', fieldDelimiter => '|', autoGenerateColumnNames => true))");
@@ -372,8 +456,8 @@ public class TestExampleQueries extends PlanTestBase {
         + "from cp.\"customer.json\" group by customer_region_id, fname) as sq(x, y, z) where coalesce(x, 100) = 10";
     testPlanMatchingPatterns(query, new String[] {
         "Filter\\(condition=\\[CASE\\(IS NOT NULL\\(\\$1\\), =\\(\\$1, 10\\), false\\)\\]\\)",
-        "Agg\\(group=\\[\\{0, 1\\}\\], agg\\#0=\\[\\$SUM0\\(\\$2\\)\\], agg\\#1=\\[COUNT\\(\\$2\\)\\]\\)",
-        "Project\\(customer_region_id=\\[\\$0\\], fname=\\[\\$1\\], EXPR\\$2=\\[\\/\\(CAST\\(CASE\\(=\\(\\$3, 0\\), null, \\$2\\)\\):DOUBLE, \\$3\\)\\]\\)" },
+        "Agg\\(group=\\[\\{0, 1\\}\\], agg\\#0=\\[\\SUM\\(\\$2\\)\\], agg\\#1=\\[COUNT\\(\\$2\\)\\]\\)",
+        "Project\\(customer_region_id=\\[\\$0\\], fname=\\[\\$1\\], EXPR\\$2=\\[\\/\\(CAST\\(\\$2\\):DOUBLE, \\$3\\)\\]\\)" },
         null);
   }
 
@@ -1097,6 +1181,63 @@ public class TestExampleQueries extends PlanTestBase {
         .build().run();
   }
 
+  @Test
+  public void testBadQuerySyntax() throws Exception {
+    try {
+      testBuilder()
+        .sqlQuery("select employee_id from cp.\"employee.json\" where employee_id = (90, 100)")
+        .unOrdered()
+        .baselineColumns("employee_id")
+        .baselineValues(100)
+        .build().run();
+    } catch (Exception e) {
+      assertTrue(e.getMessage().contains("Cannot apply '=' to arguments of type '<BIGINT> = <RECORDTYPE(INTEGER EXPR$0, INTEGER EXPR$1)"));
+    }
+
+  }
+
+  @Test // DX-15425: GreenPlum query
+  public void testQueryWithoutFrom() throws Exception {
+    try {
+      testBuilder()
+        .sqlQuery("select 1 union (select distinct CAST(null AS INTEGER) union select '10')")
+        .unOrdered()
+        .baselineColumns("EXPR$0")
+        .baselineValues(1)
+        .baselineValues(10)
+        .baselineValues(null)
+        .build().run();
+    } catch (Exception e) {
+      assertTrue(e.getMessage().contains("From line 1, column 33 to line 1, column 53: Type mismatch in column 1 of UNION"));
+    }
+  }
+
+  @Test // DX-15425: GreenPlum query
+  public void testQuery1WithoutFrom() throws Exception {
+    testBuilder()
+      .sqlQuery("select 1 union (select distinct CAST(null AS INTEGER) union select 10)")
+      .unOrdered()
+      .baselineColumns("EXPR$0")
+      .baselineValues(1)
+      .baselineValues(10)
+      .baselineValues(null)
+      .build().run();
+  }
+
+  @Test // DX-15425: GreenPlum query
+  public void testQuery2WithoutFrom() throws Exception {
+    try {
+      testBuilder()
+        .sqlQuery("select 1 union (select distinct '10' from (select 1, 3.0 union select distinct 2, CAST(null AS INTEGER)) as foo)")
+        .unOrdered()
+        .baselineColumns("employee_id")
+        .baselineValues(100)
+        .build().run();
+    } catch (Exception e) {
+      assertTrue(e.getMessage().contains("At line 1, column 8: Type mismatch in column 1 of UNION"));
+    }
+  }
+
   @Test // DRILL-2094
   public void testOrderbyArrayElement() throws Exception {
     String root = FileUtils.getResourceAsFile("/store/json/orderByArrayElement.json").toURI().getPath().toString();
@@ -1364,7 +1505,6 @@ public class TestExampleQueries extends PlanTestBase {
 
   }
 
-  @Ignore //DX-3852
   @Test  //DRILL_3004
   public void testDRILL_3004() throws Exception {
     final String query =
@@ -1383,7 +1523,7 @@ public class TestExampleQueries extends PlanTestBase {
         .sqlQuery(query)
         .expectsEmptyResultSet()
         .optionSettingQueriesForTestQuery("ALTER SESSION SET \"planner.enable_hashjoin\" = false; " +
-            "ALTER SESSION SET \"planner.disable_exchanges\" = true")
+            "ALTER SESSION SET \"planner.disable_exchanges\" = true; ALTER SESSION SET \"planner.enable_mergejoin\" = true")
         .build()
         .run();
 
@@ -1589,5 +1729,96 @@ public class TestExampleQueries extends PlanTestBase {
       .baselineValues("Bh" + largeString)
       .build()
       .run();
+  }
+
+  @Test // DX-11559
+  public void testValuesPrelParallelization() throws Exception {
+    // test preview query
+    testNoResult("set planner.leaf_limit_enable = true");
+
+    // allow parallelization
+    testNoResult("set planner.width.max_per_node = 10");
+    testNoResult("set planner.width.max_per_query = 10");
+    testNoResult("set planner.slice_target = 1");
+
+    final List<QueryDataBatch> results = testSqlWithResults("SELECT FLATTEN(MAPPIFY(CONVERT_FROM('{\"1\":3,\"2\":4}', 'JSON')))");
+    try {
+      int numRows = results.stream().map(q -> q.getHeader().getRowCount()).reduce((first, second) ->  first + second).get();
+      Assert.assertEquals(numRows, 2);
+    } finally {
+      for (QueryDataBatch batch : results) {
+        batch.close();
+      }
+    }
+  }
+
+  @Test // DX-13843
+  public void testGreenPlumQuery() throws Exception {
+    testBuilder()
+      .sqlQuery("select (select count(*) from (values (1)) t0(inner_c)) from (values (2),(3)) t1(outer_c)")
+      .unOrdered()
+      .baselineColumns("EXPR$0")
+      .baselineValues(1L)
+      .baselineValues(1L)
+      .build().
+      run();
+  }
+
+  /**
+   * This test case tickled a scenario where we failed to support a join because of an issue where we were failing to
+   * introduce the correct abstract converters. Changes to make it work were done as an ordered enhancement to Prule.
+   *
+   * See DX-17835 for further details
+   */
+  @Test
+  public void ensureThatStackedConversionsWork() throws Exception {
+    try(AutoCloseable c = withOption(PlannerSettings.NLJOIN_FOR_SCALAR, false) ) {
+
+      test(
+        "create table dfs_test.zip as " +
+          "select city, loc, pop, state, CAST(\"_id\" as INT) as \"id\"\n" +
+          "FROM (\n" +
+          "   select * from cp.\"/sample/samples-samples-dremio-com-zips-json.json\" limit 10\n" +
+          ") nested_0");
+
+      test(
+        "create table dfs_test.lookup as " +
+          "select\n" +
+          "   case\n" +
+          "       when A='id' then 0\n" +
+          "       when A='A' then 0\n" +
+          "       else CAST(A as INT)\n" +
+          "   end as id,\n" +
+          "   B, C, D\n" +
+          "FROM (\n" +
+          "   select columns[0] as A, columns[1] as B, columns[2] as C, columns[3] as D from cp.\"/sample/samples-samples-dremio-com-zip_lookup-csv.csv\" limit 10\n" +
+          ") nested_0");
+
+      // test preview query
+      testNoResult("set planner.leaf_limit_enable = true");
+
+      // allow parallelization
+      testNoResult("set planner.width.max_per_node = 10");
+      testNoResult("set planner.width.max_per_query = 10");
+      testNoResult("set planner.slice_target = 1");
+
+      test(
+        "SELECT nested_2.city AS city, nested_2.pop AS pop, nested_2.state AS state, nested_2.Count_Star AS Count_Star, nested_2.Sum_pop AS Sum_pop, nested_2.newID AS newID, join_lookup.id AS id, join_lookup.B AS B, join_lookup.C AS C, join_lookup.D AS D\n" +
+          "FROM (\n" +
+          "SELECT newID, city, pop, state, COUNT(*) AS Count_Star, SUM(pop) AS Sum_pop\n" +
+          "FROM (\n" +
+          "SELECT city, loc, pop, state, \"id\" AS newID\n" +
+          "FROM (\n" +
+          "SELECT city, loc, pop, state, id\n" +
+          "FROM dfs_test.zip\n" +
+          ") nested_0\n" +
+          ") nested_1\n" +
+          "GROUP BY newID, city, pop, state\n" +
+          ") nested_2\n" +
+          "INNER JOIN dfs_test.lookup AS join_lookup ON nested_2.newID < join_lookup.id\n"
+      );
+    }
+
+
   }
 }

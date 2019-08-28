@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import Immutable from 'immutable';
 import uuid from 'uuid';
 import { connectComplexForm } from 'components/Forms/connectComplexForm';
 
+import { getExploreState } from '@app/selectors/explore';
 import { parseTextToDataType } from 'constants/DataTypes';
 import fieldsMappers from 'utils/mappers/ExplorePage/Transform/fieldsMappers';
 import filterMappers from 'utils/mappers/ExplorePage/Transform/filterMappers';
@@ -135,11 +136,12 @@ function mapStateToProps(state, props) {
   const transformType = props.transform.get('transformType');
   const columnType = props.transform.get('columnType');
   const cellText = props.transform.getIn(['selection', 'cellText']);
-  const valueOptions = state.explore.recommended.getIn(['transform', transformType, 'Values', 'values']);
+  const explorePageState = getExploreState(state);
+  const valueOptions = explorePageState.recommended.getIn(['transform', transformType, 'Values', 'values']);
   return {
     columnType,
     valueOptions,
-    sqlSize: state.explore.ui.get('sqlSize'),
+    sqlSize: explorePageState.ui.get('sqlSize'),
     initialValues: {
       replacementValue: '',
       newFieldName: columnName,

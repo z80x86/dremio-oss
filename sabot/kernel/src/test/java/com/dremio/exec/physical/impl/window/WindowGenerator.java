@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import static com.dremio.sabot.Fixtures.t;
 import static com.dremio.sabot.Fixtures.th;
 import static com.dremio.sabot.Fixtures.tr;
 
-import com.dremio.sabot.Fixtures;
 import com.dremio.sabot.Fixtures.DataRow;
 import com.dremio.sabot.Fixtures.HeaderRow;
 import com.dremio.sabot.Fixtures.Table;

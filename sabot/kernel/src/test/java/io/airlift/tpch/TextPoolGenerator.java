@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,12 +28,12 @@
  */
 package io.airlift.tpch;
 
-import com.google.common.base.Splitter;
+import static com.google.common.base.CharMatcher.WHITESPACE;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.List;
 
-import static com.google.common.base.CharMatcher.WHITESPACE;
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.common.base.Splitter;
 
 public class TextPoolGenerator {
   private static final int MAX_SENTENCE_LENGTH = 256;

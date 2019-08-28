@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ public class UnorderedReceiverOperator implements ProducerOperator {
   }
 
   public UnorderedReceiverOperator(final BatchStreamProvider streams, final OperatorContext context, final UnorderedReceiver config) {
-    final RawFragmentBatchProvider[] buffers = streams.getBuffers(config.getOppositeMajorFragmentId());
+    final RawFragmentBatchProvider[] buffers = streams.getBuffers(config.getSenderMajorFragmentId());
     Preconditions.checkArgument(buffers.length == 1);
     this.streams = streams;
     this.fragProvider = buffers[0];

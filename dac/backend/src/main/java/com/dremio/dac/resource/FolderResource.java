@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -100,7 +100,7 @@ public class FolderResource {
   @DELETE
   @Path("/folder/{path: .*}")
   @Produces(MediaType.APPLICATION_JSON)
-  public void deleteFolder(@PathParam("path") String path, @QueryParam("version") Long version) throws NamespaceException, FolderNotFoundException {
+  public void deleteFolder(@PathParam("path") String path, @QueryParam("version") String version) throws NamespaceException, FolderNotFoundException {
     FolderPath folderPath = FolderPath.fromURLPath(spaceName, path);
     if (version == null) {
       throw new ClientErrorException("missing version parameter");

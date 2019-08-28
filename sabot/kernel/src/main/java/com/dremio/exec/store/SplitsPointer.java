@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 package com.dremio.exec.store;
 
 import com.dremio.datastore.SearchTypes;
-import com.dremio.service.namespace.dataset.proto.DatasetSplit;
+import com.dremio.service.namespace.PartitionChunkMetadata;
 import com.google.common.base.Predicate;
 
 /**
@@ -52,21 +52,13 @@ public interface SplitsPointer extends SplitsKey {
    * @param splitPredicate The predicate to apply
    * @return The pruned SplitPointer.
    */
-  SplitsPointer prune(Predicate<DatasetSplit> splitPredicate);
+  SplitsPointer prune(Predicate<PartitionChunkMetadata> partitionPredicate);
 
   /**
    * Iterable for splits.
    * @return
    */
-  Iterable<DatasetSplit> getSplitIterable();
-
-
-  /**
-   * Materialize this splits in this split pointer if they aren't already
-   * materialized. Do this when you might expect to retrieve the splits multiple
-   * times.
-   */
-  void materialize();
+  Iterable<PartitionChunkMetadata> getPartitionChunks();
 
   /**
    * id
@@ -77,4 +69,9 @@ public interface SplitsPointer extends SplitsKey {
   int getTotalSplitsCount();
 
   boolean isPruned();
+
+  /**
+   * Get the split version
+   */
+  long getSplitVersion();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package com.dremio.exec.expr.fn.impl.conv;
 
-import io.netty.buffer.ArrowBuf;
-
 import javax.inject.Inject;
 
 import org.apache.arrow.vector.holders.IntHolder;
@@ -24,10 +22,12 @@ import org.apache.arrow.vector.holders.VarBinaryHolder;
 
 import com.dremio.exec.expr.SimpleFunction;
 import com.dremio.exec.expr.annotations.FunctionTemplate;
-import com.dremio.exec.expr.annotations.Output;
-import com.dremio.exec.expr.annotations.Param;
 import com.dremio.exec.expr.annotations.FunctionTemplate.FunctionScope;
 import com.dremio.exec.expr.annotations.FunctionTemplate.NullHandling;
+import com.dremio.exec.expr.annotations.Output;
+import com.dremio.exec.expr.annotations.Param;
+
+import io.netty.buffer.ArrowBuf;
 
 @FunctionTemplate(name = "convert_toINT", scope = FunctionScope.SIMPLE, nulls = NullHandling.NULL_IF_NULL)
 public class IntConvertTo implements SimpleFunction {

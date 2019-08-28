@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.dremio.exec.physical.base;
 public abstract class AbstractStore extends AbstractSingle implements Store {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(AbstractStore.class);
 
-  public AbstractStore(PhysicalOperator child) {
-    super(child);
+  public AbstractStore(OpProps props, PhysicalOperator child) {
+    super(props, child);
   }
 
   @Override

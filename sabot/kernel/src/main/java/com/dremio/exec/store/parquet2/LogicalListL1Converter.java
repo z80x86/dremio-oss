@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,16 +31,15 @@ import org.slf4j.LoggerFactory;
 
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.expression.SchemaPath;
-import com.dremio.options.OptionManager;
-import com.dremio.exec.store.parquet.ParquetReaderUtility;
 import com.dremio.exec.store.parquet.SchemaDerivationHelper;
 import com.dremio.exec.store.parquet2.WriterProvider.ListWriterProvider;
+import com.dremio.options.OptionManager;
 import com.dremio.sabot.op.scan.OutputMutator;
 
 /**
  * First level of LOGICAL LIST conversion. Handles 'list'
  */
-class LogicalListL1Converter extends GroupConverter {
+public class LogicalListL1Converter extends GroupConverter {
   private static final Logger logger = LoggerFactory.getLogger(LogicalListL1Converter.class);
 
   private final ListWriter listWriter;
@@ -91,7 +90,7 @@ class LogicalListL1Converter extends GroupConverter {
    * @param schema parquet group type
    * @return true is supported
    */
-  static boolean isSupportedSchema(GroupType schema) {
+  public static boolean isSupportedSchema(GroupType schema) {
     if (schema.getFieldCount() == 1) {
       Type type = schema.getType(0);
       // check: repeated group

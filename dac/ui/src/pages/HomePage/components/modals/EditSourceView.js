@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,13 +99,12 @@ export class EditSourceView extends Component {
   checkIsMetadataImpacting = (sourceModel) => {
     return ApiUtils.fetch('sources/isMetadataImpacting', {
       method: 'POST',
-      body: JSON.stringify(sourceModel),
-      headers: {'Content-Type': 'application/json'}
+      body: JSON.stringify(sourceModel)
     }, 2)
     .then((response) => response.json())
     .catch((response) => {
-      response.json().then((error) => {
-        throw new Error(ApiUtils.parseErrorsToObject(error));
+      return response.json().then((error) => {
+        throw error;
       });
     });
   };

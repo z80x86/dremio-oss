@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
  */
 package com.dremio.datastore;
 
+import static com.dremio.datastore.LocalKVStoreProvider.CONFIG_HOSTNAME;
+
+import java.util.Map;
+
 import javax.inject.Provider;
 
 import org.apache.arrow.memory.BufferAllocator;
@@ -22,17 +26,20 @@ import org.apache.arrow.memory.BufferAllocator;
 import com.dremio.common.scanner.persistence.ScanResult;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.rpc.RpcException;
+import com.dremio.service.DirectProvider;
 import com.dremio.services.fabric.api.FabricService;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 
-
 /**
  * Remote kvstore provider.
  */
+@KVStoreProviderType(type="RemoteDB")
 public class RemoteKVStoreProvider implements KVStoreProvider {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(RemoteKVStoreProvider.class);
+  public static final String HOSTNAME = "thisHostName";
+
   private DatastoreRpcClient rpcClient;
   private final Provider<NodeEndpoint> masterNode;
   private final Provider<FabricService> fabricService;
@@ -40,6 +47,7 @@ public class RemoteKVStoreProvider implements KVStoreProvider {
   private final String hostName;
   private final ScanResult scan;
   private ImmutableMap<Class<? extends StoreCreationFunction<?>>, KVStore<?, ?>> stores;
+  private String masterHostName;
 
   public RemoteKVStoreProvider(ScanResult scan, Provider<NodeEndpoint> masterNode, Provider<FabricService> fabricService, BufferAllocator allocator, String hostName) {
     this.masterNode = masterNode;
@@ -47,6 +55,26 @@ public class RemoteKVStoreProvider implements KVStoreProvider {
     this.allocator = allocator;
     this.hostName = hostName;
     this.scan = scan;
+  }
+
+  public RemoteKVStoreProvider(
+    ScanResult scan,
+    Provider<FabricService> fabricService,
+    Provider<NodeEndpoint> masterNode,
+    BufferAllocator allocator,
+    Map<String, Object> config
+  ) {
+    this(scan,
+         masterNode,
+         fabricService,
+         allocator,
+         String.valueOf(Preconditions.checkNotNull(
+           config.get(HOSTNAME), String.format("Missing services.datastore.config.%s in dremio.conf", HOSTNAME))
+         )
+    );
+    // in case of test configuration in masterless mode specify master directly
+    // either masterNode should be specified or masterHostName
+    masterHostName = String.valueOf(config.get(CONFIG_HOSTNAME));
   }
 
   @SuppressWarnings("unchecked")
@@ -65,7 +93,17 @@ public class RemoteKVStoreProvider implements KVStoreProvider {
     logger.info("Starting RemoteKVStoreProvider");
     DefaultDataStoreRpcHandler rpcHandler = new DefaultDataStoreRpcHandler(hostName);
     try {
-      DatastoreRpcService rpcService = new DatastoreRpcService(masterNode, fabricService.get(), allocator, rpcHandler);
+      final Provider<NodeEndpoint> masterHost;
+      if (masterHostName != null && !masterHostName.equals(hostName)) {
+        masterHost = DirectProvider.wrap(NodeEndpoint.newBuilder()
+          .setAddress(masterHostName)
+          .setFabricPort(fabricService.get().getPort())
+          .build());
+      } else {
+        masterHost = masterNode;
+      }
+
+      DatastoreRpcService rpcService = new DatastoreRpcService(masterHost, fabricService.get(), allocator, rpcHandler);
       rpcClient = new DatastoreRpcClient(rpcService);
     } catch (RpcException e) {
       throw new DatastoreFatalException("Failed to start rpc service", e);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,7 +96,7 @@ public class WriterPrule extends Prule {
       .plus(DistributionTrait.SINGLETON)
       .plus(Prel.PHYSICAL);
 
-    final FileSystemPlugin plugin = fileEntry.getPlugin();
+    final FileSystemPlugin<?> plugin = fileEntry.getPlugin();
 
     if (PrelUtil.getPlannerSettings(rel.getCluster()).options.getOption(PlannerSettings.WRITER_TEMP_FILE)) {
 

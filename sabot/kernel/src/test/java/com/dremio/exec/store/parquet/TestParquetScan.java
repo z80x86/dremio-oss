@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,17 @@
  */
 package com.dremio.exec.store.parquet;
 
-import com.dremio.BaseTestQuery;
-import com.google.common.io.Resources;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.junit.BeforeClass;
 import org.junit.Test;
+
+import com.dremio.BaseTestQuery;
+import com.dremio.PlanTestBase;
+import com.dremio.exec.ExecConstants;
+import com.google.common.io.Resources;
 
 public class TestParquetScan extends BaseTestQuery {
 
@@ -62,4 +64,187 @@ public class TestParquetScan extends BaseTestQuery {
         .build()
         .run();
   }
+
+  @Test
+  public void testDataPageV2() throws Exception {
+    final String sql = "select count(*) as cnt from dfs.\"${WORKING_PATH}/src/test/resources/datapage_v2.parquet\" where extractmonth(Kommtzeit) = 10";
+
+    testBuilder()
+      .sqlQuery(sql)
+      .unOrdered()
+      .baselineColumns("cnt")
+      .baselineValues(570696L)
+      .build()
+      .run();
+  }
+
+  @Test
+  public void testRefreshOnFileNotFound() throws Exception {
+    setEnableReAttempts(true);
+    try {
+      // create directory
+      Path dir = new Path("/tmp/parquet_scan_file_refresh");
+      if (fs.exists(dir)) {
+        fs.delete(dir, true);
+      }
+      fs.mkdirs(dir);
+
+      // Create 10 parquet files in the directory.
+      byte[] bytes = Resources.toByteArray(Resources.getResource("tpch/nation.parquet"));
+      for (int i = 0; i < 10; ++i) {
+        FSDataOutputStream os = fs.create(new Path(dir, i + "nation.parquet"));
+        os.write(bytes);
+        os.close();
+      }
+
+      // query on all 10 files.
+      testBuilder()
+          .sqlQuery(
+              "select count(*) c from dfs.tmp.parquet_scan_file_refresh where length(n_comment) > 0")
+          .unOrdered()
+          .baselineColumns("c")
+          .baselineValues(250L)
+          .build()
+          .run();
+
+      // TODO(DX-15645): remove this sleep
+      Thread.sleep(1000L); // fs modification times have second precision so read signature might be valid
+
+      // delete every alternate file.
+      for (int i = 0; i < 10; ++i) {
+        if (i % 2 == 0) {
+          fs.delete(new Path(dir, i + "nation.parquet"), false);
+        }
+      }
+
+      // TODO(DX-15645): remove this sleep
+      Thread.sleep(1000L); // fs modification times have second precision so read signature might be valid
+
+      // re-run the query. Should trigger a metadata refresh and succeed.
+      testBuilder()
+          .sqlQuery(
+              "select count(*) c from dfs.tmp.parquet_scan_file_refresh where length(n_comment) > 0")
+          .unOrdered()
+          .baselineColumns("c")
+          .baselineValues(125L)
+          .build()
+          .run();
+
+      // cleanup
+      fs.delete(dir, true);
+    } finally {
+      setEnableReAttempts(false);
+    }
+  }
+
+  @Test
+  public void testRefreshOnDirNotFound() throws Exception {
+    setEnableReAttempts(true);
+    try {
+      Path dir = new Path("/tmp/parquet_scan_dir_refresh");
+
+      // create directory
+      if (fs.exists(dir)) {
+        fs.delete(dir, true);
+      }
+      fs.mkdirs(dir);
+
+      // Create 9 parquet files in sub-directories of the main directory.
+      byte[] bytes = Resources.toByteArray(Resources.getResource("tpch/nation.parquet"));
+      for (int i = 0; i < 9; ++i) {
+        Path subdir = new Path(dir, "subdir" + i);
+        fs.mkdirs(subdir);
+
+        FSDataOutputStream os = fs.create(new Path(subdir, "nation.parquet"));
+        os.write(bytes);
+        os.close();
+      }
+
+      // query on all 9 files.
+      testBuilder()
+        .sqlQuery(
+          "select count(*) c from dfs.tmp.parquet_scan_dir_refresh where length(n_comment) > 0")
+        .unOrdered()
+        .baselineColumns("c")
+        .baselineValues(225L)
+        .build()
+        .run();
+
+      // TODO(DX-15645): remove this sleep
+      Thread.sleep(1000L); // fs modification times have second precision so read signature might be valid
+
+      // delete every third subdir.
+      for (int i = 0; i < 9; ++i) {
+        if (i % 3 == 0) {
+          fs.delete(new Path(dir, "subdir" + i), true);
+        }
+      }
+
+      // TODO(DX-15645): remove this sleep
+      Thread.sleep(1000L); // fs modification times have second precision so read signature might be valid
+
+      // re-run the query. Should trigger a metadata refresh and succeed.
+      testBuilder()
+        .sqlQuery(
+          "select count(*) c from dfs.tmp.parquet_scan_dir_refresh where length(n_comment) > 0")
+        .unOrdered()
+        .baselineColumns("c")
+        .baselineValues(150L)
+        .build()
+        .run();
+
+      // cleanup
+      fs.delete(dir, true);
+    } finally {
+      setEnableReAttempts(false);
+    }
+  }
+
+  @Test
+  public void testMaxFooterSizeLimit() throws Exception {
+    boolean failed = false;
+    final String sql = "select count(*) as cnt from dfs.\"${WORKING_PATH}/src/test/resources/datapage_v2.snappy.parquet\"";
+    test("ALTER SYSTEM SET \"" + ExecConstants.PARQUET_MAX_FOOTER_LEN_VALIDATOR.getOptionName() + "\" = 32");
+
+    try {
+      testBuilder()
+        .sqlQuery(sql)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(5L)
+        .build()
+        .run();
+    } catch (Exception e) {
+      failed = true;
+      System.out.println("Encountered footer size exception");
+    } finally {
+      test("ALTER SYSTEM RESET \"" + ExecConstants.PARQUET_MAX_FOOTER_LEN_VALIDATOR.getOptionName() + "\"");
+    }
+    if (!failed) {
+      assert (false);
+    }
+  }
+
+  @Test
+  public void testDX15475() throws Exception {
+    final String sql = "select count(*) as cnt from dfs.\"${WORKING_PATH}/src/test/resources/datapage_v2.snappy.parquet\"";
+
+    testBuilder()
+      .sqlQuery(sql)
+      .unOrdered()
+      .baselineColumns("cnt")
+      .baselineValues(5L)
+      .build()
+      .run();
+  }
+
+  @Test
+  public void testEmptyParquetFile() throws Exception {
+    final String sql = "select * from dfs.\"${WORKING_PATH}/src/test/resources/zero-rows.parquet\"";
+
+    PlanTestBase.testPhysicalPlan(sql, "Empty");
+    PlanTestBase.testPlanMatchingPatterns(sql, new String[]{"Empty"}, "ParquetGroupScan");
+  }
+
+
 }

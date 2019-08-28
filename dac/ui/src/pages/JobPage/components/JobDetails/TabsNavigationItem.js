@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,12 +37,15 @@ export default class TabsNavigationItem extends Component {
   }
   render() {
     const { item, onClick, activeTab, children } = this.props;
+    const tabName = item.get('name');
+    const key = `tab-${tabName}`;
     return (
       <div
-        className={classNames({'tab-link': true, 'active': activeTab === item.get('name')})}
-        style={this.getStylesForTab(item.get('name'))}
-        key={`tab-${item.get('name')}`}
+        className={classNames({'tab-link': true, 'active': activeTab === tabName})}
+        style={this.getStylesForTab(tabName)}
+        key={key}
         onClick={onClick}
+        data-qa={key}
       >
         {children}
       </div>

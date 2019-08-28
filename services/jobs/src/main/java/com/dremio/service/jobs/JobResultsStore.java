@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -36,7 +37,6 @@ import com.dremio.common.utils.PathUtils;
 import com.dremio.datastore.IndexedStore;
 import com.dremio.exec.store.dfs.FileSystemPlugin;
 import com.dremio.exec.store.easy.arrow.ArrowFileMetadata;
-import com.dremio.exec.util.ImpersonationUtil;
 import com.dremio.service.Service;
 import com.dremio.service.job.proto.JobAttempt;
 import com.dremio.service.job.proto.JobId;
@@ -75,7 +75,7 @@ public class JobResultsStore implements Service {
   public JobResultsStore(final FileSystemPlugin plugin, final IndexedStore<JobId, JobResult> store,
       final BufferAllocator allocator) throws IOException {
     this.storageName = plugin.getName();
-    this.dfs = plugin.getFS(ImpersonationUtil.getProcessUserName());
+    this.dfs = plugin.getSystemUserFS();
     this.jobStoreLocation = plugin.getConfig().getPath();
     this.dfs.mkdirs(jobStoreLocation);
     this.store = store;
@@ -88,7 +88,8 @@ public class JobResultsStore implements Service {
             new CacheLoader<JobId, JobData>() {
               @Override
               public JobData load(JobId key) throws Exception {
-                final JobDataImpl jobDataImpl = new JobDataImpl(new LateJobLoader(key), key);
+                // CountDownLatch(0) as jobs are completed and metadata should be already collected
+                final JobDataImpl jobDataImpl = new JobDataImpl(new LateJobLoader(key), key, new CountDownLatch(0));
                 return newJobDataReference(jobDataImpl);
               }
             });
@@ -118,7 +119,7 @@ public class JobResultsStore implements Service {
     try {
       if (dfs.exists(jobOutputDir)) {
         dfs.delete(jobOutputDir, true);
-        logger.info("Deleted job output directory : " + jobOutputDir);
+        logger.debug("Deleted job output directory : {}", jobOutputDir);
       }
       return true;
     } catch (IOException e) {

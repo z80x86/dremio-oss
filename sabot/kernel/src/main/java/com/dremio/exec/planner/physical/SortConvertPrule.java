@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,9 +45,9 @@ public class SortConvertPrule extends ConverterRule {
   @Override
   public RelNode convert(RelNode r) {
     Sort rel = (Sort) r;
-    return new SortPrel(rel.getCluster(),
-                        rel.getInput().getTraitSet().replace(Prel.PHYSICAL).plus(rel.getCollation()),
-                        convert(rel.getInput(), rel.getInput().getTraitSet().replace(Prel.PHYSICAL).simplify()),
-                        rel.getCollation());
+    return SortPrel.create(rel.getCluster(),
+                           rel.getInput().getTraitSet().replace(Prel.PHYSICAL).plus(rel.getCollation()),
+                           convert(rel.getInput(), rel.getInput().getTraitSet().replace(Prel.PHYSICAL).simplify()),
+                           rel.getCollation());
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,6 @@ package com.dremio.exec.calcite.logical;
 
 import java.util.List;
 
-import com.dremio.common.logical.data.LogicalOperator;
-import com.dremio.exec.planner.common.JdbcRelImpl;
-import com.dremio.exec.planner.logical.LogicalPlanImplementor;
-import com.dremio.exec.planner.logical.Rel;
-
 import org.apache.calcite.plan.CopyWithCluster;
 import org.apache.calcite.plan.CopyWithCluster.CopyToCluster;
 import org.apache.calcite.plan.RelOptCluster;
@@ -34,6 +29,7 @@ import org.apache.calcite.rel.metadata.RelMetadataQuery;
 
 import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.planner.common.MoreRelOptUtil;
+import com.dremio.exec.planner.logical.Rel;
 
 /**
  * Jdbc rel node on top of jdbc subtree during calcite's planning (convention NONE).
@@ -78,11 +74,6 @@ public class JdbcCrel extends SingleRel implements CopyToCluster, Rel {
       input,
       pluginId
     );
-  }
-
-  @Override
-  public LogicalOperator implement(LogicalPlanImplementor implementor) {
-    throw new UnsupportedOperationException();
   }
 
   public StoragePluginId getPluginId() {

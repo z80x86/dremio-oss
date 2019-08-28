@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,12 +27,12 @@ import com.dremio.common.exceptions.ExecutionSetupException;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.common.expression.SchemaPath;
 import com.dremio.exec.ExecConstants;
-import com.dremio.options.OptionManager;
 import com.dremio.exec.store.AbstractRecordReader;
 import com.dremio.exec.store.dfs.FileSystemWrapper;
 import com.dremio.exec.store.easy.json.JsonProcessor.ReadState;
 import com.dremio.exec.store.easy.json.reader.CountingJsonReader;
 import com.dremio.exec.vector.complex.fn.JsonReader;
+import com.dremio.options.OptionManager;
 import com.dremio.sabot.exec.context.OperatorContext;
 import com.dremio.sabot.op.scan.OutputMutator;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -139,7 +139,9 @@ public class JSONRecordReader extends AbstractRecordReader {
       if (isSkipQuery()) {
         this.jsonReader = new CountingJsonReader();
       } else {
-        this.jsonReader = new JsonReader(context.getManagedBuffer(), ImmutableList.copyOf(getColumns()), enableAllTextMode, true, readNumbersAsDouble);
+        final int sizeLimit = Math.toIntExact(this.context.getOptions().getOption(ExecConstants.LIMIT_FIELD_SIZE_BYTES));
+        this.jsonReader = new JsonReader(
+          context.getManagedBuffer(), ImmutableList.copyOf(getColumns()), sizeLimit, enableAllTextMode, true, readNumbersAsDouble);
       }
       setupParser();
     }catch(final Exception e){

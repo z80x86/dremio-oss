@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 import Immutable from 'immutable';
 import invariant from 'invariant';
 import exploreUtils from 'utils/explore/exploreUtils';
+import { getExploreState } from '@app/selectors/explore';
 
 export function getTransformCards(state, transform, defaultCard) {
   invariant(transform, 'Missed transformation state for getTransformCards selector');
@@ -27,9 +28,10 @@ export function getTransformCards(state, transform, defaultCard) {
 
   const transformType = transform.get('transformType');
   const method = transform.get('method') || 'default';
+  const recommended = getExploreState(state).recommended;
 
-  const defaultTransform = state.explore.recommended.getIn(['transform', 'default']);
-  const transformWithCards = state.explore.recommended.getIn(['transform', transformType, method]);
+  const defaultTransform = recommended.getIn(['transform', 'default']);
+  const transformWithCards = recommended.getIn(['transform', transformType, method]);
   const cards = transformWithCards && transformWithCards.get('cards');
 
   if (!hasSelection) {

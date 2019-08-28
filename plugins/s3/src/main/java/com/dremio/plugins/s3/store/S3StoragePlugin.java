@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.dremio.plugins.s3.store;
 
+import static com.dremio.service.users.SystemUser.SYSTEM_USERNAME;
 import static org.apache.hadoop.fs.s3a.Constants.ACCESS_KEY;
 import static org.apache.hadoop.fs.s3a.Constants.FAST_UPLOAD;
 import static org.apache.hadoop.fs.s3a.Constants.MAXIMUM_CONNECTIONS;
@@ -28,12 +29,13 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import javax.inject.Provider;
 
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.s3a.Constants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,16 +43,18 @@ import com.dremio.common.exceptions.UserException;
 import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.catalog.conf.AWSAuthenticationType;
 import com.dremio.exec.catalog.conf.Property;
+import com.dremio.exec.physical.base.WriterOptions;
+import com.dremio.exec.planner.logical.CreateTableEntry;
 import com.dremio.exec.server.SabotContext;
-import com.dremio.exec.store.DatasetRetrievalOptions;
+import com.dremio.exec.store.SchemaConfig;
 import com.dremio.exec.store.dfs.FileSystemPlugin;
 import com.dremio.exec.store.dfs.FileSystemWrapper;
-import com.dremio.exec.util.ImpersonationUtil;
-import com.dremio.plugins.s3.store.copy.S3Constants;
 import com.dremio.plugins.util.ContainerFileSystem.ContainerFailure;
+import com.dremio.sabot.exec.context.OperatorContext;
+import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.SourceState;
-import com.dremio.service.namespace.SourceTableDefinition;
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 
 /**
  * S3 Extension of FileSystemStoragePlugin
@@ -70,7 +74,7 @@ public class S3StoragePlugin extends FileSystemPlugin<S3PluginConfig> {
   public static final String NONE_PROVIDER = "org.apache.hadoop.fs.s3a.AnonymousAWSCredentialsProvider";
 
   public S3StoragePlugin(S3PluginConfig config, SabotContext context, String name, Provider<StoragePluginId> idProvider) {
-    super(config, context, name, null, idProvider);
+    super(config, context, name, idProvider);
   }
 
   @Override
@@ -81,11 +85,15 @@ public class S3StoragePlugin extends FileSystemPlugin<S3PluginConfig> {
     finalProperties.add(new Property("fs.dremioS3.impl", S3FileSystem.class.getName()));
     finalProperties.add(new Property(MAXIMUM_CONNECTIONS, String.valueOf(DEFAULT_MAX_CONNECTIONS)));
     finalProperties.add(new Property(FAST_UPLOAD, "true"));
-    finalProperties.add(new Property(S3Constants.FAST_UPLOAD_BUFFER, "disk"));
-    finalProperties.add(new Property(S3Constants.FAST_UPLOAD_ACTIVE_BLOCKS, "4")); // 256mb (so a single parquet file should be able to flush at once).
+    finalProperties.add(new Property(Constants.FAST_UPLOAD_BUFFER, "disk"));
+    finalProperties.add(new Property(Constants.FAST_UPLOAD_ACTIVE_BLOCKS, "4")); // 256mb (so a single parquet file should be able to flush at once).
     finalProperties.add(new Property(MAX_THREADS, "24"));
     finalProperties.add(new Property(MULTIPART_SIZE, "67108864")); // 64mb
     finalProperties.add(new Property(MAX_TOTAL_TASKS, "30"));
+
+    if(config.compatibilityMode) {
+      finalProperties.add(new Property(S3FileSystem.COMPATIBILITY_MODE, "true"));
+    }
 
     switch (config.credentialType) {
       case ACCESS_KEY:
@@ -96,13 +104,13 @@ public class S3StoragePlugin extends FileSystemPlugin<S3PluginConfig> {
         }
         finalProperties.add(new Property(ACCESS_KEY, config.accessKey));
         finalProperties.add(new Property(SECRET_KEY, config.accessSecret));
-        finalProperties.add(new Property(S3Constants.AWS_CREDENTIALS_PROVIDER, ACCESS_KEY_PROVIDER));
+        finalProperties.add(new Property(Constants.AWS_CREDENTIALS_PROVIDER, ACCESS_KEY_PROVIDER));
         break;
       case EC2_METADATA:
-        finalProperties.add(new Property(S3Constants.AWS_CREDENTIALS_PROVIDER, EC2_METADATA_PROVIDER));
+        finalProperties.add(new Property(Constants.AWS_CREDENTIALS_PROVIDER, EC2_METADATA_PROVIDER));
         break;
       case NONE:
-        finalProperties.add(new Property(S3Constants.AWS_CREDENTIALS_PROVIDER, NONE_PROVIDER));
+        finalProperties.add(new Property(Constants.AWS_CREDENTIALS_PROVIDER, NONE_PROVIDER));
         break;
       default:
         throw new RuntimeException("Failure creating S3 connection. Invalid credentials type.");
@@ -128,10 +136,15 @@ public class S3StoragePlugin extends FileSystemPlugin<S3PluginConfig> {
   }
 
   @Override
+  public boolean supportsColocatedReads() {
+    return false;
+  }
+
+  @Override
   public SourceState getState() {
     try {
       ensureDefaultName();
-      S3FileSystem fs = getFS(ImpersonationUtil.getProcessUserName()).unwrap(S3FileSystem.class);
+      S3FileSystem fs = getSystemUserFS().unwrap(S3FileSystem.class);
       fs.refreshFileSystems();
       List<ContainerFailure> failures = fs.getSubFailures();
       if(failures.isEmpty()) {
@@ -155,16 +168,48 @@ public class S3StoragePlugin extends FileSystemPlugin<S3PluginConfig> {
   private void ensureDefaultName() throws IOException {
     String urlSafeName = URLEncoder.encode(getName(), "UTF-8");
     getFsConf().set(FileSystem.FS_DEFAULT_NAME_KEY, "dremioS3://" + urlSafeName);
-    final FileSystemWrapper fs = getFS(ImpersonationUtil.getProcessUserName());
+    // we create a new fs wrapper since we are calling initialize on it
+    final FileSystemWrapper fs = createFS(SYSTEM_USERNAME);
     // do not use fs.getURI() or fs.getConf() directly as they will produce wrong results
     fs.initialize(URI.create(getFsConf().get(FileSystem.FS_DEFAULT_NAME_KEY)), getFsConf());
   }
 
   @Override
-  public Iterable<SourceTableDefinition> getDatasets(String user, DatasetRetrievalOptions ignored) throws Exception {
-    // have to do it to set correct FS_DEFAULT_NAME
-    ensureDefaultName();
+  public CreateTableEntry createNewTable(
+      SchemaConfig config,
+      NamespaceKey key,
+      WriterOptions writerOptions,
+      Map<String, Object> storageOptions
+  ) {
+    Preconditions.checkArgument(key.size() >= 2, "key must be at least two parts");
+    final String containerName = key.getPathComponents().get(1);
+    if (key.size() == 2) {
+      throw UserException.validationError()
+          .message("Creating buckets is not supported", containerName)
+          .build(logger);
+    }
 
-    return Collections.emptyList(); // file system does not know about physical datasets
+    final CreateTableEntry entry = super.createNewTable(config, key, writerOptions, storageOptions);
+
+    final S3FileSystem fs = getSystemUserFS().unwrap(S3FileSystem.class);
+
+    if (!fs.containerExists(containerName)) {
+      throw UserException.validationError()
+          .message("Cannot create the table because '%s' bucket does not exist", containerName)
+          .build(logger);
+    }
+
+    if (!fs.mayHaveWritePermission(containerName)) {
+      throw UserException.validationError()
+          .message("No write permission to '%s' bucket", containerName)
+          .build(logger);
+    }
+
+    return entry;
+  }
+
+  @Override
+  protected boolean isAsyncEnabledForQuery(OperatorContext context) {
+    return context != null && context.getOptions().getOption(S3Options.ASYNC);
   }
 }

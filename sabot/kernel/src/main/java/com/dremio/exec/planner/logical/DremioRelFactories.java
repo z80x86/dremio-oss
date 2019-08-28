@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.apache.calcite.plan.Contexts;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.rel.InvalidRelException;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.CorrelationId;
@@ -35,6 +36,7 @@ import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.tools.RelBuilderFactory;
 import org.apache.calcite.util.ImmutableBitSet;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
 /**
@@ -122,17 +124,24 @@ public class DremioRelFactories {
     public RelNode createAggregate(final RelNode child, final boolean indicator, final ImmutableBitSet groupSet, final ImmutableList<ImmutableBitSet> groupSets, final List<AggregateCall> aggCalls) {
       final RelOptCluster cluster = child.getCluster();
       final RelTraitSet traitSet = child.getTraitSet().plus(Rel.LOGICAL);
-      return new AggregateRel(cluster, traitSet, child, indicator, groupSet, groupSets, aggCalls);
+      try {
+        return AggregateRel.create(cluster, traitSet, child, indicator, groupSet, groupSets, aggCalls);
+      } catch (InvalidRelException e) {
+        // Semantic error not possible. Must be a bug. Convert to
+        // internal error.
+        throw new AssertionError(e);
+      }
     }
   }
 
   /**
    * Implementation of {@link RelFactories.FilterFactory} that
-   * returns a vanilla {@link LogicalFilter}.
+   * returns a vanilla {@link FilterRel}.
    */
   private static class FilterFactoryImpl implements RelFactories.FilterFactory {
     @Override
-    public RelNode createFilter(RelNode child, RexNode condition) {
+    public RelNode createFilter(RelNode child, RexNode condition, Set<CorrelationId> correlVariables) {
+      Preconditions.checkArgument(correlVariables.isEmpty());
       return FilterRel.create(child, condition);
     }
   }
@@ -140,11 +149,12 @@ public class DremioRelFactories {
 
   /**
    * Implementation of {@link RelFactories.FilterFactory} that
-   * returns a vanilla {@link LogicalFilter} with child converted.
+   * returns a vanilla {@link FilterRel} with child converted.
    */
   private static class FilterPropagateFactoryImpl implements RelFactories.FilterFactory {
     @Override
-    public RelNode createFilter(RelNode child, RexNode condition) {
+    public RelNode createFilter(RelNode child, RexNode condition, Set<CorrelationId> correlVariables) {
+      Preconditions.checkArgument(correlVariables.isEmpty());
       return FilterRel.create(
           RelOptRule.convert(child, child.getTraitSet().plus(Rel.LOGICAL).simplify()),
           condition);
@@ -161,14 +171,14 @@ public class DremioRelFactories {
                               RexNode condition,
                               Set<CorrelationId> variablesSet,
                               JoinRelType joinType, boolean semiJoinDone) {
-      return new JoinRel(left.getCluster(), left.getTraitSet(), left, right, condition, joinType);
+      return JoinRel.create(left.getCluster(), left.getTraitSet(), left, right, condition, joinType);
     }
 
     @Override
     public RelNode createJoin(RelNode left, RelNode right,
                               RexNode condition, JoinRelType joinType,
                               Set<String> variablesStopped, boolean semiJoinDone) {
-      return new JoinRel(left.getCluster(), left.getTraitSet(), left, right, condition, joinType);
+      return JoinRel.create(left.getCluster(), left.getTraitSet(), left, right, condition, joinType);
     }
   }
 
@@ -182,7 +192,7 @@ public class DremioRelFactories {
                               RexNode condition,
                               Set<CorrelationId> variablesSet,
                               JoinRelType joinType, boolean semiJoinDone) {
-      return new JoinRel(
+      return JoinRel.create(
           left.getCluster(),
           left.getTraitSet().plus(Rel.LOGICAL),
           RelOptRule.convert(left, left.getTraitSet().plus(Rel.LOGICAL).simplify()),
@@ -195,7 +205,7 @@ public class DremioRelFactories {
     public RelNode createJoin(RelNode left, RelNode right,
                               RexNode condition, JoinRelType joinType,
                               Set<String> variablesStopped, boolean semiJoinDone) {
-      return new JoinRel(
+      return JoinRel.create(
           left.getCluster(),
           left.getTraitSet().plus(Rel.LOGICAL),
           RelOptRule.convert(left, left.getTraitSet().plus(Rel.LOGICAL).simplify()),

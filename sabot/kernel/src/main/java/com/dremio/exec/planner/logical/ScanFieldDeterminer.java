@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,13 +31,13 @@ import com.dremio.common.logical.data.Limit;
 import com.dremio.common.logical.data.LogicalOperator;
 import com.dremio.common.logical.data.NamedExpression;
 import com.dremio.common.logical.data.Order;
+import com.dremio.common.logical.data.Order.Ordering;
 import com.dremio.common.logical.data.Project;
 import com.dremio.common.logical.data.Scan;
 import com.dremio.common.logical.data.SinkOperator;
 import com.dremio.common.logical.data.Store;
 import com.dremio.common.logical.data.Union;
 import com.dremio.common.logical.data.Values;
-import com.dremio.common.logical.data.Order.Ordering;
 import com.dremio.common.logical.data.visitors.AbstractLogicalVisitor;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;

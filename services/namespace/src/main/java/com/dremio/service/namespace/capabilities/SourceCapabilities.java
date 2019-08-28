@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ public final class SourceCapabilities {
 
   public static final SourceCapabilities NONE = new SourceCapabilities(ImmutableList.<CapabilityValue<?,?>>of());
 
-  public static final BooleanCapability STORAGE_IMPERSONATION = new BooleanCapability("storage_impersonation", false);
   public static final BooleanCapability REQUIRES_HARD_AFFINITY = new BooleanCapability("requires_hard_affinity", false);
   public static final BooleanCapability SUPPORTS_CONTAINS = new BooleanCapability("supports_contains_operation", false);
 
@@ -44,7 +43,13 @@ public final class SourceCapabilities {
   public static final BooleanCapability TREAT_CALCITE_SCAN_COST_AS_INFINITE = new BooleanCapability("treat_calcite_scan_cost_as_infinite", false);
 
   // Indicates that the plugin is capable of pushing down sub queries.
-  public static final BooleanCapability SUBQUERY_PUSHDOWNABLE = new BooleanCapability("subquery_pushdownable", false);
+  public static final BooleanCapability SUBQUERY_PUSHDOWNABLE =
+    new BooleanCapability("subquery_pushdownable", false);
+
+  // Indicates that the plugin is capable of pushing down correlated sub queries.
+  public static final BooleanCapability CORRELATED_SUBQUERY_PUSHDOWN =
+    new BooleanCapability("correlated_pushdownable", true);
+
 
   private final ImmutableMap<Capability<?>, CapabilityValue<?,?>> values;
 
@@ -124,6 +129,5 @@ public final class SourceCapabilities {
   public int hashCode() {
     return Objects.hashCode(values);
   }
-
 
 }

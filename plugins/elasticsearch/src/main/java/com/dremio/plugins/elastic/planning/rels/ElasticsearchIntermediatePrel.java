@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -126,7 +126,7 @@ public class ElasticsearchIntermediatePrel extends SinglePrel implements PrelFin
   }
 
   public ElasticsearchIntermediatePrel filter(final Predicate<RelNode> predicate){
-    return withNewInput((ElasticsearchPrel) getInput().accept(new MoreRelOptUtil.SubsetRemover()).accept(new MoreRelOptUtil.NodeRemover(predicate)));
+    return withNewInput((ElasticsearchPrel) getInput().accept(new MoreRelOptUtil.SubsetRemover()).accept(new MoreRelOptUtil.NodeRemover(v -> predicate.apply(v))));
   }
 
   @Override
@@ -227,7 +227,7 @@ public class ElasticsearchIntermediatePrel extends SinglePrel implements PrelFin
 
     // if project was popped, apply outside limit.
     if(poppedProject != null){
-      output = new ProjectPrel(output.getCluster(), poppedProject.getTraitSet(), output, poppedProject.getChildExps(), poppedProject.getRowType());
+      output = ProjectPrel.create(output.getCluster(), poppedProject.getTraitSet(), output, poppedProject.getChildExps(), poppedProject.getRowType());
     }
 
     return output;

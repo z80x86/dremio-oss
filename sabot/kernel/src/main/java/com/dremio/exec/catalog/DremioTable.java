@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ public interface DremioTable extends TranslatableTable {
    * Provide the version of the dataset, if available. Otherwise, return -1.
    * @return
    */
-  long getVersion();
+  String getVersion();
 
   /**
    * The BatchSchema for the dataset. For the exception of old dot file views, this returns correct

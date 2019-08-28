@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 import Immutable from 'immutable';
 import { splitFullPath } from 'utils/pathUtils';
+import { ENTITY_TYPES } from '@app/constants/Constants';
 
 export function decorateSource(source) {
   const uiProperties = Immutable.Map({
@@ -27,9 +28,8 @@ export function decorateSource(source) {
 
 export function decorateSpace(space) {
   const uiProperties = Immutable.Map({
-    iconClass: 'Space',
     isFile: false,
-    entityType: 'space'
+    entityType: ENTITY_TYPES.space
   });
   return space.merge(uiProperties);
 }

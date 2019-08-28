@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import PropTypes from 'prop-types';
 import Immutable from 'immutable';
 import uuid from 'uuid';
 import { connect } from 'react-redux';
+import { getExploreState } from '@app/selectors/explore';
 
 import { ExploreInfoHeader } from '../ExploreInfoHeader';
 import InnerJoin from './InnerJoin';
@@ -199,7 +200,7 @@ export class InnerJoinController extends Component {
 
 function mapStateToProps(state, ownProps) {
   return {
-    recommendation: state.explore.join.getIn(['custom', 'recommendation'])
+    recommendation: getExploreState(state).join.getIn(['custom', 'recommendation'])
   };
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ import com.dremio.common.config.SabotConfig;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.service.coordinator.DistributedSemaphore;
 import com.dremio.service.coordinator.ElectionListener;
-import com.dremio.service.coordinator.ServiceSet.RegistrationHandle;
+import com.dremio.service.coordinator.ElectionRegistrationHandle;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.FutureCallback;
@@ -178,12 +178,19 @@ class ZKClusterClient implements com.dremio.service.Service {
   }
 
   public DistributedSemaphore getSemaphore(String name, int maximumLeases) {
-    return new ZkDistributedSemaphore(curator, "/semaphore/" + name, maximumLeases);
+    return new ZkDistributedSemaphore(curator, "/" + clusterId + "/semaphore/" + name, maximumLeases);
   }
 
-  public RegistrationHandle joinElection(final String name, final ElectionListener listener) {
+  public Iterable<String> getServiceNames() throws Exception {
+    return curator.getChildren().forPath("/" + clusterId);
+  }
+
+  public ElectionRegistrationHandle joinElection(final String name, final ElectionListener listener) {
     final String id = UUID.randomUUID().toString();
-    final LeaderLatch leaderLatch = new LeaderLatch(curator, "/leader-latch/" + name, id, CloseMode.SILENT);
+    // In case of multicluster Dremio env. that use the same zookeeper
+    // we need a root per Dremio clusterId
+    final LeaderLatch leaderLatch =
+      new LeaderLatch(curator, "/" + clusterId + "/leader-latch/" + name, id, CloseMode.SILENT);
 
     final AtomicReference<ListenableFuture<?>> newLeaderRef = new AtomicReference<>();
 
@@ -298,7 +305,7 @@ class ZKClusterClient implements com.dremio.service.Service {
       throw Throwables.propagate(e);
     }
 
-    return new RegistrationHandle() {
+    return new ElectionRegistrationHandle() {
 
       @Override
       public void close() {
@@ -308,10 +315,20 @@ class ZKClusterClient implements com.dremio.service.Service {
           logger.error("Error when closing registration handle for election {}", name, e);
         }
       }
+
+      @Override
+      public int instanceCount() {
+        try {
+          return leaderLatch.getParticipants().size();
+        } catch (Exception e) {
+          logger.error("Unable to get leader latch participants count for {}", name, e);
+        }
+        return 0;
+      }
     };
   }
 
-  public ZKServiceSet newServiceSet(String name) throws Exception {
+  public ZKServiceSet newServiceSet(String name) {
     return new ZKServiceSet(name, discovery);
   }
 

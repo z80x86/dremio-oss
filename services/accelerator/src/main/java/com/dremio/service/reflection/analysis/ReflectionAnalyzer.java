@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,6 @@ import com.dremio.service.jobs.JobsService;
 import com.dremio.service.jobs.NoOpJobStatusListener;
 import com.dremio.service.jobs.SqlQuery;
 import com.dremio.service.namespace.NamespaceKey;
-import com.dremio.service.namespace.dataset.DatasetVersion;
 import com.dremio.service.users.SystemUser;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
@@ -53,6 +52,7 @@ import com.google.common.collect.FluentIterable;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Multimap;
+import com.google.common.util.concurrent.Futures;
 
 /**
  * Analyzes acceleration and generates statistics.
@@ -149,17 +149,20 @@ public class ReflectionAnalyzer {
 
     final SqlQuery query = new SqlQuery(sql, SYSTEM_USERNAME);
 
-    final Job job = jobsService.submitJob(JobRequest.newBuilder()
-      .setSqlQuery(query)
-      .setQueryType(QueryType.UI_INTERNAL_PREVIEW)
-      .setDatasetPath(NONE_PATH)
-      .setDatasetVersion(DatasetVersion.NONE)
-      .build(), new NoOpJobStatusListener() {
-      @Override
-      public void jobFailed(final Exception e) {
-        logger.warn("query analysis failed for {}", query, e);
-      }
-    });
+    final Job job = Futures.getUnchecked(
+      jobsService.submitJob(
+        JobRequest.newBuilder()
+          .setSqlQuery(query)
+          .setQueryType(QueryType.UI_INTERNAL_PREVIEW)
+          .setDatasetPath(NONE_PATH)
+          .build(),
+        new NoOpJobStatusListener() {
+          @Override
+          public void jobFailed(final Exception e) {
+            logger.warn("query analysis failed for {}", query, e);
+          }
+        })
+    );
 
     // trunc blocks until job completion
     final JobDataFragment data = job.getData().truncate(1);

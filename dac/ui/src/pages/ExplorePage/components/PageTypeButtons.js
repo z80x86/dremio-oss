@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,7 +77,7 @@ class ButtonController extends PureComponent {
     } = this.props;
 
     if (selectedPageType !== pageType) {
-      const pathname = changePageTypeInUrl(selectedPageType, location.pathname, pageType);
+      const pathname = changePageTypeInUrl(location.pathname, pageType);
       router.push({...location, pathname});
     }
   };
@@ -118,6 +118,11 @@ const buttonsConfigs = {
     intlId: 'Dataset.Graph',
     icon: 'DataGraph',
     dataQa: 'Graph'
+  },
+  [PageTypes.reflections]: {
+    intlId: 'Reflection.Reflections',
+    icon: 'FlameDisabled',
+    dataQa: 'Reflections'
   }
 };
 

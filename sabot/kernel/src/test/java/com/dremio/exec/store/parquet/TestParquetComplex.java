@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -91,10 +91,10 @@ public class TestParquetComplex extends BaseTestQuery {
       .baselineValues(666L).build().run();
   }
 
-  @Ignore("DX-3852")
   @Test
   public void mergeJoin() throws Exception{
     test("alter session set \"planner.enable_hashjoin\" = false");
+    test("alter session set \"planner.enable_mergejoin\" = true");
     String query = String.format("select t1.amount, t1.\"date\", t1.marketing_info, t1.\"time\", t1.trans_id, t1.trans_info, t1.user_info " +
             "from %s t1, %s t2 where t1.amount = t2.amount", DATAFILE, DATAFILE);
     testBuilder()
@@ -103,6 +103,7 @@ public class TestParquetComplex extends BaseTestQuery {
             .jsonBaselineFile("store/parquet/complex/baseline.json")
             .build()
             .run();
+    test("alter session set \"planner.enable_mergejoin\" = false");
   }
 
   @Test
@@ -257,8 +258,13 @@ public class TestParquetComplex extends BaseTestQuery {
   }
 
   @Test
-  public void testZeroRowParquet() throws Exception {
+  public void testZeroRowParquetDir() throws Exception {
     String currentPath = Paths.get(".").toAbsolutePath().normalize().toString();
     test("select * from dfs.\"" + currentPath + "/src/test/resources/store/parquet/zero-rows\"");
+  }
+
+  @Test
+  public void testZeroRowParquetFile() throws Exception {
+    test("select * from cp.\"store/parquet/complex/zero-rows.parquet\" p");
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,9 +43,9 @@ import org.apache.calcite.rex.RexVisitorImpl;
 import com.carrotsearch.hppc.IntIntHashMap;
 import com.dremio.common.expression.FieldReference;
 import com.dremio.common.expression.PathSegment;
-import com.dremio.common.expression.SchemaPath;
 import com.dremio.common.expression.PathSegment.ArraySegment;
 import com.dremio.common.expression.PathSegment.NameSegment;
+import com.dremio.common.expression.SchemaPath;
 import com.dremio.common.logical.data.Order.Ordering;
 import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.google.common.collect.ImmutableList;
@@ -60,7 +60,7 @@ public class PrelUtil {
     final List<String> childFields = rowType.getFieldNames();
 
     for (RelFieldCollation fc: collation.getFieldCollations() ) {
-      FieldReference fr = new FieldReference(childFields.get(fc.getFieldIndex()), false);
+      FieldReference fr = new FieldReference(childFields.get(fc.getFieldIndex()));
       orderExpr.add(new Ordering(fc.getDirection(), fr, fc.nullDirection));
     }
 

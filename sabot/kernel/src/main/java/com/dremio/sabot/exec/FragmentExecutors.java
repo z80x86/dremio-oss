@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,30 +16,36 @@
 package com.dremio.sabot.exec;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.annotation.Nullable;
 
-
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.MetricRegistry;
 import com.dremio.common.AutoCloseables;
 import com.dremio.common.concurrent.CloseableSchedulerThreadPool;
+import com.dremio.common.exceptions.UserException;
+import com.dremio.common.utils.protos.QueryIdHelper;
 import com.dremio.exec.ExecConstants;
 import com.dremio.exec.exception.FragmentSetupException;
+import com.dremio.exec.planner.fragment.CachedFragmentReader;
+import com.dremio.exec.planner.fragment.PlanFragmentFull;
+import com.dremio.exec.planner.fragment.PlanFragmentsIndex;
 import com.dremio.exec.proto.CoordExecRPC.InitializeFragments;
-import com.dremio.exec.proto.CoordExecRPC.PlanFragment;
+import com.dremio.exec.proto.CoordExecRPC.PlanFragmentMajor;
+import com.dremio.exec.proto.CoordExecRPC.PlanFragmentSet;
 import com.dremio.exec.proto.CoordExecRPC.RpcType;
 import com.dremio.exec.proto.CoordExecRPC.SchedulingInfo;
-import com.dremio.exec.proto.CoordExecRPC.SharedData;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.proto.ExecProtos.FragmentHandle;
 import com.dremio.exec.proto.ExecRPC.FragmentStreamComplete;
-import com.dremio.common.utils.protos.QueryIdHelper;
+import com.dremio.exec.proto.UserBitShared.QueryId;
 import com.dremio.exec.rpc.Acks;
 import com.dremio.exec.rpc.Response;
 import com.dremio.exec.rpc.ResponseSender;
@@ -49,10 +55,13 @@ import com.dremio.options.OptionManager;
 import com.dremio.sabot.exec.FragmentWorkManager.ExitCallback;
 import com.dremio.sabot.exec.fragment.FragmentExecutor;
 import com.dremio.sabot.exec.fragment.FragmentExecutorBuilder;
+import com.dremio.sabot.exec.fragment.OutOfBandMessage;
 import com.dremio.sabot.exec.rpc.IncomingDataBatch;
 import com.dremio.sabot.task.AsyncTaskWrapper;
 import com.dremio.sabot.task.TaskPool;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.cache.CacheBuilder;
@@ -111,20 +120,22 @@ public class FragmentExecutors implements AutoCloseable, Iterable<FragmentExecut
    * @param refreshDelayMs delay, in seconds, between successive eviction checks
    */
   private void initEvictionThread(long refreshDelayMs) {
-    scheduler.scheduleWithFixedDelay(new Runnable() {
-      @Override
-      public void run() {
-          for (FragmentHandler handler : handlers.asMap().values()) {
-            try {
-              if (handler.isExpired()) {
-                handlers.invalidate(handler.getHandle());
-              }
-            } catch (Throwable e) {
-              logger.warn("Failed to evict FragmentHandler for {}", QueryIdHelper.getQueryIdentifier(handler.getHandle()), e);
-            }
+    scheduler.scheduleWithFixedDelay(getEvictionAction(), refreshDelayMs, refreshDelayMs, TimeUnit.MILLISECONDS);
+  }
+
+  @VisibleForTesting
+  Runnable getEvictionAction() {
+    return () -> {
+      for (FragmentHandler handler : handlers.asMap().values()) {
+        try {
+          if (handler.isExpired()) {
+            handlers.invalidate(handler.getHandle());
           }
+        } catch (Throwable e) {
+          logger.warn("Failed to evict FragmentHandler for {}", QueryIdHelper.getQueryIdentifier(handler.getHandle()), e);
+        }
       }
-    }, refreshDelayMs, refreshDelayMs, TimeUnit.MILLISECONDS);
+    };
   }
 
   @Override
@@ -151,19 +162,65 @@ public class FragmentExecutors implements AutoCloseable, Iterable<FragmentExecut
     return numRunningFragments.get();
   }
 
-  public void startQueryFragment(final InitializeFragments fragments, final FragmentExecutorBuilder builder,
-                                 final ResponseSender sender, final NodeEndpoint identity) {
+  public void startFragments(final InitializeFragments fragments, final FragmentExecutorBuilder builder,
+                             final ResponseSender sender, final NodeEndpoint identity) {
     final SchedulingInfo schedulingInfo = fragments.hasSchedulingInfo() ? fragments.getSchedulingInfo() : null;
     QueryStarterImpl queryStarter = new QueryStarterImpl(fragments, builder, sender, identity, schedulingInfo);
-    builder.buildAndStartQuery(fragments.getFragment(0), schedulingInfo, queryStarter);
+    builder.buildAndStartQuery(queryStarter.getFirstFragment(), schedulingInfo, queryStarter);
   }
 
   public EventProvider getEventProvider(FragmentHandle handle) {
     return handlers.getUnchecked(handle);
   }
 
-  public void cancel(FragmentHandle handle) {
-    handlers.getUnchecked(handle).cancel();
+  /**
+   * Activate previously initialized fragments for the specified query. The fragments could have
+   * already been activated if they received messages from other fragments.
+   *
+   * @param queryId
+   * @param clerk
+   */
+  public void activateFragments(QueryId queryId, QueriesClerk clerk) {
+    for (FragmentTicket fragmentTicket : clerk.getFragmentTickets(queryId)) {
+      activateFragment(fragmentTicket.getHandle());
+    }
+  }
+
+  @VisibleForTesting
+  void activateFragment(FragmentHandle handle) { handlers.getUnchecked(handle).activate(); }
+
+  /*
+   * Cancel all fragments for the specified query.
+   *
+   * @param queryId
+   * @param clerk
+   */
+  public void cancelFragments(QueryId queryId, QueriesClerk clerk) {
+    for (FragmentTicket fragmentTicket : clerk.getFragmentTickets(queryId)) {
+      cancelFragment(fragmentTicket.getHandle());
+    }
+  }
+
+  /*
+   * Fail all fragments for the specified query.
+   *
+   * @param queryId
+   * @param clerk
+   */
+  public void failFragments(QueryId queryId, QueriesClerk clerk, Throwable throwable) {
+    for (FragmentTicket fragmentTicket : clerk.getFragmentTickets(queryId)) {
+      failFragment(fragmentTicket.getHandle(), throwable);
+    }
+  }
+
+  @VisibleForTesting
+  void cancelFragment(FragmentHandle handle) { handlers.getUnchecked(handle).cancel(); }
+
+  void failFragment(FragmentHandle handle, Throwable throwable) {
+    UserException.Builder builder = UserException
+      .resourceError(throwable)
+      .message(UserException.MEMORY_ERROR_MSG);
+    handlers.getUnchecked(handle).fail(builder.buildSilently());
   }
 
   public void receiverFinished(FragmentHandle sender, FragmentHandle receiver) {
@@ -176,6 +233,13 @@ public class FragmentExecutors implements AutoCloseable, Iterable<FragmentExecut
 
   public void handle(FragmentHandle handle, IncomingDataBatch batch) throws IOException, FragmentSetupException {
     handlers.getUnchecked(handle).handle(batch);
+  }
+
+  public void handle(OutOfBandMessage message) {
+    for(Integer minorFragmentId : message.getTargetMinorFragmentIds()) {
+      FragmentHandle handle = FragmentHandle.newBuilder().setQueryId(message.getQueryId()).setMajorFragmentId(message.getMajorFragmentId()).setMinorFragmentId(minorFragmentId).build();
+      handlers.getUnchecked(handle).handle(message);
+    }
   }
 
   @Override
@@ -215,29 +279,51 @@ public class FragmentExecutors implements AutoCloseable, Iterable<FragmentExecut
    * Initializes a query. Starts
    */
   private class QueryStarterImpl implements QueryStarter {
-    final InitializeFragments fragments;
+    final InitializeFragments initializeFragments;
     final FragmentExecutorBuilder builder;
     final ResponseSender sender;
     final NodeEndpoint identity;
     final SchedulingInfo schedulingInfo;
+    final CachedFragmentReader fragmentReader;
+    List<PlanFragmentFull> fullFragments;
 
-    List<SharedData> sharedData;
-
-    QueryStarterImpl(final InitializeFragments fragments, final FragmentExecutorBuilder builder,
+    QueryStarterImpl(final InitializeFragments initializeFragments, final FragmentExecutorBuilder builder,
                      final ResponseSender sender, final NodeEndpoint identity, final SchedulingInfo schedulingInfo) {
-      this.fragments = fragments;
+      this.initializeFragments = initializeFragments;
       this.builder = builder;
       this.sender = sender;
       this.identity = identity;
       this.schedulingInfo = schedulingInfo;
+      this.fragmentReader = new CachedFragmentReader(builder.getPlanReader(),
+        new PlanFragmentsIndex(initializeFragments.getFragmentSet().getEndpointsIndexList(),
+          initializeFragments.getFragmentSet().getAttrList()));
+      this.fullFragments = new ArrayList<>();
+
+      // Create a map of the major fragments.
+      PlanFragmentSet set = initializeFragments.getFragmentSet();
+      Map<Integer, PlanFragmentMajor> map = FluentIterable.from(set.getMajorList())
+        .uniqueIndex(major -> major.getHandle().getMajorFragmentId());
+
+      // Build the full fragments.
+      set.getMinorList().forEach(
+        minor -> {
+          PlanFragmentMajor major = map.get(minor.getMajorFragmentId());
+          Preconditions.checkNotNull(major,
+            "Missing major fragment for major id" + minor.getMajorFragmentId());
+
+          fullFragments.add(new PlanFragmentFull(major, minor));
+        });
+    }
+
+    public PlanFragmentFull getFirstFragment() {
+      return fullFragments.get(0);
     }
 
     @Override
     public void buildAndStartQuery(final QueryTicket queryTicket) {
       try {
-        this.sharedData = fragments.getSharedDataList();
-        for (int i = 0; i < fragments.getFragmentCount(); i++) {
-          startFragment(queryTicket, fragments.getFragment(i), schedulingInfo);
+        for (PlanFragmentFull fragment : fullFragments) {
+          startFragment(queryTicket, fragment, schedulingInfo);
         }
         sender.send(OK);
       } catch (UserRpcException e) {
@@ -262,13 +348,13 @@ public class FragmentExecutors implements AutoCloseable, Iterable<FragmentExecut
       }
     }
 
-    private void startFragment(final QueryTicket queryTicket, final PlanFragment fragment,
+    private void startFragment(final QueryTicket queryTicket, final PlanFragmentFull fragment,
                                final SchedulingInfo schedulingInfo) throws UserRpcException {
       logger.info("Received remote fragment start instruction for {}", QueryIdHelper.getQueryIdentifier(fragment.getHandle()));
 
       try {
         final EventProvider eventProvider = getEventProvider(fragment.getHandle());
-        startFragment(builder.build(queryTicket, fragment, eventProvider, schedulingInfo, sharedData));
+        startFragment(builder.build(queryTicket, fragment, eventProvider, schedulingInfo, fragmentReader));
       } catch (final Exception e) {
         throw new UserRpcException(identity, "Failure while trying to start remote fragment", e);
       } catch (final OutOfMemoryError t) {
@@ -306,5 +392,10 @@ public class FragmentExecutors implements AutoCloseable, Iterable<FragmentExecut
       handler.setExecutor(executor);
       pool.execute(task);
     }
+  }
+
+  @VisibleForTesting
+  long getNumHandlers() {
+    return handlers.size();
   }
 }

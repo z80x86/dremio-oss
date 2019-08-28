@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -184,7 +184,8 @@ public class ElasticPredicatePushdownBase extends ElasticBaseTestQuery {
     AttemptObserver observer = new PassthroughQueryObserver(ExecTest.mockUserClientConnection(null));
     SqlConverter converter = new SqlConverter(context.getPlannerSettings(),
       context.getOperatorTable(), context, context.getMaterializationProvider(), context.getFunctionRegistry(),
-      context.getSession(), observer, context.getCatalog(), context.getSubstitutionProviderFactory());
+      context.getSession(), observer, context.getCatalog(), context.getSubstitutionProviderFactory(), context.getConfig(),
+      context.getScanResult());
     SqlNode node = converter.parse(sql);
     SqlHandlerConfig config = new SqlHandlerConfig(context, converter, observer, null);
     NormalHandler handler = new NormalHandler();

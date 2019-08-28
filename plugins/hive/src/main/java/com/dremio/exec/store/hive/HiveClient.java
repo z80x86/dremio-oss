@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import java.io.IOException;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.security.PrivilegedExceptionAction;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -33,15 +34,17 @@ import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.shims.Utils;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.thrift.TException;
+import org.slf4j.helpers.NOPLogger;
 
 import com.dremio.common.exceptions.UserException;
 import com.dremio.exec.util.ImpersonationUtil;
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 
 /**
  * Override HiveMetaStoreClient to provide additional capabilities such as caching, reconnecting with user
- * credentials and higher level APIs to get the metadata in form that Drill needs directly.
+ * credentials and higher level APIs to get the metadata in form that Dremio needs directly.
  */
 public class HiveClient implements AutoCloseable {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(HiveClient.class);
@@ -51,8 +54,8 @@ public class HiveClient implements AutoCloseable {
   HiveMetaStoreClient client;
 
   /**
-   * Create a DrillHiveMetaStoreClient for cases where:
-   *   1. Drill impersonation is enabled and
+   * Create a HiveMetaStoreClient for cases where:
+   *   1. Impersonation is enabled and
    *   2. either storage (in remote HiveMetaStore server) or SQL standard based authorization (in Hive storage plugin)
    *      is enabled
    * @param processUserMetaStoreClient MetaStoreClient of process user. Useful for generating the delegation tokens when
@@ -63,29 +66,29 @@ public class HiveClient implements AutoCloseable {
    * @throws MetaException
    */
   public static HiveClient createClientWithAuthz(final HiveClient processUserMetaStoreClient,
-      final HiveConf hiveConf, final String userName) throws MetaException {
+      final HiveConf hiveConf, final String userName, final UserGroupInformation ugiForRpc) throws MetaException {
     try {
       HiveConf hiveConfForClient = hiveConf;
-      final UserGroupInformation ugiForRpc; // UGI credentials to use for RPC communication with Hive MetaStore server
       boolean needDelegationToken = false;
-      if (!hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_ENABLE_DOAS)) {
-        // If the user impersonation is disabled in Hive storage plugin (not Drill impersonation), use the process
-        // user UGI credentials.
-        ugiForRpc = ImpersonationUtil.getProcessUserUGI();
-      } else {
-        ugiForRpc = ImpersonationUtil.createProxyUgi(userName);
-        if (hiveConf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_SASL)) {
-          // When SASL is enabled for proxy user create a delegation token. Currently HiveMetaStoreClient can create
-          // client transport for proxy users only when the authentication mechanims is DIGEST (through use of
-          // delegation tokens).
-          hiveConfForClient = new HiveConf(hiveConf);
-          getAndSetDelegationToken(hiveConfForClient, ugiForRpc, processUserMetaStoreClient);
-          needDelegationToken = true;
-        }
+      final boolean impersonationEnabled = hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_ENABLE_DOAS);
+      String connectionUserName = ImpersonationUtil.resolveUserName(userName);
+
+      if (impersonationEnabled && hiveConf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_SASL)) {
+        // When SASL is enabled for proxy user create a delegation token. Currently HiveMetaStoreClient can create
+        // client transport for proxy users only when the authentication mechanims is DIGEST (through use of
+        // delegation tokens).
+        hiveConfForClient = new HiveConf(hiveConf);
+        getAndSetDelegationToken(hiveConfForClient, ugiForRpc, processUserMetaStoreClient);
+        needDelegationToken = true;
+      }
+
+      if (impersonationEnabled) {
+        // if impersonation is enabled, use the UGI username as a connection username
+        connectionUserName = ugiForRpc.getUserName();
       }
 
       final HiveClient client = new HiveClientWithAuthz(hiveConfForClient, ugiForRpc,
-          ImpersonationUtil.resolveUserName(userName), processUserMetaStoreClient, needDelegationToken);
+        connectionUserName, processUserMetaStoreClient, needDelegationToken);
       client.connect();
       return client;
     } catch (RuntimeException e) {
@@ -167,7 +170,7 @@ public class HiveClient implements AutoCloseable {
     }
   }
 
-  List<String> getDatabases(boolean ignoreAuthzErrors) throws TException{
+  public List<String> getDatabases(boolean ignoreAuthzErrors) throws TException{
     return doCommand(new RetryableClientCommand<List<String>>(){
       @Override
       public List<String> run(HiveMetaStoreClient client) throws TException {
@@ -185,12 +188,12 @@ public class HiveClient implements AutoCloseable {
     } catch (NoSuchObjectException e) {
       return false;
     } catch (TException e) {
-      logger.info("Failure while trying to read database {}", dbName, e);
+      logger.info("Failure while trying to read database '{}'", dbName, e);
       return false;
     }
   }
 
-  List<String> getTableNames(final String dbName, boolean ignoreAuthzErrors) throws TException{
+  public List<String> getTableNames(final String dbName, boolean ignoreAuthzErrors) throws TException{
     return doCommand(new RetryableClientCommand<List<String>>(){
       @Override
       public List<String> run(HiveMetaStoreClient client) throws TException {
@@ -200,47 +203,99 @@ public class HiveClient implements AutoCloseable {
 
   boolean tableExists(final String dbName, final String tableName) {
     try {
-      return (getTable(dbName, tableName, true) != null);
+      return (getTableWithoutTableTypeChecking(dbName, tableName, true) != null);
     } catch (TException te) {
-      logger.info("Failure while trying to read table {} from db {}", tableName, dbName, te);
+      logger.info("Failure while trying to read table '{}' from db '{}'", tableName, dbName, te);
       return false;
     }
   }
 
-  Table getTable(final String dbName, final String tableName, boolean ignoreAuthzErrors) throws TException{
+  private Table getTableWithoutTableTypeChecking(final String dbName, final String tableName, boolean ignoreAuthzErrors) throws TException{
     return doCommand(new RetryableClientCommand<Table>(){
       @Override
       public Table run(HiveMetaStoreClient client) throws TException {
         try{
-          Table table = client.getTable(dbName, tableName);
-          if(table == null){
-            return null;
-          }
-
-          TableType type = TableType.valueOf(table.getTableType());
-          switch(type){
-          case EXTERNAL_TABLE:
-          case MANAGED_TABLE:
-            return table;
-
-          case VIRTUAL_VIEW:
-            throw UserException.unsupportedError().message("Hive views are not supported").build(logger);
-          case INDEX_TABLE:
-          default:
-            return null;
-          }
+          return client.getTable(dbName, tableName);
         }catch(NoSuchObjectException e){
           return null;
         }
       }});
   }
 
-  List<Partition> getPartitions(final String dbName, final String tableName) throws TException{
-    return doCommand(new RetryableClientCommand<List<Partition>>(){
+  public Table getTable(final String dbName, final String tableName, boolean ignoreAuthzErrors) throws TException{
+
+    Table table = getTableWithoutTableTypeChecking(dbName, tableName, ignoreAuthzErrors);
+
+    if(table == null){
+      return null;
+    }
+
+    TableType type = TableType.valueOf(table.getTableType());
+    switch (type) {
+      case EXTERNAL_TABLE:
+      case MANAGED_TABLE:
+        return table;
+
+      case VIRTUAL_VIEW:
+        throw UserException.unsupportedError().message("Hive views are not supported").build(NOPLogger.NOP_LOGGER);
+      case INDEX_TABLE:
+      default:
+        return null;
+    }
+  }
+
+  public List<Partition> getPartitionsByName(final String dbName, final String tableName, final List<String> partitionNames) throws TException {
+    return doCommand(new RetryableClientCommand<List<Partition>>() {
       @Override
       public List<Partition> run(HiveMetaStoreClient client) throws TException {
-        return client.listPartitions(dbName, tableName, (short) -1);
-      }});
+        logger.trace("Database '{}', table '{}', Begin retrieval of partitions by name using batch size '{}'", dbName, tableName, partitionNames.size());
+
+        try {
+          final List<Partition> partitions = client.getPartitionsByNames(dbName, tableName, partitionNames);
+
+          if (null == partitions) {
+            throw UserException
+              .connectionError()
+              .message("Database '{}', table '{}', No partitions for table.", dbName, tableName)
+              .build(logger);
+          }
+
+          logger.debug("Database '{}', table '{}', Retrieved partition count: '{}'", dbName, tableName, partitions.size());
+
+          return partitions;
+        } catch (TException e) {
+          logger
+            .error(
+              "Database '{}', table '{}', Failure reading partitions by names: '{}'",
+              dbName, tableName, Joiner.on(",").join(partitionNames), e);
+          throw e;
+        }
+      }
+    });
+  }
+
+  public List<String> getPartitionNames(final String dbName, final String tableName) throws TException {
+    return doCommand(new RetryableClientCommand<List<String>>() {
+      @Override
+      public List<String> run(HiveMetaStoreClient client) throws TException {
+        try {
+          final List<String> allPartitionNames = client.listPartitionNames(dbName, tableName, (short) -1);
+
+          if (null == allPartitionNames) {
+            logger.debug("Database '{}', table '{}', No partition names for table.", dbName, tableName);
+            return Collections.emptyList();
+          }
+
+          return allPartitionNames;
+        } catch (TException e) {
+          logger
+            .error(
+              "Database '{}', table '{}', Failure reading partition names.",
+              dbName, tableName, e);
+          throw e;
+        }
+      }
+    });
   }
 
   String getDelegationToken(final String proxyUser) throws TException {
@@ -256,13 +311,11 @@ public class HiveClient implements AutoCloseable {
     T run(HiveMetaStoreClient client) throws TException;
   }
 
-  private <T> T doCommand(RetryableClientCommand<T> cmd) throws TException{
+  private synchronized <T> T doCommand(RetryableClientCommand<T> cmd) throws TException{
     T value = null;
     try {
       // Hive client can not be used for multiple requests at the same time.
-      synchronized (client) {
-        value = cmd.run(client);
-      }
+      value = cmd.run(client);
     } catch (NoSuchObjectException e) {
       throw e;
     } catch (TException e) {

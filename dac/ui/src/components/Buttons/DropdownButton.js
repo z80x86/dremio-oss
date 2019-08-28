@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 import React, { Component } from 'react';
 import Radium from 'radium';
 import PropTypes from 'prop-types';
-import { Popover, PopoverAnimationVertical } from 'material-ui/Popover';
 import deepEqual from 'deep-equal';
 
+import { SelectView } from '@app/components/Fields/SelectView';
 import { SECONDARY, SECONDARY_BORDER, BLUE } from 'uiTheme/radium/colors';
 import FontIcon from 'components/Icon/FontIcon';
 
@@ -32,6 +32,7 @@ const PRIMARY_BASE = {
 export default class DropdownButton extends Component {
   static propTypes = {
     className: PropTypes.string,
+    tooltip: PropTypes.string,
     menu: PropTypes.node,
     iconType: PropTypes.string,
     action: PropTypes.func,
@@ -46,18 +47,6 @@ export default class DropdownButton extends Component {
   static defaultProps = {
     shouldSwitch: true,
     hideDropdown: false
-  }
-
-  state = {
-    open: false,
-    anchorOrigin: {
-      horizontal: 'right',
-      vertical: 'bottom'
-    },
-    targetOrigin: {
-      horizontal: 'right',
-      vertical: 'top'
-    }
   }
 
   componentWillMount() {
@@ -77,7 +66,7 @@ export default class DropdownButton extends Component {
     }
   }
 
-  doAction = (item) => {
+  doAction = (closeDD, item) => {
     if (this.props.shouldSwitch) {
       this.setState({
         text: item.label,
@@ -85,24 +74,9 @@ export default class DropdownButton extends Component {
       });
     }
 
-    this.handleClose();
+    closeDD();
     this.props.action(item.name);
   }
-
-  handleClose = () => {
-    this.setState({
-      open: false
-    });
-  };
-
-  handleOpen = (event) => {
-    if (!this.props.disabled) {
-      this.setState({
-        open: true,
-        anchorEl: event.currentTarget
-      });
-    }
-  };
 
   action = (e) => {
     if (!this.props.disabled) {
@@ -111,7 +85,7 @@ export default class DropdownButton extends Component {
   }
 
   render() {
-    const { className, type, disabled, iconType, hideDropdown } = this.props;
+    const { className, tooltip, type, disabled, iconType, hideDropdown } = this.props;
     //const background = { backgroundColor: '#68C6D3' };
     const base = {...styles.base, ...(type === 'primary' ? PRIMARY_BASE : {})};
     const bodyFont = {...(type === 'primary' ? {color: '#fff'} : {})};
@@ -135,7 +109,7 @@ export default class DropdownButton extends Component {
     const cursorStyle = !disabled ? {} : { cursor: 'default' };
 
     return (
-      <div className={className} style={[base, cursorStyle, disabled && {opacity: 0.7}]}>
+      <div className={className} title={tooltip} style={[base, cursorStyle, disabled && {opacity: 0.7}]}>
         <div key='button' onClick={this.action} style={[styles.mainButton, cursorStyle, isButtonHovered && hoverStyle]}>
           <div style={[styles.iconWrap, !iconType ? {display: 'none'} : {}]}>
             <FontIcon
@@ -148,34 +122,38 @@ export default class DropdownButton extends Component {
             </span>
           </div>
         </div>
-        {!hideDropdown && <div
-          style={[styles.toggler, isTogglerHovered && hoverStyle, cursorStyle]}
-          key='toggler'
-          onClick={this.handleOpen.bind(this)}>
-          <div style={[styles.divider, dividerStyle, divider]} />
-          <FontIcon
-            type={toggleIcontype}
-            theme={{Container: {width: 24, height: 24}}}
-            onClick={disabled ? undefined : this.toggleDropdown}/>
-        </div>}
-        <Popover
-          style={{overflow: 'visible', marginTop: 7}}
-          useLayerForClickAway={false}
-          open={this.state.open}
-          anchorEl={this.state.anchorEl}
-          anchorOrigin={this.state.anchorOrigin}
-          targetOrigin={this.state.targetOrigin}
-          onRequestClose={this.handleClose}
-          animation={PopoverAnimationVertical}>
-          <div style={styles.popover}>
-            <div style={styles.triangle}/>
-            {
-              React.cloneElement(this.props.menu, {
-                action: this.doAction
-              })
+        {
+          !hideDropdown && <SelectView
+            listStyle={{overflow: 'visible', marginTop: 7}}
+            content={
+              <div
+                style={[styles.toggler, isTogglerHovered && hoverStyle, cursorStyle]}
+                key='toggler'>
+                <div style={[styles.divider, dividerStyle, divider]} />
+                <FontIcon
+                  type={toggleIcontype}
+                  theme={{Container: {width: 24, height: 24}}}
+                  onClick={disabled ? undefined : this.toggleDropdown}/>
+              </div>
             }
-          </div>
-        </Popover>
+            hideExpandIcon
+            listRightAligned
+            useLayerForClickAway={false}
+          >
+            {
+              ({ closeDD }) => (
+                <div style={styles.popover}>
+                  <div style={styles.triangle}/>
+                  {
+                    React.cloneElement(this.props.menu, {
+                      action: this.doAction.bind(this, closeDD)
+                    })
+                  }
+                </div>
+              )
+            }
+          </SelectView>
+        }
       </div>
     );
   }

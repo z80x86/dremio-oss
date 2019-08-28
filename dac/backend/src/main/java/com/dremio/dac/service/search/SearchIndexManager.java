@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,10 +64,16 @@ public class SearchIndexManager implements Runnable {
   private static final Logger logger = LoggerFactory.getLogger(SearchIndexManager.class);
 
   public static final String CONFIG_KEY = "searchLastRefresh";
-  static final IndexKey PATH_UNQUOTED_LC = new IndexKey("pathlc", "PATH_LC", String.class, null, false, false);
-  static final IndexKey NAME_LC = new IndexKey("namelc", "NAME_LC", String.class, null, false, false);
-  static final IndexKey TAGS_LC = new IndexKey("tagslc", "TAGS_LC", String.class, null, false, false);
-  static final IndexKey DATASET_COLUMNS_LC = new IndexKey("dscolumnslc", "DATASET_COLUMNS_LC", String.class, null, false, false);
+  static final IndexKey PATH_UNQUOTED_LC = IndexKey.newBuilder("pathlc", "PATH_LC", String.class)
+    .setCanContainMultipleValues(true).build();
+  static final IndexKey NAME_LC = IndexKey.newBuilder("namelc", "NAME_LC", String.class)
+    .build();
+  static final IndexKey TAGS_LC = IndexKey.newBuilder("tagslc", "TAGS_LC", String.class)
+    .setCanContainMultipleValues(true)
+    .build();
+  static final IndexKey DATASET_COLUMNS_LC = IndexKey.newBuilder("dscolumnslc", "DATASET_COLUMNS_LC", String.class)
+    .setCanContainMultipleValues(true)
+    .build();
 
   private static final long WAKEUP_OVERLAP_MS = 10;
 
@@ -139,7 +145,12 @@ public class SearchIndexManager implements Runnable {
       DatasetConfig dataset = nameSpaceContainer.getDataset();
 
       // if system owned dataset, skip
-      return dataset.getOwner() == null || !dataset.getOwner().equals(SystemUser.SYSTEM_USERNAME);
+      final String connectorName = input.getKey().getRoot().toLowerCase();
+      // TODO(DX-15663): fix this filter
+      return !"sys".equals(connectorName) &&
+          !"information_schema".equals(connectorName) &&
+          !connectorName.startsWith("__") &&
+          (dataset.getOwner() == null || !dataset.getOwner().equals(SystemUser.SYSTEM_USERNAME));
     }).forEach(input -> {
       final NameSpaceContainer nameSpaceContainer = input.getValue();
 

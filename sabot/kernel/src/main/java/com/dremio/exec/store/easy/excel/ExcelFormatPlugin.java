@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,11 +29,10 @@ import com.dremio.exec.store.RecordReader;
 import com.dremio.exec.store.RecordWriter;
 import com.dremio.exec.store.dfs.FileSystemPlugin;
 import com.dremio.exec.store.dfs.FileSystemWrapper;
-import com.dremio.exec.store.dfs.FormatPlugin;
 import com.dremio.exec.store.dfs.easy.EasyFormatPlugin;
 import com.dremio.exec.store.dfs.easy.EasyWriter;
 import com.dremio.sabot.exec.context.OperatorContext;
-import com.dremio.service.namespace.file.proto.EasyDatasetSplitXAttr;
+import com.dremio.sabot.exec.store.easy.proto.EasyProtobuf.EasyDatasetSplitXAttr;
 
 /**
  * {@link FormatPlugin} implementation for reading Excel files.

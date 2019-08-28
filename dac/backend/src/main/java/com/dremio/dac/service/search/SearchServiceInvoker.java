@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.apache.arrow.memory.BufferAllocator;
 import com.dremio.dac.proto.model.collaboration.CollaborationTag;
 import com.dremio.exec.proto.CoordinationProtos.NodeEndpoint;
 import com.dremio.exec.rpc.RpcException;
+import com.dremio.exec.server.SabotContext;
 import com.dremio.service.namespace.NamespaceException;
 import com.dremio.service.namespace.RemoteNamespaceException;
 import com.dremio.service.namespace.proto.NameSpaceContainer;
@@ -44,23 +45,25 @@ import io.protostuff.ProtobufIOUtil;
  * Adapter that interacts with the {@link SearchService} running on master coordinator.
  */
 public class SearchServiceInvoker implements SearchService {
+  private static final int TYPE_SEARCH_QUERY = 0;
+
   private final boolean isMaster;
-  private final Provider<NodeEndpoint> masterEndpoint;
   private final Provider<FabricService> fabricService;
   private final BufferAllocator allocator;
   private final SearchService searchService;
+  private final Provider<SabotContext> sabotContext;
 
   private SendEndpointCreator<SearchRPC.SearchQueryRequest, SearchRPC.SearchQueryResponse> findEndpointCreator;
 
   public SearchServiceInvoker(
     boolean isMaster,
-    Provider<NodeEndpoint> masterEndpoint,
+    Provider<SabotContext> sabotContext,
     Provider<FabricService> fabricService,
     BufferAllocator allocator,
     SearchService searchService
   ) {
     this.isMaster = isMaster;
-    this.masterEndpoint = masterEndpoint;
+    this.sabotContext = sabotContext;
     this.fabricService = fabricService;
     this.allocator = allocator;
     this.searchService = searchService;
@@ -76,7 +79,7 @@ public class SearchServiceInvoker implements SearchService {
       .name("search-rpc")
       .timeout(10 * 1000);
 
-    this.findEndpointCreator = builder.register(0,
+    this.findEndpointCreator = builder.register(TYPE_SEARCH_QUERY,
       new AbstractReceiveHandler<SearchRPC.SearchQueryRequest, SearchRPC.SearchQueryResponse>(
         SearchRPC.SearchQueryRequest.getDefaultInstance(), SearchRPC.SearchQueryResponse.getDefaultInstance()) {
         @Override
@@ -111,7 +114,7 @@ public class SearchServiceInvoker implements SearchService {
                 .setEntityId(collaborationTag.getEntityId())
                 .setId(collaborationTag.getId())
                 .setLastModified(collaborationTag.getLastModified())
-                .setVersion(collaborationTag.getVersion())
+                .setVersion(collaborationTag.getTag())
                 .build();
 
               rpcBuilder.setTags(searchQueryRequestTags);
@@ -135,7 +138,11 @@ public class SearchServiceInvoker implements SearchService {
 
   @Override
   public List<SearchContainer> search(String query, String username) throws NamespaceException {
-    if (isMaster) {
+    // TODO DX-14433 - should have better way to deal with Local/Remote KVStore
+    final NodeEndpoint master =
+      sabotContext.get().getServiceLeader(SearchServiceImpl.LOCAL_TASK_LEADER_NAME).orElse(null);
+    final NodeEndpoint thisNode = sabotContext.get().getEndpoint();
+    if (isMaster && thisNode.equals(master)) {
       return searchService.search(query, username);
     }
 
@@ -170,7 +177,7 @@ public class SearchServiceInvoker implements SearchService {
       collaborationTag.setEntityId(tagsRPC.getEntityId());
       collaborationTag.setId(tagsRPC.getId());
       collaborationTag.setLastModified(tagsRPC.getLastModified());
-      collaborationTag.setVersion(tagsRPC.getVersion());
+      collaborationTag.setTag(tagsRPC.getVersion());
 
       final NameSpaceContainer nameSpaceContainer = NameSpaceContainer.getSchema().newMessage();
       // TODO(DX-10857): change from opaque object to protobuf
@@ -181,7 +188,8 @@ public class SearchServiceInvoker implements SearchService {
   }
 
   private SendEndpoint<SearchRPC.SearchQueryRequest, SearchRPC.SearchQueryResponse> newFindEndpoint() throws RpcException {
-    final NodeEndpoint master = masterEndpoint.get();
+    final NodeEndpoint master = sabotContext.get().getServiceLeader(SearchServiceImpl.LOCAL_TASK_LEADER_NAME)
+      .orElse(null);
     if (master == null) {
       throw new RpcException("master node is down");
     }
@@ -191,7 +199,12 @@ public class SearchServiceInvoker implements SearchService {
 
   @Override
   public void wakeupManager(String reason) {
-    if (isMaster) {
+    // TODO DX-14433 - should have better way to deal with Local/Remote KVStore
+    final NodeEndpoint master =
+      sabotContext.get().getServiceLeader(SearchServiceImpl.LOCAL_TASK_LEADER_NAME).orElse(null);
+    final NodeEndpoint thisNode = sabotContext.get().getEndpoint();
+
+    if (isMaster && thisNode.equals(master)) {
       searchService.wakeupManager(reason);
     }
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import exploreUtils from 'utils/explore/exploreUtils';
-import fullDatasetSchema from 'schemas/v2/fullDataset';
+import { datasetWithoutData } from 'schemas/v2/fullDataset';
 
 import { postDatasetOperation } from './common';
 
@@ -25,7 +25,7 @@ export const runTableTransform = (dataset, transformData, viewId, tableData) =>
     const nextTable = tableData && tableData.set('version', newVersion);
 
     return dispatch(postDatasetOperation({
-      href, dataset, schema: fullDatasetSchema, viewId, nextTable, body: transformData
+      href, dataset, schema: datasetWithoutData, viewId, nextTable, body: transformData
     }));
   };
 

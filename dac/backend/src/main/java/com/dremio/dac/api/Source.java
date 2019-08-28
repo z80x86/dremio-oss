@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ public class Source implements CatalogEntity {
 
   public Source(SourceConfig config, AccelerationSettings settings, ConnectionReader reader) {
     this.id = config.getId().getId();
-    this.tag = String.valueOf(config.getVersion());
+    this.tag = config.getTag();
     this.type = config.getType() == null ? config.getLegacySourceTypeEnum().name() : config.getType();
     this.name = config.getName();
     this.description = config.getDescription();
@@ -197,7 +197,7 @@ public class Source implements CatalogEntity {
 
     String tag = getTag();
     if (tag != null) {
-      sourceConfig.setVersion(Long.valueOf(tag));
+      sourceConfig.setTag(tag);
     }
 
     sourceConfig.setType(getConfig().getType());

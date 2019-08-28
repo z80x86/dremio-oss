@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,9 @@ public interface PluggableFunctionRegistry {
    * The other is addOperatorWithoutInference whose added operators will be used
    * when planner.type_inference.enable is set to false;
    * @param operatorTable
+   * @param isDecimalV2Enabled
    */
-  public void register(OperatorTable operatorTable);
+  public void register(OperatorTable operatorTable, boolean isDecimalV2Enabled);
 
   /**
    * If exists return the function implementation holder matching the given <code>functionCall</code> expression,
@@ -38,4 +39,5 @@ public interface PluggableFunctionRegistry {
    * @return
    */
   public AbstractFunctionHolder getFunction(FunctionCall functionCall);
+
 }

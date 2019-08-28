@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,13 +24,12 @@ import com.fasterxml.jackson.annotation.JsonUnwrapped;
  * Create/Edit user form.
  */
 public class UserForm {
-  private final User userConfig;
+  // not final because you can't use @JsonUnwrapped in an @JsonCreator
+  private User userConfig;
   private final String password;
 
   @JsonCreator
-  public UserForm(@JsonUnwrapped User userConfig,
-                  @JsonProperty("password") String password) {
-    this.userConfig = userConfig;
+  public UserForm(@JsonProperty("password") String password) {
     this.password = password;
   }
 
@@ -39,9 +38,9 @@ public class UserForm {
     this.password = null;
   }
 
-  public UserForm(String password) {
+  public UserForm(User userGroup, String password) {
+    this.userConfig = userGroup;
     this.password = password;
-    this.userConfig = null;
   }
 
   @JsonUnwrapped
@@ -51,5 +50,9 @@ public class UserForm {
 
   public String getPassword() {
     return password;
+  }
+
+  public void setUserConfig(User userConfig) {
+    this.userConfig = userConfig;
   }
 }

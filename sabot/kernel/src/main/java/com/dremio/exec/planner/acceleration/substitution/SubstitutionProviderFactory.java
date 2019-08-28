@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package com.dremio.exec.planner.acceleration.substitution;
 
+import com.dremio.common.config.SabotConfig;
 import com.dremio.options.OptionManager;
 
 /**
@@ -22,5 +23,5 @@ import com.dremio.options.OptionManager;
  *
  */
 public interface SubstitutionProviderFactory {
-  public SubstitutionProvider getSubstitutionProvider(MaterializationProvider materializationProvider, OptionManager options);
+  public SubstitutionProvider getSubstitutionProvider(SabotConfig config, MaterializationProvider materializationProvider, OptionManager options);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,17 +24,17 @@ import java.util.Set;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.VarCharVector;
 
 import com.dremio.common.AutoCloseables;
-import com.dremio.common.types.Types;
 import com.dremio.common.types.TypeProtos.MajorType;
 import com.dremio.common.types.TypeProtos.MinorType;
+import com.dremio.common.types.Types;
+import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.exec.record.VectorAccessible;
 import com.dremio.exec.record.VectorContainer;
 import com.dremio.exec.record.VectorWrapper;
-import com.dremio.exec.record.BatchSchema.SelectionVectorMode;
 import com.dremio.sabot.Generator;
 import com.google.common.base.Charsets;
 
@@ -188,7 +188,9 @@ public abstract class TpchGenerator implements Generator {
     GenerationDefinition def = new GenerationDefinition(scale, Long.MAX_VALUE);
     switch(table){
     case CUSTOMER:
-      return new CustomerGenerator(allocator, def, 1, includedColumns);
+      return new CustomerGenerator(allocator, def, 1, TpchTable.CUSTOMER, includedColumns);
+    case CUSTOMER_LIMITED:
+      return new CustomerGenerator(allocator, def, 1, TpchTable.CUSTOMER_LIMITED, includedColumns);
     case REGION:
       return new RegionGenerator(allocator, def, includedColumns);
     case NATION:

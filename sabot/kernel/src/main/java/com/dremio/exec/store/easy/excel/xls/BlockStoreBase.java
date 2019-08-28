@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,15 @@
  */
 package com.dremio.exec.store.easy.excel.xls;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import org.apache.poi.poifs.storage.BATBlock;
-import org.apache.poi.poifs.storage.HeaderBlock;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
+
+import org.apache.poi.poifs.storage.BATBlock;
+import org.apache.poi.poifs.storage.HeaderBlock;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 
 /**
  * Base implementation of {@link BlockStoreBase} backed by a byte array

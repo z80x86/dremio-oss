@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,8 @@ import org.apache.parquet.io.api.RecordMaterializer;
 import org.apache.parquet.schema.MessageType;
 
 import com.dremio.common.expression.SchemaPath;
-import com.dremio.options.OptionManager;
-import com.dremio.exec.store.parquet.ParquetReaderUtility;
 import com.dremio.exec.store.parquet.SchemaDerivationHelper;
+import com.dremio.options.OptionManager;
 import com.dremio.sabot.op.scan.OutputMutator;
 
 public class ParquetRecordMaterializer extends RecordMaterializer<Void> {

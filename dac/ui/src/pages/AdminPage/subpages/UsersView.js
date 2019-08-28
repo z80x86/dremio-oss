@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 Dremio Corporation
+ * Copyright (C) 2017-2019 Dremio Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import pureRender from 'pure-render-decorator';
 import PropTypes from 'prop-types';
 import { Link } from 'react-router';
 import Radium from 'radium';
+import { createSelector } from 'reselect';
 
 import LinkButton from 'components/Buttons/LinkButton';
 import FontIcon from 'components/Icon/FontIcon';
@@ -27,6 +28,20 @@ import FontIcon from 'components/Icon/FontIcon';
 import StatefulTableViewer from 'components/StatefulTableViewer';
 
 import { pageContent, page } from 'uiTheme/radium/general';
+import { DeleteButton } from '@app/components/tableRowButtons/DeleteButton';
+
+const getPathname = (location) => location.pathname;
+const getHash = (location) => location.hash;
+const getSearch = (location) => location.search;
+
+const userLinkToSelector = createSelector(
+  [getPathname, getHash, getSearch],
+  (pathname, hash, search) => ({
+    pathname,
+    hash,
+    search,
+    state: {modal: 'EditUserModal'}
+  }));
 
 @Radium
 @pureRender
@@ -77,8 +92,10 @@ export default class UsersView extends Component {
       const userName = user.getIn(['userConfig', 'userName']);
       const editUserLink = {
         pathname: '/admin/users',
-        query: {user: userName},
-        state: {modal: 'EditUserModal'}
+        state: {
+          modal: 'EditUserModal',
+          userId: user.get('id')
+        }
       };
 
       const fullName = [
@@ -100,12 +117,10 @@ export default class UsersView extends Component {
               <button style={styles.actionBtn}><FontIcon type='Edit' theme={styles.actionIcon}/></button>
             </Link>
             {
-              this.context.loggedInUser.userName !== userName && <button
-                data-qa='delete-user'
-                style={styles.actionBtn}
-                onClick={this.props.removeUser.bind(this, user) }>
-                <FontIcon theme={styles.actionIcon} type='Delete'/>
-              </button>
+              this.context.loggedInUser.userName !== userName && <DeleteButton
+                onClick={this.props.removeUser.bind(this, user)}
+                dataQa='delete-user'
+              />
             }
           </span>
         ]
@@ -117,12 +132,13 @@ export default class UsersView extends Component {
     const { viewState } = this.props;
     const columns = this.getTableColumns();
     const tableData = this.getTableData();
+    const addUserLinkTo = userLinkToSelector(this.context.location);
     return (
       <div id='admin-user' style={page}>
         <div className='admin-header' style={styles.adminHeader}>
           <h3>{la('Users')}</h3>
           <LinkButton
-            to={{...this.context.location, state: {modal: 'AddUserModal'}}}
+            to={addUserLinkTo}
             buttonStyle='primary'
             data-qa='add-user'
             style={styles.addUserBtn}>
@@ -209,11 +225,9 @@ const styles = {
   },
   actionBtnWrap: {
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
+    alignItems: 'center'
   },
   actionBtn: { // todo: DRY this up with other action buttons in the project
-    margin: '0 5px 0 0',
     border: 0,
     boxShadow: '0 1px 1px #c2c2c2',
     borderRadius: 2,
